@@ -1,0 +1,1457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Draw Party! 🎨</title>
+    <meta name="description" content="The easiest multiplayer drawing game - just text a link and play!">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- PeerJS for P2P networking -->
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    
+    <!-- PWA manifest -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1f2937">
+    
+    <!-- iOS PWA -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Draw Party">
+    
+    <style>
+        /* Custom styles for canvas and animations */
+        .canvas-container {
+            touch-action: none;
+            position: relative;
+        }
+        
+        .drawing-canvas {
+            border: 2px solid #e5e7eb;
+            border-radius: 0.5rem;
+            background: white;
+            cursor: crosshair;
+        }
+        
+        .toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            transition: all 0.3s ease;
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        
+        .bounce {
+            animation: bounce 0.6s ease-in-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes bounce {
+            0%, 20%, 60%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-10px); }
+            80% { transform: translateY(-5px); }
+        }
+        
+        /* Prevent zoom on double tap */
+        * {
+            touch-action: manipulation;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <div id="app" class="min-h-screen flex flex-col">
+        <!-- Loading Screen -->
+        <div id="loading" class="fixed inset-0 bg-gray-900 flex items-center justify-center z-50">
+            <div class="text-center">
+                <div class="text-6xl mb-4">🎨</div>
+                <div class="text-2xl font-bold mb-2">Draw Party!</div>
+                <div class="text-gray-400">Loading the fun...</div>
+            </div>
+        </div>
+        
+        <!-- Toast Container -->
+        <div id="toast" class="toast hidden bg-green-500 text-white px-4 py-2 rounded shadow-lg"></div>
+        
+        <!-- Main App Container -->
+        <div id="game-container" class="hidden flex-1 flex flex-col">
+            <!-- Header -->
+            <header class="bg-gray-800 p-4 text-center">
+                <h1 class="text-2xl font-bold">🎨 Draw Party!</h1>
+                <div id="room-code" class="text-gray-400 mt-1"></div>
+                <div id="connection-status" class="text-sm mt-1"></div>
+            </header>
+            
+            <!-- Game Content -->
+            <main class="flex-1 p-4">
+                <!-- Welcome Screen -->
+                <div id="welcome-screen" class="text-center max-w-md mx-auto">
+                    <div class="text-6xl mb-6">🎨</div>
+                    <h2 class="text-3xl font-bold mb-4">Welcome to Draw Party!</h2>
+                    <p class="text-gray-400 mb-8">The easiest multiplayer drawing game ever - just share a link!</p>
+                    
+                    <div class="space-y-4">
+                        <button id="create-room" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-lg">
+                            🎮 Create New Game
+                        </button>
+                        <div class="text-gray-500">or</div>
+                        <div class="flex gap-2">
+                            <input id="join-code" type="text" placeholder="Enter room code" 
+                                   class="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 text-center uppercase" 
+                                   maxlength="4">
+                            <button id="join-room" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg">
+                                Join
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Lobby Screen -->
+                <div id="lobby-screen" class="hidden max-w-md mx-auto">
+                    <div class="text-center mb-6">
+                        <div class="text-4xl mb-2">🏠</div>
+                        <h2 class="text-2xl font-bold mb-2">Game Lobby</h2>
+                        <div class="bg-gray-800 rounded-lg p-4 mb-4">
+                            <div class="text-sm text-gray-400">Room Code</div>
+                            <div id="current-room-code" class="text-3xl font-mono font-bold"></div>
+                        </div>
+                        
+                        <button id="share-game" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg mb-4">
+                            📱 Share Game Link
+                        </button>
+                    </div>
+                    
+                    <div class="mb-6">
+                        <h3 class="text-lg font-bold mb-3">Players:</h3>
+                        <div id="players-list" class="space-y-2"></div>
+                        <div id="waiting-message" class="text-gray-400 text-center mt-4">
+                            Waiting for more players... (need at least 3)
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <input id="player-name" type="text" placeholder="Enter your name" 
+                               class="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3">
+                        <button id="start-game" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg disabled:bg-gray-600 disabled:cursor-not-allowed" disabled>
+                            🎨 Start Drawing!
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Drawing Screen -->
+                <div id="drawing-screen" class="hidden">
+                    <div class="text-center mb-4">
+                        <div id="drawing-prompt" class="text-xl font-bold mb-2 bg-blue-600 rounded-lg p-4"></div>
+                        <div id="drawing-timer" class="text-2xl font-mono"></div>
+                    </div>
+                    
+                    <div class="canvas-container mx-auto mb-4" style="max-width: 400px;">
+                        <canvas id="drawing-canvas" class="drawing-canvas w-full" width="400" height="300"></canvas>
+                    </div>
+                    
+                    <div class="flex flex-wrap gap-2 justify-center mb-4">
+                        <!-- Color palette -->
+                        <div class="flex gap-1 bg-gray-800 rounded-lg p-2">
+                            <button class="color-btn w-8 h-8 rounded-full bg-black border-2 border-white" data-color="#000000"></button>
+                            <button class="color-btn w-8 h-8 rounded-full bg-red-500" data-color="#ef4444"></button>
+                            <button class="color-btn w-8 h-8 rounded-full bg-blue-500" data-color="#3b82f6"></button>
+                            <button class="color-btn w-8 h-8 rounded-full bg-green-500" data-color="#10b981"></button>
+                            <button class="color-btn w-8 h-8 rounded-full bg-yellow-500" data-color="#f59e0b"></button>
+                            <button class="color-btn w-8 h-8 rounded-full bg-purple-500" data-color="#8b5cf6"></button>
+                            <button class="color-btn w-8 h-8 rounded-full bg-pink-500" data-color="#ec4899"></button>
+                            <button class="color-btn w-8 h-8 rounded-full bg-orange-500" data-color="#f97316"></button>
+                        </div>
+                        
+                        <!-- Tools -->
+                        <div class="flex gap-1 bg-gray-800 rounded-lg p-2">
+                            <button id="brush-small" class="tool-btn bg-gray-600 hover:bg-gray-500 px-3 py-2 rounded text-sm">Small</button>
+                            <button id="brush-medium" class="tool-btn bg-blue-600 hover:bg-blue-500 px-3 py-2 rounded text-sm">Medium</button>
+                            <button id="brush-large" class="tool-btn bg-gray-600 hover:bg-gray-500 px-3 py-2 rounded text-sm">Large</button>
+                            <button id="eraser" class="tool-btn bg-gray-600 hover:bg-gray-500 px-3 py-2 rounded text-sm">Eraser</button>
+                            <button id="clear-canvas" class="tool-btn bg-red-600 hover:bg-red-500 px-3 py-2 rounded text-sm">Clear</button>
+                        </div>
+                    </div>
+                    
+                    <div class="text-center">
+                        <div class="text-sm text-gray-400 mb-2">⚠️ No letters or words allowed!</div>
+                        <div id="other-players-status" class="text-gray-400"></div>
+                    </div>
+                </div>
+                
+                <!-- Guessing Screen -->
+                <div id="guessing-screen" class="hidden">
+                    <div class="text-center mb-4">
+                        <h2 class="text-2xl font-bold mb-2">What do you think this is?</h2>
+                        <div id="guessing-timer" class="text-xl font-mono mb-4"></div>
+                        <div class="text-sm text-gray-400 mb-4">Write the real answer OR something funny to trick others!</div>
+                    </div>
+                    
+                    <div class="mb-6 bg-gray-800 rounded-lg p-4">
+                        <canvas id="guess-canvas" class="w-full border rounded" width="400" height="300"></canvas>
+                        <div class="text-center mt-2 text-sm text-gray-400" id="artist-name"></div>
+                    </div>
+                    
+                    <div class="max-w-md mx-auto">
+                        <input id="guess-input" type="text" placeholder="What is this drawing?" 
+                               class="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 mb-4">
+                        <button id="submit-guess" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg">
+                            Submit Answer
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Voting Screen -->
+                <div id="voting-screen" class="hidden">
+                    <div class="text-center mb-4">
+                        <h2 class="text-2xl font-bold mb-2">Which is the REAL answer?</h2>
+                        <div id="voting-timer" class="text-xl font-mono mb-4"></div>
+                        <div class="text-sm text-gray-400">Vote for what you think was the original prompt</div>
+                    </div>
+                    
+                    <div class="mb-6 bg-gray-800 rounded-lg p-4">
+                        <canvas id="vote-canvas" class="w-full border rounded" width="400" height="300"></canvas>
+                    </div>
+                    
+                    <div id="voting-options" class="space-y-3 max-w-md mx-auto">
+                        <!-- Voting options will be populated here -->
+                    </div>
+                </div>
+                
+                <!-- Results Screen -->
+                <div id="results-screen" class="hidden">
+                    <div class="text-center mb-6">
+                        <h2 class="text-3xl font-bold mb-4">🎉 Round Results!</h2>
+                    </div>
+                    
+                    <div id="results-content" class="max-w-md mx-auto">
+                        <!-- Results will be populated here -->
+                    </div>
+                    
+                    <div class="text-center mt-6">
+                        <button id="next-round" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg">
+                            Next Round 🎨
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Final Scores Screen -->
+                <div id="final-scores-screen" class="hidden">
+                    <div class="text-center mb-6">
+                        <h2 class="text-3xl font-bold mb-4">🏆 Final Results!</h2>
+                    </div>
+                    
+                    <div id="final-scores-content" class="max-w-md mx-auto">
+                        <!-- Final scores will be populated here -->
+                    </div>
+                    
+                    <div class="text-center mt-6 space-y-4">
+                        <button id="play-again" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg">
+                            🎮 Play Again!
+                        </button>
+                        <button id="new-game" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg">
+                            🎨 New Game
+                        </button>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        // Game Core - All functionality embedded
+        class DrawPartyGame {
+            constructor() {
+                this.peer = null;
+                this.connections = new Map();
+                this.isHost = false;
+                this.isLocalMode = false;
+                this.playerId = this.generateId();
+                this.playerName = '';
+                this.roomCode = '';
+                this.gameState = {
+                    phase: 'LOBBY',
+                    players: new Map(),
+                    currentRound: 0,
+                    totalRounds: 5,
+                    currentArtist: null,
+                    currentDrawing: null,
+                    currentPrompt: '',
+                    guesses: new Map(),
+                    votes: new Map(),
+                    scores: new Map()
+                };
+                
+                // Drawing canvas state
+                this.isDrawing = false;
+                this.currentColor = '#000000';
+                this.currentSize = 3;
+                this.currentTool = 'brush';
+                
+                this.init();
+            }
+            
+            generateId() {
+                return Math.random().toString(36).substr(2, 9);
+            }
+            
+            generateRoomCode() {
+                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+                let result = '';
+                for (let i = 0; i < 4; i++) {
+                    result += chars.charAt(Math.floor(Math.random() * chars.length));
+                }
+                return result;
+            }
+            
+            init() {
+                this.hideLoading();
+                this.setupEventListeners();
+                this.setupCanvas();
+                this.checkForRoomInURL();
+            }
+            
+            hideLoading() {
+                setTimeout(() => {
+                    document.getElementById('loading').classList.add('hidden');
+                    document.getElementById('game-container').classList.remove('hidden');
+                }, 1000);
+            }
+            
+            checkForRoomInURL() {
+                const path = window.location.pathname.slice(1);
+                if (path && path.length === 4) {
+                    document.getElementById('join-code').value = path;
+                    this.joinRoom(path);
+                }
+            }
+            
+            setupEventListeners() {
+                // Welcome screen
+                document.getElementById('create-room').addEventListener('click', () => this.createRoom());
+                document.getElementById('join-room').addEventListener('click', () => {
+                    const code = document.getElementById('join-code').value.toUpperCase();
+                    if (code.length === 4) this.joinRoom(code);
+                });
+                
+                document.getElementById('join-code').addEventListener('input', (e) => {
+                    e.target.value = e.target.value.toUpperCase();
+                });
+                
+                // Lobby screen
+                document.getElementById('share-game').addEventListener('click', () => this.shareGame());
+                document.getElementById('start-game').addEventListener('click', () => this.startGame());
+                document.getElementById('player-name').addEventListener('input', (e) => {
+                    this.playerName = e.target.value.trim();
+                    this.updateStartButton();
+                });
+                
+                // Drawing tools
+                document.querySelectorAll('.color-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => this.selectColor(e.target.dataset.color));
+                });
+                
+                document.getElementById('brush-small').addEventListener('click', () => this.selectBrush(1));
+                document.getElementById('brush-medium').addEventListener('click', () => this.selectBrush(3));
+                document.getElementById('brush-large').addEventListener('click', () => this.selectBrush(6));
+                document.getElementById('eraser').addEventListener('click', () => this.selectEraser());
+                document.getElementById('clear-canvas').addEventListener('click', () => this.clearCanvas());
+                
+                // Game actions
+                document.getElementById('submit-guess').addEventListener('click', () => this.submitGuess());
+                document.getElementById('next-round').addEventListener('click', () => this.nextRound());
+                document.getElementById('play-again').addEventListener('click', () => this.playAgain());
+                document.getElementById('new-game').addEventListener('click', () => this.newGame());
+                
+                // Enter key handlers
+                document.getElementById('join-code').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') document.getElementById('join-room').click();
+                });
+                document.getElementById('player-name').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') document.getElementById('start-game').click();
+                });
+                document.getElementById('guess-input').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') document.getElementById('submit-guess').click();
+                });
+            }
+            
+            setupCanvas() {
+                const canvas = document.getElementById('drawing-canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // Touch events
+                canvas.addEventListener('touchstart', (e) => this.startDrawing(e), { passive: false });
+                canvas.addEventListener('touchmove', (e) => this.draw(e), { passive: false });
+                canvas.addEventListener('touchend', () => this.stopDrawing());
+                
+                // Mouse events  
+                canvas.addEventListener('mousedown', (e) => this.startDrawing(e));
+                canvas.addEventListener('mousemove', (e) => this.draw(e));
+                canvas.addEventListener('mouseup', () => this.stopDrawing());
+                canvas.addEventListener('mouseout', () => this.stopDrawing());
+                
+                // Prevent scrolling when drawing
+                canvas.addEventListener('touchstart', (e) => e.preventDefault());
+                canvas.addEventListener('touchmove', (e) => e.preventDefault());
+            }
+            
+            getCanvasCoordinates(e, canvas) {
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                
+                let clientX, clientY;
+                if (e.touches && e.touches[0]) {
+                    clientX = e.touches[0].clientX;
+                    clientY = e.touches[0].clientY;
+                } else {
+                    clientX = e.clientX;
+                    clientY = e.clientY;
+                }
+                
+                return {
+                    x: (clientX - rect.left) * scaleX,
+                    y: (clientY - rect.top) * scaleY
+                };
+            }
+            
+            startDrawing(e) {
+                if (this.gameState.phase !== 'DRAWING') return;
+                
+                this.isDrawing = true;
+                const canvas = document.getElementById('drawing-canvas');
+                const ctx = canvas.getContext('2d');
+                const pos = this.getCanvasCoordinates(e, canvas);
+                
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y);
+                
+                this.lastPos = pos;
+            }
+            
+            draw(e) {
+                if (!this.isDrawing || this.gameState.phase !== 'DRAWING') return;
+                
+                const canvas = document.getElementById('drawing-canvas');
+                const ctx = canvas.getContext('2d');
+                const pos = this.getCanvasCoordinates(e, canvas);
+                
+                ctx.lineWidth = this.currentSize;
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = this.currentTool === 'eraser' ? '#FFFFFF' : this.currentColor;
+                ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
+                
+                ctx.beginPath();
+                ctx.moveTo(this.lastPos.x, this.lastPos.y);
+                ctx.lineTo(pos.x, pos.y);
+                ctx.stroke();
+                
+                this.lastPos = pos;
+                
+                // Broadcast drawing to other players if host
+                if (this.isHost) {
+                    this.broadcastDrawingData();
+                }
+            }
+            
+            stopDrawing() {
+                this.isDrawing = false;
+            }
+            
+            selectColor(color) {
+                this.currentColor = color;
+                this.currentTool = 'brush';
+                this.updateToolButtons();
+            }
+            
+            selectBrush(size) {
+                this.currentSize = size;
+                this.currentTool = 'brush';
+                this.updateToolButtons();
+            }
+            
+            selectEraser() {
+                this.currentTool = 'eraser';
+                this.currentSize = 10;
+                this.updateToolButtons();
+            }
+            
+            updateToolButtons() {
+                document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('bg-blue-600'));
+                document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('border-white'));
+                
+                if (this.currentTool === 'brush') {
+                    const sizeMap = { 1: 'brush-small', 3: 'brush-medium', 6: 'brush-large' };
+                    document.getElementById(sizeMap[this.currentSize])?.classList.add('bg-blue-600');
+                    document.querySelector(`[data-color="${this.currentColor}"]`)?.classList.add('border-white');
+                } else if (this.currentTool === 'eraser') {
+                    document.getElementById('eraser').classList.add('bg-blue-600');
+                }
+            }
+            
+            clearCanvas() {
+                const canvas = document.getElementById('drawing-canvas');
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                if (this.isHost) {
+                    this.broadcastDrawingData();
+                }
+            }
+            
+            createRoom() {
+                this.roomCode = this.generateRoomCode();
+                this.isHost = true;
+                
+                // Update URL
+                window.history.pushState({}, '', `/${this.roomCode}`);
+                
+                this.initializePeer();
+                this.showLobby();
+            }
+            
+            joinRoom(code) {
+                this.roomCode = code;
+                this.isHost = false;
+                
+                // Update URL
+                window.history.pushState({}, '', `/${this.roomCode}`);
+                
+                this.initializePeer();
+                this.showLobby();
+            }
+            
+            initializePeer() {
+                console.log('Initializing peer connection...');
+                console.log('Current hostname:', window.location.hostname);
+                console.log('Current protocol:', window.location.protocol);
+                
+                try {
+                    // For local testing, we'll use a different approach
+                    if (window.location.hostname === 'localhost' || 
+                        window.location.hostname === '127.0.0.1' || 
+                        window.location.protocol === 'file:') {
+                        console.log('🏠 Local testing mode activated - using localStorage sync');
+                        this.setupLocalTesting();
+                        return;
+                    }
+                    
+                    console.log('🌐 Production mode - using PeerJS server');
+                    this.peer = new Peer(this.playerId, {
+                        host: 'peerjs-server.herokuapp.com',
+                        port: 443,
+                        secure: true,
+                        debug: 0
+                    });
+                    
+                    this.peer.on('open', (id) => {
+                        console.log('Peer initialized:', id);
+                        this.updateConnectionStatus('Connected');
+                        
+                        if (!this.isHost) {
+                            this.connectToHost();
+                        }
+                    });
+                    
+                    this.peer.on('connection', (conn) => {
+                        this.handleConnection(conn);
+                    });
+                    
+                    this.peer.on('error', (err) => {
+                        console.error('Peer error:', err);
+                        this.updateConnectionStatus('Connection error');
+                        this.showToast('Connection error. Please try again.', 'error');
+                    });
+                    
+                } catch (error) {
+                    console.error('Failed to initialize peer:', error);
+                    
+                    // If PeerJS fails, fall back to local mode
+                    console.log('🔄 PeerJS failed, falling back to local testing mode');
+                    this.setupLocalTesting();
+                }
+            }
+            
+            setupLocalTesting() {
+                console.log('🏠 Setting up local testing mode...');
+                
+                // Prevent duplicate setup
+                if (this.isLocalMode) {
+                    console.log('Local mode already initialized');
+                    return;
+                }
+                
+                // Mark as local mode to prevent PeerJS initialization
+                this.isLocalMode = true;
+                
+                // Clean up any existing peer connection
+                if (this.peer) {
+                    try {
+                        this.peer.destroy();
+                    } catch (e) {
+                        console.log('Cleaned up peer connection');
+                    }
+                    this.peer = null;
+                }
+                
+                // For local testing, simulate peer connections
+                this.updateConnectionStatus('Local testing mode');
+                this.localConnections = new Map();
+                
+                // Simulate successful peer initialization
+                setTimeout(() => {
+                    console.log('✅ Local testing mode initialized');
+                    this.updateConnectionStatus('Connected (Local)');
+                    
+                    if (!this.isHost) {
+                        this.connectToLocalHost();
+                    }
+                    
+                    // Show success message
+                    this.showToast('Local testing mode active! Open multiple tabs to test multiplayer.', 'success');
+                }, 500);
+                
+                // Set up local storage for cross-tab communication
+                this.setupLocalStorageSync();
+            }
+            
+            setupLocalStorageSync() {
+                // Use localStorage to sync between browser tabs for local testing
+                const storageKey = `drawparty_${this.roomCode}`;
+                
+                // Listen for storage changes (from other tabs)
+                window.addEventListener('storage', (e) => {
+                    if (e.key === storageKey && e.newValue) {
+                        const data = JSON.parse(e.newValue);
+                        this.handleLocalMessage(data);
+                    }
+                });
+                
+                // Broadcast to localStorage
+                this.broadcastLocal = (message) => {
+                    const data = {
+                        timestamp: Date.now(),
+                        fromPlayer: this.playerId,
+                        message: message
+                    };
+                    localStorage.setItem(storageKey, JSON.stringify(data));
+                };
+                
+                // Announce presence
+                this.broadcastLocal({
+                    type: 'PLAYER_JOIN',
+                    playerId: this.playerId,
+                    playerName: this.playerName || 'Player'
+                });
+            }
+            
+            handleLocalMessage(data) {
+                // Don't process our own messages
+                if (data.fromPlayer === this.playerId) return;
+                
+                this.handleMessage(data.message, data.fromPlayer);
+            }
+            
+            connectToLocalHost() {
+                // Simulate connecting to host in local mode
+                setTimeout(() => {
+                    console.log('Connected to local host');
+                    this.localConnections.set('host', true);
+                }, 200);
+            }
+            
+            connectToHost() {
+                const hostId = `${this.roomCode}_HOST`;
+                try {
+                    const conn = this.peer.connect(hostId);
+                    this.handleConnection(conn);
+                } catch (error) {
+                    console.error('Failed to connect to host:', error);
+                    this.showToast('Room not found. Check the code and try again.', 'error');
+                }
+            }
+            
+            handleConnection(conn) {
+                conn.on('open', () => {
+                    console.log('Connection established');
+                    this.connections.set(conn.peer, conn);
+                    
+                    if (this.isHost) {
+                        this.sendToPlayer(conn.peer, { type: 'ROOM_JOINED', roomCode: this.roomCode });
+                    } else {
+                        this.sendToPlayer(conn.peer, { type: 'PLAYER_JOIN', playerId: this.playerId, playerName: this.playerName });
+                    }
+                });
+                
+                conn.on('data', (data) => {
+                    this.handleMessage(data, conn.peer);
+                });
+                
+                conn.on('close', () => {
+                    console.log('Connection closed');
+                    this.connections.delete(conn.peer);
+                    this.updatePlayersDisplay();
+                });
+                
+                conn.on('error', (err) => {
+                    console.error('Connection error:', err);
+                });
+            }
+            
+            handleMessage(message, fromPeer) {
+                switch (message.type) {
+                    case 'PLAYER_JOIN':
+                        if (this.isHost) {
+                            this.gameState.players.set(message.playerId, {
+                                id: message.playerId,
+                                name: message.playerName,
+                                score: 0,
+                                connected: true
+                            });
+                            this.broadcastGameState();
+                        }
+                        this.updatePlayersDisplay();
+                        break;
+                        
+                    case 'GAME_STATE_UPDATE':
+                        this.gameState = { ...this.gameState, ...message.gameState };
+                        this.updateUI();
+                        break;
+                        
+                    case 'START_GAME':
+                        this.handleStartGame();
+                        break;
+                        
+                    case 'DRAWING_UPDATE':
+                        this.updateCanvas(message.canvasData);
+                        break;
+                        
+                    case 'GUESS_SUBMITTED':
+                        if (this.isHost) {
+                            this.gameState.guesses.set(message.playerId, message.guess);
+                            this.checkAllGuessesSubmitted();
+                        }
+                        break;
+                        
+                    case 'VOTE_SUBMITTED':
+                        if (this.isHost) {
+                            this.gameState.votes.set(message.playerId, message.vote);
+                            this.checkAllVotesSubmitted();
+                        }
+                        break;
+                }
+            }
+            
+            sendToPlayer(playerId, message) {
+                // For local testing, use localStorage
+                if (this.broadcastLocal) {
+                    this.broadcastLocal(message);
+                    return;
+                }
+                
+                const conn = this.connections.get(playerId);
+                if (conn && conn.open) {
+                    conn.send(message);
+                }
+            }
+            
+            broadcastMessage(message) {
+                // For local testing, use localStorage
+                if (this.broadcastLocal) {
+                    this.broadcastLocal(message);
+                    return;
+                }
+                
+                this.connections.forEach((conn, playerId) => {
+                    if (conn.open) {
+                        conn.send(message);
+                    }
+                });
+            }
+            
+            broadcastGameState() {
+                this.broadcastMessage({
+                    type: 'GAME_STATE_UPDATE',
+                    gameState: this.gameState
+                });
+            }
+            
+            showLobby() {
+                this.showScreen('lobby-screen');
+                document.getElementById('current-room-code').textContent = this.roomCode;
+                document.getElementById('room-code').textContent = `Room: ${this.roomCode}`;
+                
+                // Add host as first player
+                this.gameState.players.set(this.playerId, {
+                    id: this.playerId,
+                    name: this.playerName || 'Host',
+                    score: 0,
+                    connected: true
+                });
+                
+                this.updatePlayersDisplay();
+            }
+            
+            updatePlayersDisplay() {
+                const playersList = document.getElementById('players-list');
+                playersList.innerHTML = '';
+                
+                this.gameState.players.forEach((player, id) => {
+                    const playerDiv = document.createElement('div');
+                    playerDiv.className = 'bg-gray-800 rounded-lg p-3 flex items-center justify-between';
+                    playerDiv.innerHTML = `
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                                ${player.name.charAt(0).toUpperCase()}
+                            </div>
+                            <span>${player.name}</span>
+                            ${id === this.playerId ? '<span class="text-blue-400">(You)</span>' : ''}
+                            ${this.isHost && id === this.playerId ? '<span class="text-yellow-400">(Host)</span>' : ''}
+                        </div>
+                        <div class="text-sm text-gray-400">
+                            Score: ${player.score}
+                        </div>
+                    `;
+                    playersList.appendChild(playerDiv);
+                });
+                
+                this.updateStartButton();
+            }
+            
+            updateStartButton() {
+                const startButton = document.getElementById('start-game');
+                const canStart = this.isHost && 
+                                this.gameState.players.size >= 3 && 
+                                this.playerName.length > 0;
+                
+                startButton.disabled = !canStart;
+                
+                const waitingMessage = document.getElementById('waiting-message');
+                if (this.gameState.players.size < 3) {
+                    waitingMessage.textContent = `Waiting for more players... (need at least 3, have ${this.gameState.players.size})`;
+                } else if (!this.playerName) {
+                    waitingMessage.textContent = 'Enter your name to continue';
+                } else if (this.isHost) {
+                    waitingMessage.textContent = 'Ready to start!';
+                } else {
+                    waitingMessage.textContent = 'Waiting for host to start the game...';
+                }
+            }
+            
+            shareGame() {
+                const shareUrl = `${window.location.origin}/${this.roomCode}`;
+                const shareData = {
+                    title: '🎨 Join our drawing game!',
+                    text: `Game time! Tap to join →`,
+                    url: shareUrl
+                };
+                
+                if (navigator.share) {
+                    navigator.share(shareData).catch(console.error);
+                } else {
+                    navigator.clipboard.writeText(shareUrl).then(() => {
+                        this.showToast('Link copied! Send to friends 📱', 'success');
+                    }).catch(() => {
+                        this.showToast('Share URL: ' + shareUrl, 'info');
+                    });
+                }
+            }
+            
+            startGame() {
+                if (!this.isHost || this.gameState.players.size < 3) return;
+                
+                this.gameState.phase = 'DRAWING';
+                this.gameState.currentRound = 1;
+                this.assignPrompts();
+                this.broadcastGameState();
+                this.broadcastMessage({ type: 'START_GAME' });
+                this.handleStartGame();
+            }
+            
+            handleStartGame() {
+                this.showDrawingScreen();
+                this.startDrawingTimer();
+            }
+            
+            assignPrompts() {
+                // Assign unique prompts to each player
+                const prompts = this.getRandomPrompts(this.gameState.players.size);
+                const playerIds = Array.from(this.gameState.players.keys());
+                
+                this.gameState.playerPrompts = new Map();
+                playerIds.forEach((playerId, index) => {
+                    this.gameState.playerPrompts.set(playerId, prompts[index]);
+                });
+            }
+            
+            getRandomPrompts(count) {
+                const allPrompts = [
+                    "Robot eating pizza", "Cat playing guitar", "Dinosaur on skateboard",
+                    "Wizard making coffee", "Shark wearing hat", "Invisible man in mirror",
+                    "Spaghetti tornado", "Crying birthday cake", "Dancing refrigerator", 
+                    "Sneezing volcano", "Time-traveling sandwich", "Vampire dentist appointment",
+                    "Yoga class for furniture", "Cow abducting aliens", "Angry broccoli army",
+                    "Romantic dinner between phones", "Hamster business meeting", "Cactus beauty pageant",
+                    "Penguin fire department", "Banana phone tech support", "Pirate scared of water",
+                    "Grandma vs. ninja squirrels", "Battle of the condiments", "Escape from vegetable prison",
+                    "Racing shopping carts downhill", "Dodgeball with planets", "Santa's summer vacation",
+                    "Halloween costume for house", "Turkey plotting revenge", "New Year's Eve for clocks",
+                    "Valentine's Day for robots", "Ninja fighting a piñata", "Octopus bartender",
+                    "Vampire accountant", "Cowboy surfing in space", "Grandma skateboarding in a volcano",
+                    "The feeling of Monday", "WiFi signal as a person", "Procrastination monster",
+                    "Sound of silence", "Upside-down gravity", "Sleepy ninja eating spaghetti",
+                    "Angry dentist fighting a balloon", "Banana driving a car", "Pizza doing yoga",
+                    "Dinosaur mixed with disco ball", "Submarine mixed with birthday cake"
+                ];
+                
+                const shuffled = allPrompts.sort(() => 0.5 - Math.random());
+                return shuffled.slice(0, count);
+            }
+            
+            showDrawingScreen() {
+                this.showScreen('drawing-screen');
+                const myPrompt = this.gameState.playerPrompts?.get(this.playerId) || 'Draw something fun!';
+                document.getElementById('drawing-prompt').textContent = `Draw this: ${myPrompt}`;
+                
+                // Clear and prepare canvas
+                this.clearCanvas();
+                this.updateToolButtons();
+            }
+            
+            startDrawingTimer() {
+                let timeLeft = 60;
+                const timerElement = document.getElementById('drawing-timer');
+                
+                const timer = setInterval(() => {
+                    const minutes = Math.floor(timeLeft / 60);
+                    const seconds = timeLeft % 60;
+                    timerElement.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                    
+                    if (timeLeft <= 10) {
+                        timerElement.classList.add('text-red-500');
+                    }
+                    
+                    if (timeLeft <= 0) {
+                        clearInterval(timer);
+                        this.endDrawingPhase();
+                    }
+                    
+                    timeLeft--;
+                }, 1000);
+            }
+            
+            endDrawingPhase() {
+                if (this.isHost) {
+                    this.gameState.phase = 'GUESSING';
+                    this.selectRandomDrawing();
+                    this.broadcastGameState();
+                }
+                this.showGuessingScreen();
+            }
+            
+            selectRandomDrawing() {
+                const playerIds = Array.from(this.gameState.players.keys());
+                const randomIndex = Math.floor(Math.random() * playerIds.length);
+                this.gameState.currentArtist = playerIds[randomIndex];
+                this.gameState.currentPrompt = this.gameState.playerPrompts.get(this.gameState.currentArtist);
+                
+                // Capture canvas data (in real implementation, this would be sent from the artist)
+                const canvas = document.getElementById('drawing-canvas');
+                this.gameState.currentDrawing = canvas.toDataURL();
+            }
+            
+            showGuessingScreen() {
+                this.showScreen('guessing-screen');
+                
+                // Copy drawing to guess canvas
+                const sourceCanvas = document.getElementById('drawing-canvas');
+                const guessCanvas = document.getElementById('guess-canvas');
+                const ctx = guessCanvas.getContext('2d');
+                
+                if (this.gameState.currentDrawing) {
+                    const img = new Image();
+                    img.onload = () => {
+                        ctx.clearRect(0, 0, guessCanvas.width, guessCanvas.height);
+                        ctx.drawImage(img, 0, 0);
+                    };
+                    img.src = this.gameState.currentDrawing;
+                } else {
+                    ctx.drawImage(sourceCanvas, 0, 0);
+                }
+                
+                const artistName = this.gameState.players.get(this.gameState.currentArtist)?.name || 'Someone';
+                document.getElementById('artist-name').textContent = `Drawn by ${artistName}`;
+                
+                this.startGuessingTimer();
+            }
+            
+            startGuessingTimer() {
+                let timeLeft = 30;
+                const timerElement = document.getElementById('guessing-timer');
+                
+                const timer = setInterval(() => {
+                    timerElement.textContent = `⏰ ${timeLeft}s`;
+                    
+                    if (timeLeft <= 5) {
+                        timerElement.classList.add('text-red-500');
+                    }
+                    
+                    if (timeLeft <= 0) {
+                        clearInterval(timer);
+                        this.submitGuess();
+                    }
+                    
+                    timeLeft--;
+                }, 1000);
+            }
+            
+            submitGuess() {
+                const guessInput = document.getElementById('guess-input');
+                const guess = guessInput.value.trim();
+                
+                if (!guess) {
+                    this.showToast('Please enter a guess!', 'warning');
+                    return;
+                }
+                
+                if (this.isHost) {
+                    this.gameState.guesses.set(this.playerId, guess);
+                    this.checkAllGuessesSubmitted();
+                } else {
+                    this.sendToPlayer(`${this.roomCode}_HOST`, {
+                        type: 'GUESS_SUBMITTED',
+                        playerId: this.playerId,
+                        guess: guess
+                    });
+                }
+                
+                guessInput.disabled = true;
+                document.getElementById('submit-guess').disabled = true;
+                this.showToast('Guess submitted!', 'success');
+            }
+            
+            checkAllGuessesSubmitted() {
+                if (this.gameState.guesses.size >= this.gameState.players.size - 1) { // -1 for artist
+                    this.startVotingPhase();
+                }
+            }
+            
+            startVotingPhase() {
+                this.gameState.phase = 'VOTING';
+                this.broadcastGameState();
+                this.showVotingScreen();
+            }
+            
+            showVotingScreen() {
+                this.showScreen('voting-screen');
+                
+                // Copy drawing to vote canvas
+                const voteCanvas = document.getElementById('vote-canvas');
+                const ctx = voteCanvas.getContext('2d');
+                
+                if (this.gameState.currentDrawing) {
+                    const img = new Image();
+                    img.onload = () => {
+                        ctx.clearRect(0, 0, voteCanvas.width, voteCanvas.height);
+                        ctx.drawImage(img, 0, 0);
+                    };
+                    img.src = this.gameState.currentDrawing;
+                }
+                
+                this.displayVotingOptions();
+                this.startVotingTimer();
+            }
+            
+            displayVotingOptions() {
+                const votingOptions = document.getElementById('voting-options');
+                votingOptions.innerHTML = '';
+                
+                // Collect all answers plus the real one
+                const allOptions = Array.from(this.gameState.guesses.values());
+                allOptions.push(this.gameState.currentPrompt);
+                
+                // Shuffle options
+                const shuffledOptions = allOptions.sort(() => 0.5 - Math.random());
+                
+                shuffledOptions.forEach((option, index) => {
+                    const button = document.createElement('button');
+                    button.className = 'w-full bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg p-4 text-left transition-colors';
+                    button.textContent = option;
+                    button.addEventListener('click', () => this.submitVote(option));
+                    votingOptions.appendChild(button);
+                });
+            }
+            
+            startVotingTimer() {
+                let timeLeft = 20;
+                const timerElement = document.getElementById('voting-timer');
+                
+                const timer = setInterval(() => {
+                    timerElement.textContent = `⏰ ${timeLeft}s`;
+                    
+                    if (timeLeft <= 5) {
+                        timerElement.classList.add('text-red-500');
+                    }
+                    
+                    if (timeLeft <= 0) {
+                        clearInterval(timer);
+                        // Auto-submit random vote if no vote made
+                        if (!this.gameState.votes.has(this.playerId)) {
+                            const options = Array.from(document.getElementById('voting-options').children);
+                            const randomOption = options[Math.floor(Math.random() * options.length)];
+                            this.submitVote(randomOption.textContent);
+                        }
+                    }
+                    
+                    timeLeft--;
+                }, 1000);
+            }
+            
+            submitVote(vote) {
+                if (this.isHost) {
+                    this.gameState.votes.set(this.playerId, vote);
+                    this.checkAllVotesSubmitted();
+                } else {
+                    this.sendToPlayer(`${this.roomCode}_HOST`, {
+                        type: 'VOTE_SUBMITTED',
+                        playerId: this.playerId,
+                        vote: vote
+                    });
+                }
+                
+                // Disable all voting buttons
+                document.querySelectorAll('#voting-options button').forEach(btn => {
+                    btn.disabled = true;
+                    if (btn.textContent === vote) {
+                        btn.classList.add('bg-blue-600');
+                    }
+                });
+                
+                this.showToast('Vote submitted!', 'success');
+            }
+            
+            checkAllVotesSubmitted() {
+                if (this.gameState.votes.size >= this.gameState.players.size - 1) { // -1 for artist
+                    this.calculateScores();
+                    this.showResults();
+                }
+            }
+            
+            calculateScores() {
+                // Award points based on voting results
+                this.gameState.votes.forEach((vote, voterId) => {
+                    // Points for correct guesses
+                    if (vote === this.gameState.currentPrompt) {
+                        const player = this.gameState.players.get(voterId);
+                        if (player) {
+                            player.score += 200;
+                        }
+                    }
+                    
+                    // Points for tricking others with fake answers
+                    this.gameState.guesses.forEach((guess, guesserId) => {
+                        if (vote === guess && voterId !== guesserId) {
+                            const trickster = this.gameState.players.get(guesserId);
+                            if (trickster) {
+                                trickster.score += 50;
+                            }
+                        }
+                    });
+                });
+                
+                // Points for artist (per correct guess)
+                let correctGuesses = 0;
+                this.gameState.votes.forEach(vote => {
+                    if (vote === this.gameState.currentPrompt) {
+                        correctGuesses++;
+                    }
+                });
+                
+                const artist = this.gameState.players.get(this.gameState.currentArtist);
+                if (artist) {
+                    artist.score += correctGuesses * 100;
+                }
+            }
+            
+            showResults() {
+                this.showScreen('results-screen');
+                
+                const resultsContent = document.getElementById('results-content');
+                resultsContent.innerHTML = '';
+                
+                // Show the reveal
+                const revealDiv = document.createElement('div');
+                revealDiv.className = 'bg-gray-800 rounded-lg p-4 mb-4';
+                revealDiv.innerHTML = `
+                    <div class="text-center mb-4">
+                        <div class="text-lg font-bold">The real answer was...</div>
+                        <div class="text-2xl font-bold text-green-400 mt-2">"${this.gameState.currentPrompt}"</div>
+                        <div class="text-sm text-gray-400 mt-1">Drawn by ${this.gameState.players.get(this.gameState.currentArtist)?.name}</div>
+                    </div>
+                `;
+                
+                // Show vote breakdown
+                const voteBreakdown = document.createElement('div');
+                voteBreakdown.className = 'space-y-2';
+                
+                const voteCounts = new Map();
+                this.gameState.votes.forEach(vote => {
+                    voteCounts.set(vote, (voteCounts.get(vote) || 0) + 1);
+                });
+                
+                voteCounts.forEach((count, answer) => {
+                    const isCorrect = answer === this.gameState.currentPrompt;
+                    const submitter = Array.from(this.gameState.guesses.entries()).find(([id, guess]) => guess === answer)?.[0];
+                    const submitterName = submitter ? this.gameState.players.get(submitter)?.name : 'Original';
+                    
+                    const voteDiv = document.createElement('div');
+                    voteDiv.className = `p-3 rounded ${isCorrect ? 'bg-green-600' : 'bg-gray-700'}`;
+                    voteDiv.innerHTML = `
+                        <div class="font-bold">"${answer}"</div>
+                        <div class="text-sm text-gray-300">by ${submitterName} • ${count} vote${count !== 1 ? 's' : ''}</div>
+                    `;
+                    voteBreakdown.appendChild(voteDiv);
+                });
+                
+                revealDiv.appendChild(voteBreakdown);
+                resultsContent.appendChild(revealDiv);
+                
+                // Show updated scores
+                const scoresDiv = document.createElement('div');
+                scoresDiv.className = 'bg-gray-800 rounded-lg p-4';
+                scoresDiv.innerHTML = '<div class="text-lg font-bold mb-3">Scores:</div>';
+                
+                const sortedPlayers = Array.from(this.gameState.players.values()).sort((a, b) => b.score - a.score);
+                sortedPlayers.forEach((player, index) => {
+                    const playerDiv = document.createElement('div');
+                    playerDiv.className = 'flex justify-between items-center py-2';
+                    playerDiv.innerHTML = `
+                        <span>${index + 1}. ${player.name}</span>
+                        <span class="font-bold">${player.score}</span>
+                    `;
+                    scoresDiv.appendChild(playerDiv);
+                });
+                
+                resultsContent.appendChild(scoresDiv);
+                
+                this.broadcastGameState();
+            }
+            
+            nextRound() {
+                if (this.gameState.currentRound >= this.gameState.totalRounds) {
+                    this.showFinalResults();
+                } else {
+                    this.gameState.currentRound++;
+                    this.gameState.phase = 'DRAWING';
+                    this.gameState.guesses.clear();
+                    this.gameState.votes.clear();
+                    
+                    this.assignPrompts();
+                    this.broadcastGameState();
+                    this.handleStartGame();
+                }
+            }
+            
+            showFinalResults() {
+                this.showScreen('final-scores-screen');
+                
+                const finalScoresContent = document.getElementById('final-scores-content');
+                finalScoresContent.innerHTML = '';
+                
+                const sortedPlayers = Array.from(this.gameState.players.values()).sort((a, b) => b.score - a.score);
+                
+                sortedPlayers.forEach((player, index) => {
+                    const playerDiv = document.createElement('div');
+                    playerDiv.className = `bg-gray-800 rounded-lg p-4 mb-3 ${index === 0 ? 'border-2 border-yellow-400' : ''}`;
+                    
+                    let medal = '';
+                    if (index === 0) medal = '🏆';
+                    else if (index === 1) medal = '🥈';
+                    else if (index === 2) medal = '🥉';
+                    
+                    playerDiv.innerHTML = `
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center gap-3">
+                                <span class="text-2xl">${medal}</span>
+                                <div>
+                                    <div class="font-bold text-lg">${player.name}</div>
+                                    <div class="text-sm text-gray-400">${index === 0 ? 'Winner!' : `${index + 1}${this.getOrdinalSuffix(index + 1)} place`}</div>
+                                </div>
+                            </div>
+                            <div class="text-2xl font-bold">${player.score}</div>
+                        </div>
+                    `;
+                    finalScoresContent.appendChild(playerDiv);
+                });
+            }
+            
+            getOrdinalSuffix(num) {
+                const j = num % 10;
+                const k = num % 100;
+                if (j == 1 && k != 11) return "st";
+                if (j == 2 && k != 12) return "nd";
+                if (j == 3 && k != 13) return "rd";
+                return "th";
+            }
+            
+            playAgain() {
+                // Reset game state for new game with same players
+                this.gameState.currentRound = 0;
+                this.gameState.phase = 'LOBBY';
+                this.gameState.guesses.clear();
+                this.gameState.votes.clear();
+                
+                // Reset player scores
+                this.gameState.players.forEach(player => {
+                    player.score = 0;
+                });
+                
+                this.broadcastGameState();
+                this.showLobby();
+            }
+            
+            newGame() {
+                // Redirect to home page for completely new game
+                window.location.href = '/';
+            }
+            
+            broadcastDrawingData() {
+                const canvas = document.getElementById('drawing-canvas');
+                const dataURL = canvas.toDataURL();
+                
+                this.broadcastMessage({
+                    type: 'DRAWING_UPDATE',
+                    canvasData: dataURL
+                });
+            }
+            
+            updateCanvas(dataURL) {
+                const canvas = document.getElementById('drawing-canvas');
+                const ctx = canvas.getContext('2d');
+                const img = new Image();
+                
+                img.onload = () => {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0);
+                };
+                img.src = dataURL;
+            }
+            
+            updateConnectionStatus(status) {
+                const statusElement = document.getElementById('connection-status');
+                statusElement.textContent = status;
+                
+                if (status.includes('error')) {
+                    statusElement.className = 'text-sm mt-1 text-red-400';
+                } else {
+                    statusElement.className = 'text-sm mt-1 text-green-400';
+                }
+            }
+            
+            showScreen(screenId) {
+                // Hide all screens
+                document.querySelectorAll('[id$="-screen"]').forEach(screen => {
+                    screen.classList.add('hidden');
+                });
+                
+                // Show target screen
+                document.getElementById(screenId).classList.remove('hidden');
+            }
+            
+            showToast(message, type = 'info') {
+                const toast = document.getElementById('toast');
+                toast.textContent = message;
+                toast.className = `toast px-4 py-2 rounded shadow-lg ${
+                    type === 'success' ? 'bg-green-500' : 
+                    type === 'error' ? 'bg-red-500' : 
+                    type === 'warning' ? 'bg-yellow-500' : 
+                    'bg-blue-500'
+                } text-white`;
+                
+                toast.classList.remove('hidden');
+                
+                setTimeout(() => {
+                    toast.classList.add('hidden');
+                }, 3000);
+            }
+            
+            updateUI() {
+                // Update UI based on current game state
+                switch (this.gameState.phase) {
+                    case 'LOBBY':
+                        this.updatePlayersDisplay();
+                        break;
+                    case 'DRAWING':
+                        // Drawing phase UI updates
+                        break;
+                    case 'GUESSING':
+                        // Update guessing display
+                        break;
+                    case 'VOTING':
+                        // Update voting display
+                        break;
+                }
+            }
+        }
+        
+        // Initialize the game when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            window.game = new DrawPartyGame();
+        });
+        
+        // Handle page refresh/reconnection
+        window.addEventListener('beforeunload', () => {
+            if (window.game && window.game.peer) {
+                window.game.peer.disconnect();
+            }
+        });
+        
+        // Register Service Worker for offline functionality
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then((registration) => {
+                        console.log('Service Worker registered successfully:', registration.scope);
+                        
+                        // Listen for updates
+                        registration.addEventListener('updatefound', () => {
+                            const newWorker = registration.installing;
+                            if (newWorker) {
+                                newWorker.addEventListener('statechange', () => {
+                                    if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                        // New version available, could show update prompt
+                                        console.log('New version available');
+                                    }
+                                });
+                            }
+                        });
+                    })
+                    .catch((error) => {
+                        console.log('Service Worker registration failed:', error);
+                    });
+                
+                // Listen for messages from service worker
+                navigator.serviceWorker.addEventListener('message', (event) => {
+                    if (event.data && event.data.type === 'RECONNECT_GAME') {
+                        // Attempt to reconnect to game
+                        if (window.game && window.game.roomCode) {
+                            window.game.initializePeer();
+                        }
+                    }
+                });
+            });
+        }
+    </script>
+</body>
+</html>
