@@ -563,46 +563,49 @@
                 this.roomCode = this.generateRoomCode();
                 this.isHost = true;
                 
-                // Save host presence for cross-tab detection
-                const storageKey = `drawparty_${this.roomCode}`;
-                const hostData = {
-                    timestamp: Date.now(),
-                    fromPlayer: this.playerId,
-                    isHost: true,
-                    message: { type: 'HOST_PRESENCE', playerId: this.playerId }
-                };
-                localStorage.setItem(storageKey, JSON.stringify(hostData));
-                
                 // Update URL for sharing
                 const basePath = window.location.pathname.includes('/draw-party-game') ? '/draw-party-game' : '';
                 window.history.pushState({}, '', `${basePath}/${this.roomCode}`);
                 
-                this.initializePeer();
+                // Create peer with host ID so others can find us
+                this.createHostPeer();
                 this.showLobby();
+            }
+            
+            createHostPeer() {
+                const hostId = `${this.roomCode}_HOST`;
+                
+                this.peer = new Peer(hostId, {
+                    secure: true,
+                    debug: 0,
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:global.stun.twilio.com:3478' }
+                        ]
+                    }
+                });
+                
+                this.peer.on('open', (id) => {
+                    this.updateConnectionStatus('Host ready - share room code!');
+                });
+                
+                this.peer.on('connection', (conn) => {
+                    this.handleConnection(conn);
+                });
+                
+                this.peer.on('error', (err) => {
+                    this.updateConnectionStatus('Connection error');
+                    this.setupLocalTesting();
+                });
             }
             
             joinRoom(code) {
                 this.roomCode = code;
                 
-                // Check for existing host in localStorage (for same-device testing)
-                const storageKey = `drawparty_${code}`;
-                const existingRoomData = localStorage.getItem(storageKey);
-                
-                if (existingRoomData) {
-                    try {
-                        const data = JSON.parse(existingRoomData);
-                        // If recent activity and has host, join as player
-                        if (data.timestamp && (Date.now() - data.timestamp) < 5 * 60 * 1000 && data.isHost) {
-                            this.isHost = false;
-                        } else {
-                            this.isHost = true;
-                        }
-                    } catch (e) {
-                        this.isHost = true;
-                    }
-                } else {
-                    this.isHost = true;
-                }
+                // For cross-device multiplayer, we always start as player and try to connect to host
+                // Only become host if no host exists
+                this.isHost = false;
                 
                 // Update URL - handle GitHub Pages path
                 const basePath = window.location.pathname.includes('/draw-party-game') ? '/draw-party-game' : '';
@@ -622,49 +625,40 @@
                         return;
                     }
                     
-                    // Production P2P mode for real cross-device play
-                    this.peer = new Peer(this.playerId, {
-                        secure: true,
-                        debug: 0,
-                        config: {
-                            iceServers: [
-                                { urls: 'stun:stun.l.google.com:19302' },
-                                { urls: 'stun:global.stun.twilio.com:3478' }
-                            ]
-                        }
-                    });
-                    
-                    this.peer.on('open', (id) => {
-                        console.log('Peer initialized:', id);
-                        this.updateConnectionStatus('Connected');
-                        
-                        if (!this.isHost) {
-                            this.connectToHost();
-                        }
-                    });
-                    
-                    this.peer.on('connection', (conn) => {
-                        this.handleConnection(conn);
-                    });
-                    
-                    this.peer.on('error', (err) => {
-                        // Auto-fallback to localStorage mode for local testing
-                        this.updateConnectionStatus('Local mode');
-                        if (this.peer) {
-                            try { this.peer.destroy(); } catch (e) {}
-                            this.peer = null;
-                        }
-                        this.setupLocalTesting();
-                    });
+                    // For joinRoom, create player peer and try to connect to host
+                    if (!this.isHost) {
+                        this.createPlayerPeer();
+                    }
+                    // For createRoom, host peer is already created in createHostPeer()
                     
                 } catch (error) {
-                    console.error('Failed to initialize peer:', error);
-                    
                     // If PeerJS fails, fall back to local mode
-                    console.log('🔄 PeerJS failed, falling back to localStorage mode');
-                    this.updateConnectionStatus('Using localStorage fallback');
+                    this.updateConnectionStatus('Local mode fallback');
                     this.setupLocalTesting();
                 }
+            }
+            
+            createPlayerPeer() {
+                this.peer = new Peer(this.playerId, {
+                    secure: true,
+                    debug: 0,
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:global.stun.twilio.com:3478' }
+                        ]
+                    }
+                });
+                
+                this.peer.on('open', (id) => {
+                    this.updateConnectionStatus('Connecting...');
+                    this.connectToHost();
+                });
+                
+                this.peer.on('error', (err) => {
+                    this.updateConnectionStatus('Connection failed');
+                    this.setupLocalTesting();
+                });
             }
             
             setupLocalTesting() {
@@ -748,13 +742,67 @@
             
             connectToHost() {
                 const hostId = `${this.roomCode}_HOST`;
+                
+                // Set a timeout for connection attempt
+                const connectionTimeout = setTimeout(() => {
+                    // No host found, become the host
+                    this.becomeHost();
+                }, 3000);
+                
                 try {
                     const conn = this.peer.connect(hostId);
-                    this.handleConnection(conn);
+                    
+                    conn.on('open', () => {
+                        clearTimeout(connectionTimeout);
+                        // Successfully connected to host, we're a player
+                        this.updateConnectionStatus('Connected to host');
+                        this.handleConnection(conn);
+                    });
+                    
+                    conn.on('error', (err) => {
+                        clearTimeout(connectionTimeout);
+                        // Host not found, become the host
+                        this.becomeHost();
+                    });
+                    
                 } catch (error) {
-                    console.error('Failed to connect to host:', error);
-                    this.showToast('Room not found. Check the code and try again.', 'error');
+                    clearTimeout(connectionTimeout);
+                    this.becomeHost();
                 }
+            }
+            
+            becomeHost() {
+                if (this.isHost) return; // Already host
+                
+                this.isHost = true;
+                this.updateConnectionStatus('Became host (no existing host found)');
+                
+                // Update our peer ID to be the host
+                if (this.peer) {
+                    this.peer.destroy();
+                }
+                
+                // Recreate peer with host ID
+                this.peer = new Peer(`${this.roomCode}_HOST`, {
+                    secure: true,
+                    debug: 0,
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:global.stun.twilio.com:3478' }
+                        ]
+                    }
+                });
+                
+                this.peer.on('open', () => {
+                    this.updateConnectionStatus('Host ready');
+                });
+                
+                this.peer.on('connection', (conn) => {
+                    this.handleConnection(conn);
+                });
+                
+                this.updatePlayersDisplay();
             }
             
             handleConnection(conn) {
