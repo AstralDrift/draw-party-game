@@ -877,6 +877,10 @@
                     if (this.isHost) {
                         console.log('📡 Host sending ROOM_JOINED to:', conn.peer);
                         this.sendToPlayer(conn.peer, { type: 'ROOM_JOINED', roomCode: this.roomCode });
+                        
+                        // CRITICAL: Host should also immediately send current game state to new player
+                        console.log('📡 Host also sending current game state to new player');
+                        this.broadcastGameState();
                     } else {
                         console.log('📡 Player sending PLAYER_JOIN to host:', conn.peer);
                         this.sendToPlayer(conn.peer, { type: 'PLAYER_JOIN', playerId: this.playerId, playerName: this.playerName });
@@ -1055,7 +1059,11 @@
             updatePlayersDisplay() {
                 console.log('🔄 updatePlayersDisplay called');
                 console.log('📊 Current players in gameState:', this.gameState.players.size);
-                console.log('📋 Players list:', Array.from(this.gameState.players.entries()));
+                const playersArray = Array.from(this.gameState.players.entries());
+                console.log('📋 Players list:', playersArray);
+                playersArray.forEach(([id, player], index) => {
+                    console.log(`👤 Player ${index + 1}: ID=${id}, Name=${player.name}, Connected=${player.connected}`);
+                });
                 console.log('🎭 I am:', this.playerId, 'Host?', this.isHost);
                 
                 const playersList = document.getElementById('players-list');
@@ -1084,6 +1092,12 @@
             }
             
             updateStartButton() {
+                console.log('🚀 updateStartButton called');
+                console.log('📏 gameState.players.size:', this.gameState.players.size);
+                console.log('🗺️ gameState.players Map:', this.gameState.players);
+                console.log('📝 playerName:', this.playerName);
+                console.log('👑 isHost:', this.isHost);
+                
                 const startButton = document.getElementById('start-game');
                 const hasName = this.playerName && this.playerName.length > 0;
                 const canStart = this.isHost && this.gameState.players.size >= 2 && hasName;
@@ -1093,12 +1107,16 @@
                 const waitingMessage = document.getElementById('waiting-message');
                 if (this.gameState.players.size < 2) {
                     waitingMessage.textContent = `Waiting for more players... (need at least 2, have ${this.gameState.players.size})`;
+                    console.log('🔴 Not enough players:', this.gameState.players.size);
                 } else if (!hasName) {
                     waitingMessage.textContent = 'Enter your name to continue';
+                    console.log('🔴 No player name');
                 } else if (this.isHost) {
                     waitingMessage.textContent = 'Ready to start!';
+                    console.log('🟢 Ready to start!');
                 } else {
                     waitingMessage.textContent = 'Waiting for host to start the game...';
+                    console.log('🟡 Waiting for host');
                 }
             }
             
