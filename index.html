@@ -6,6 +6,9 @@
     <title>Draw Party! 🎨</title>
     <meta name="description" content="The easiest multiplayer drawing game - just text a link and play!">
     
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+    
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
@@ -13,7 +16,7 @@
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     
     <!-- PWA manifest -->
-    <link rel="manifest" href="manifest.json">
+    <link rel="manifest" href="./manifest.json">
     <meta name="theme-color" content="#1f2937">
     
     <!-- iOS PWA -->
@@ -549,10 +552,15 @@
                     
                     console.log('🌐 Production mode - using PeerJS server');
                     this.peer = new Peer(this.playerId, {
-                        host: 'peerjs-server.herokuapp.com',
-                        port: 443,
+                        // Use the free PeerJS cloud service
                         secure: true,
-                        debug: 0
+                        debug: 0,
+                        config: {
+                            iceServers: [
+                                { urls: 'stun:stun.l.google.com:19302' },
+                                { urls: 'stun:global.stun.twilio.com:3478' }
+                            ]
+                        }
                     });
                     
                     this.peer.on('open', (id) => {
@@ -1420,7 +1428,9 @@
         // Register Service Worker for offline functionality
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js')
+                // Handle GitHub Pages path
+                const swPath = window.location.hostname === 'astraldrift.github.io' ? '/draw-party-game/sw.js' : '/sw.js';
+                navigator.serviceWorker.register(swPath)
                     .then((registration) => {
                         console.log('Service Worker registered successfully:', registration.scope);
                         
