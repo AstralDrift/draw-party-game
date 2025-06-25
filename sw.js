@@ -1,11 +1,11 @@
 // Draw Party Service Worker
 // Enables offline play after first load
 
-const CACHE_NAME = 'draw-party-v1';
+const CACHE_NAME = 'draw-party-v2';
 const CACHE_URLS = [
-    '/',
-    '/index.html',
-    '/manifest.json'
+    '/draw-party-game/',
+    '/draw-party-game/index.html',
+    '/draw-party-game/manifest.json'
     // Skip CDN resources for local development to avoid CORS issues
 ];
 
@@ -101,7 +101,7 @@ self.addEventListener('fetch', (event) => {
                         // If it's a navigation request and we're offline, 
                         // return the cached index.html
                         if (event.request.mode === 'navigate') {
-                            return caches.match('/index.html');
+                            return caches.match('/draw-party-game/index.html');
                         }
                         
                         throw error;
@@ -169,7 +169,7 @@ self.addEventListener('notificationclick', (event) => {
     if (event.action === 'join') {
         // Open the game
         event.waitUntil(
-            clients.openWindow('/')
+            clients.openWindow('/draw-party-game/')
         );
     }
 });
