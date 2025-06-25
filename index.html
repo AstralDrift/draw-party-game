@@ -275,7 +275,7 @@
         // Game Core - All functionality embedded
         class DrawPartyGame {
             constructor() {
-                console.log('🎨 Draw Party Game v1.5.0 - SERIALIZATION FIX LOADED!', new Date().toISOString());
+                console.log('🎨 Draw Party Game v1.6.0 - CONNECTION STABILITY FIX LOADED!', new Date().toISOString());
                 console.log('🔧 If you see old behavior, clear browser cache or hard refresh (Ctrl+Shift+R)');
                 
                 this.peer = null;
@@ -303,6 +303,11 @@
                 this.currentColor = '#000000';
                 this.currentSize = 3;
                 this.currentTool = 'brush';
+                
+                // Connection monitoring
+                this.connectionHealth = new Map();
+                this.heartbeatInterval = null;
+                this.lastHeartbeat = Date.now();
                 
                 this.init();
             }
@@ -610,16 +615,45 @@
                 this.peer.on('connection', (conn) => {
                     console.log('📞 Host received incoming connection from:', conn.peer);
                     this.handleConnection(conn);
+                    
+                    // Start connection monitoring if this is our first connection
+                    if (this.connections.size === 0 && !this.heartbeatInterval) {
+                        this.startConnectionMonitoring();
+                    }
                 });
                 
                 this.peer.on('error', (err) => {
                     console.log('❌ Host peer error:', err);
-                    this.updateConnectionStatus('Host connection error');
-                    this.setupLocalTesting();
+                    console.log('🔄 Attempting to recover host connection...');
+                    this.updateConnectionStatus('Connection error - recovering...');
+                    
+                    // Try to reconnect after a short delay
+                    setTimeout(() => {
+                        if (this.peer && this.peer.destroyed) {
+                            console.log('🔄 Recreating host peer after error');
+                            this.createHostPeer();
+                        } else if (this.peer && this.peer.disconnected) {
+                            console.log('🔄 Reconnecting host peer');
+                            this.peer.reconnect();
+                        }
+                    }, 2000);
                 });
                 
                 this.peer.on('disconnected', () => {
-                    console.log('🔌 Host peer disconnected');
+                    console.log('🔌 Host peer disconnected from server');
+                    this.updateConnectionStatus('Disconnected - reconnecting...');
+                    
+                    // Attempt to reconnect
+                    setTimeout(() => {
+                        if (this.peer && !this.peer.destroyed) {
+                            console.log('🔄 Attempting to reconnect host peer');
+                            this.peer.reconnect();
+                        }
+                    }, 1000);
+                });
+                
+                this.peer.on('close', () => {
+                    console.log('🔌 Host peer connection closed');
                 });
             }
             
@@ -874,6 +908,14 @@
                     console.log('🎭 I am:', this.playerId, 'Host?', this.isHost);
                     this.connections.set(conn.peer, conn);
                     
+                    // Initialize connection health tracking
+                    this.connectionHealth.set(conn.peer, Date.now());
+                    
+                    // Start connection monitoring if not already started
+                    if (!this.heartbeatInterval) {
+                        this.startConnectionMonitoring();
+                    }
+                    
                     if (this.isHost) {
                         console.log('📡 Host sending ROOM_JOINED to:', conn.peer);
                         this.sendToPlayer(conn.peer, { type: 'ROOM_JOINED', roomCode: this.roomCode });
@@ -892,13 +934,38 @@
                 });
                 
                 conn.on('close', () => {
-                    console.log('Connection closed');
+                    console.log('🔌 Connection closed with:', conn.peer);
                     this.connections.delete(conn.peer);
+                    this.connectionHealth.delete(conn.peer);
+                    
+                    // Stop monitoring if no connections left
+                    if (this.connections.size === 0) {
+                        this.stopConnectionMonitoring();
+                    }
+                    
+                    // Remove player from game state if they disconnect
+                    if (this.isHost && this.gameState.players.has(conn.peer)) {
+                        console.log('➖ Removing disconnected player:', conn.peer);
+                        this.gameState.players.delete(conn.peer);
+                        this.broadcastGameState();
+                    }
+                    
                     this.updatePlayersDisplay();
                 });
                 
                 conn.on('error', (err) => {
-                    console.error('Connection error:', err);
+                    console.error('❌ Connection error with', conn.peer, ':', err);
+                    
+                    // Clean up connection on error
+                    this.connections.delete(conn.peer);
+                    this.connectionHealth.delete(conn.peer);
+                    
+                    // Stop monitoring if no connections left
+                    if (this.connections.size === 0) {
+                        this.stopConnectionMonitoring();
+                    }
+                    
+                    this.updatePlayersDisplay();
                 });
             }
             
@@ -1008,6 +1075,26 @@
                             this.checkAllVotesSubmitted();
                         }
                         break;
+                        
+                    case 'HEARTBEAT':
+                        // Update connection health tracking
+                        this.connectionHealth.set(fromPeer, message.timestamp || Date.now());
+                        console.log(`💓 Heartbeat received from ${fromPeer}`);
+                        
+                        // Respond with heartbeat ack if we're the host
+                        if (this.isHost) {
+                            this.sendToPlayer(fromPeer, {
+                                type: 'HEARTBEAT_ACK',
+                                timestamp: Date.now()
+                            });
+                        }
+                        break;
+                        
+                    case 'HEARTBEAT_ACK':
+                        // Update connection health tracking
+                        this.connectionHealth.set(fromPeer, message.timestamp || Date.now());
+                        console.log(`💓 Heartbeat ACK received from ${fromPeer}`);
+                        break;
                 }
             }
             
@@ -1015,12 +1102,45 @@
                 // For local testing, use localStorage
                 if (this.broadcastLocal) {
                     this.broadcastLocal(message);
-                    return;
+                    return true;
                 }
                 
                 const conn = this.connections.get(playerId);
-                if (conn && conn.open) {
-                    conn.send(message);
+                if (!conn) {
+                    console.warn(`⚠️ No connection found for player: ${playerId}`);
+                    return false;
+                }
+                
+                try {
+                    if (conn.open && conn.readyState === 'open') {
+                        conn.send(message);
+                        console.log(`📤 Message sent to ${playerId}:`, message.type);
+                        return true;
+                    } else {
+                        console.warn(`⚠️ Connection to ${playerId} is not open:`, conn.readyState);
+                        
+                        // Clean up dead connection
+                        this.connections.delete(playerId);
+                        
+                        // Attempt reconnection for critical messages
+                        if (message.type === 'GAME_STATE_UPDATE' || message.type === 'START_GAME') {
+                            this.attemptReconnection(playerId, conn);
+                        }
+                        
+                        return false;
+                    }
+                } catch (error) {
+                    console.error(`❌ Failed to send message to ${playerId}:`, error);
+                    
+                    // Clean up failed connection
+                    this.connections.delete(playerId);
+                    
+                    // Attempt reconnection on certain errors
+                    if (error.name === 'DataCloneError' || error.message.includes('connection')) {
+                        this.attemptReconnection(playerId, conn);
+                    }
+                    
+                    return false;
                 }
             }
             
@@ -1031,11 +1151,187 @@
                     return;
                 }
                 
+                // Track failed connections for cleanup
+                const failedConnections = [];
+                let successfulSends = 0;
+                
                 this.connections.forEach((conn, playerId) => {
-                    if (conn.open) {
-                        conn.send(message);
+                    try {
+                        // Check if connection is still valid
+                        if (conn && conn.open && conn.readyState === 'open') {
+                            conn.send(message);
+                            successfulSends++;
+                            console.log(`📤 Message sent to ${playerId}:`, message.type);
+                        } else {
+                            console.warn(`⚠️ Connection to ${playerId} is not open:`, conn ? conn.readyState : 'null');
+                            failedConnections.push(playerId);
+                        }
+                    } catch (error) {
+                        console.error(`❌ Failed to send message to ${playerId}:`, error);
+                        failedConnections.push(playerId);
+                        
+                        // Attempt to reconnect on certain errors
+                        if (error.name === 'DataCloneError' || error.message.includes('connection')) {
+                            this.attemptReconnection(playerId, conn);
+                        }
                     }
                 });
+                
+                // Clean up failed connections
+                if (failedConnections.length > 0) {
+                    console.log(`🧹 Cleaning up ${failedConnections.length} failed connections`);
+                    failedConnections.forEach(playerId => {
+                        this.connections.delete(playerId);
+                        
+                        // Remove from game state if host
+                        if (this.isHost && this.gameState.players.has(playerId)) {
+                            console.log(`➖ Removing disconnected player from game state: ${playerId}`);
+                            this.gameState.players.delete(playerId);
+                        }
+                    });
+                    
+                    // Update UI after cleanup
+                    this.updatePlayersDisplay();
+                    
+                    // Show notification if significant connection loss
+                    if (failedConnections.length > 1) {
+                        this.showToast(`Lost connection to ${failedConnections.length} player(s)`, 'warning');
+                    }
+                }
+                
+                // Log broadcast summary
+                console.log(`📊 Broadcast summary: ${successfulSends} successful, ${failedConnections.length} failed`);
+                
+                // Return success status for caller to handle
+                return {
+                    success: successfulSends > 0,
+                    successfulSends,
+                    failedConnections: failedConnections.length,
+                    totalConnections: this.connections.size + failedConnections.length
+                };
+            }
+            
+            attemptReconnection(playerId, failedConn) {
+                console.log(`🔄 Attempting reconnection to ${playerId}`);
+                
+                // Don't attempt reconnection too frequently
+                const reconnectKey = `reconnect_${playerId}`;
+                const lastAttempt = this[reconnectKey] || 0;
+                const now = Date.now();
+                
+                if (now - lastAttempt < 5000) { // Wait at least 5 seconds between attempts
+                    console.log(`⏳ Skipping reconnection to ${playerId} - too soon since last attempt`);
+                    return;
+                }
+                
+                this[reconnectKey] = now;
+                
+                // Clean up old connection
+                if (failedConn) {
+                    try {
+                        failedConn.close();
+                    } catch (e) {
+                        console.log('Connection already closed');
+                    }
+                }
+                
+                // For players trying to reconnect to host
+                if (!this.isHost && playerId.includes('_HOST')) {
+                    console.log('🔌 Player attempting to reconnect to host');
+                    setTimeout(() => {
+                        try {
+                            if (this.peer && !this.peer.destroyed) {
+                                const conn = this.peer.connect(playerId);
+                                this.handleConnection(conn);
+                            }
+                        } catch (error) {
+                            console.error('❌ Reconnection attempt failed:', error);
+                        }
+                    }, 2000);
+                }
+                
+                // For host trying to reconnect to players - players should reconnect to host instead
+                else if (this.isHost) {
+                    console.log('🏠 Host waiting for player to reconnect');
+                    // Don't actively try to reconnect as host - let players reconnect to us
+                }
+            }
+            
+            startConnectionMonitoring() {
+                // Start heartbeat system for connection health monitoring
+                if (this.heartbeatInterval) {
+                    clearInterval(this.heartbeatInterval);
+                }
+                
+                this.heartbeatInterval = setInterval(() => {
+                    this.sendHeartbeat();
+                    this.checkConnectionHealth();
+                }, 15000); // Check every 15 seconds
+                
+                console.log('💓 Connection monitoring started');
+            }
+            
+            stopConnectionMonitoring() {
+                if (this.heartbeatInterval) {
+                    clearInterval(this.heartbeatInterval);
+                    this.heartbeatInterval = null;
+                }
+                console.log('💓 Connection monitoring stopped');
+            }
+            
+            sendHeartbeat() {
+                const heartbeatMessage = {
+                    type: 'HEARTBEAT',
+                    timestamp: Date.now(),
+                    playerId: this.playerId
+                };
+                
+                // Only send heartbeat if we have active connections
+                if (this.connections.size > 0) {
+                    this.broadcastMessage(heartbeatMessage);
+                }
+                
+                this.lastHeartbeat = Date.now();
+            }
+            
+            checkConnectionHealth() {
+                const now = Date.now();
+                const staleConnections = [];
+                
+                this.connections.forEach((conn, playerId) => {
+                    const lastSeen = this.connectionHealth.get(playerId) || now;
+                    const timeSinceLastSeen = now - lastSeen;
+                    
+                    // If we haven't heard from a connection in 45 seconds, consider it stale
+                    if (timeSinceLastSeen > 45000) {
+                        console.warn(`⚠️ Connection to ${playerId} appears stale (${Math.round(timeSinceLastSeen/1000)}s)`);
+                        staleConnections.push(playerId);
+                    }
+                    
+                    // If connection is not open, mark for cleanup
+                    if (!conn.open || conn.readyState !== 'open') {
+                        staleConnections.push(playerId);
+                    }
+                });
+                
+                // Clean up stale connections
+                if (staleConnections.length > 0) {
+                    console.log(`🧹 Cleaning up ${staleConnections.length} stale connections`);
+                    staleConnections.forEach(playerId => {
+                        this.connections.delete(playerId);
+                        this.connectionHealth.delete(playerId);
+                        
+                        if (this.isHost && this.gameState.players.has(playerId)) {
+                            this.gameState.players.delete(playerId);
+                        }
+                    });
+                    
+                    this.updatePlayersDisplay();
+                    
+                    if (staleConnections.length > 0) {
+                        this.showToast(`Cleaned up ${staleConnections.length} inactive connection(s)`, 'info');
+                    }
+                }
             }
             
             broadcastGameState() {
@@ -1061,10 +1357,23 @@
                 console.log('📤 Sending GAME_STATE_UPDATE with safe data to', this.connections.size, 'connections');
                 console.log('🔍 Safe gameState:', gameStateForBroadcast);
                 
-                this.broadcastMessage({
+                const broadcastResult = this.broadcastMessage({
                     type: 'GAME_STATE_UPDATE',
                     gameState: gameStateForBroadcast
                 });
+                
+                // Handle broadcast result for better reliability
+                if (broadcastResult && !broadcastResult.success) {
+                    console.warn('⚠️ Game state broadcast failed - no active connections');
+                    this.showToast('Connection issues detected', 'warning');
+                } else if (broadcastResult && broadcastResult.failedConnections > 0) {
+                    console.warn(`⚠️ Game state broadcast partial failure: ${broadcastResult.failedConnections} failed connections`);
+                    
+                    // If we lost more than half the connections, show a warning
+                    if (broadcastResult.failedConnections > broadcastResult.successfulSends) {
+                        this.showToast('Multiple players disconnected', 'warning');
+                    }
+                }
             }
             
             showLobby() {
@@ -1740,8 +2049,14 @@
         
         // Handle page refresh/reconnection
         window.addEventListener('beforeunload', () => {
-            if (window.game && window.game.peer) {
-                window.game.peer.disconnect();
+            if (window.game) {
+                // Stop connection monitoring
+                window.game.stopConnectionMonitoring();
+                
+                // Disconnect peer
+                if (window.game.peer) {
+                    window.game.peer.disconnect();
+                }
             }
         });
         
