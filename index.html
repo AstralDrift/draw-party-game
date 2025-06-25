@@ -332,10 +332,31 @@
             }
             
             checkForRoomInURL() {
-                const path = window.location.pathname.slice(1);
-                if (path && path.length === 4) {
-                    document.getElementById('join-code').value = path;
-                    this.joinRoom(path);
+                const path = window.location.pathname;
+                
+                // Extract room code from various URL formats:
+                // localhost:3000/ABCD -> ABCD
+                // astraldrift.github.io/draw-party-game/ABCD -> ABCD
+                let roomCode = null;
+                
+                if (path.includes('/draw-party-game/')) {
+                    // GitHub Pages format
+                    const parts = path.split('/draw-party-game/');
+                    if (parts[1] && parts[1].length === 4) {
+                        roomCode = parts[1];
+                    }
+                } else {
+                    // Localhost format
+                    const parts = path.slice(1); // Remove leading /
+                    if (parts.length === 4) {
+                        roomCode = parts;
+                    }
+                }
+                
+                if (roomCode && roomCode.length === 4) {
+                    console.log('🔗 Found room code in URL:', roomCode);
+                    document.getElementById('join-code').value = roomCode;
+                    this.joinRoom(roomCode);
                 }
             }
             
@@ -538,8 +559,9 @@
                 this.roomCode = this.generateRoomCode();
                 this.isHost = true;
                 
-                // Update URL
-                window.history.pushState({}, '', `/${this.roomCode}`);
+                // Update URL - handle GitHub Pages path
+                const basePath = window.location.pathname.includes('/draw-party-game') ? '/draw-party-game' : '';
+                window.history.pushState({}, '', `${basePath}/${this.roomCode}`);
                 
                 this.initializePeer();
                 this.showLobby();
@@ -547,10 +569,32 @@
             
             joinRoom(code) {
                 this.roomCode = code;
-                this.isHost = false;
                 
-                // Update URL
-                window.history.pushState({}, '', `/${this.roomCode}`);
+                // Check if there's already a host for this room in localStorage
+                const existingRoomData = localStorage.getItem(`drawparty_${code}`);
+                if (existingRoomData) {
+                    try {
+                        const data = JSON.parse(existingRoomData);
+                        // If there's recent activity (within last 5 minutes), join as player
+                        if (data.timestamp && (Date.now() - data.timestamp) < 5 * 60 * 1000) {
+                            this.isHost = false;
+                            console.log('🎮 Joining existing room as player');
+                        } else {
+                            this.isHost = true;
+                            console.log('🏠 Room expired, becoming new host');
+                        }
+                    } catch (e) {
+                        this.isHost = true;
+                        console.log('🏠 Invalid room data, becoming host');
+                    }
+                } else {
+                    this.isHost = true;
+                    console.log('🏠 New room, becoming host');
+                }
+                
+                // Update URL - handle GitHub Pages path
+                const basePath = window.location.pathname.includes('/draw-party-game') ? '/draw-party-game' : '';
+                window.history.pushState({}, '', `${basePath}/${this.roomCode}`);
                 
                 this.initializePeer();
                 this.showLobby();
@@ -684,6 +728,7 @@
                     const data = {
                         timestamp: Date.now(),
                         fromPlayer: this.playerId,
+                        isHost: this.isHost,
                         message: message
                     };
                     localStorage.setItem(storageKey, JSON.stringify(data));
@@ -927,7 +972,9 @@
             }
             
             shareGame() {
-                const shareUrl = `${window.location.origin}/${this.roomCode}`;
+                // Generate correct share URL for GitHub Pages
+                const basePath = window.location.pathname.includes('/draw-party-game') ? '/draw-party-game' : '';
+                const shareUrl = `${window.location.origin}${basePath}/${this.roomCode}`;
                 const shareData = {
                     title: '🎨 Join our drawing game!',
                     text: `Game time! Tap to join →`,
