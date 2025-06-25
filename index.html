@@ -578,15 +578,27 @@
                     
                     this.peer.on('error', (err) => {
                         console.error('Peer error:', err);
-                        this.updateConnectionStatus('Connection error');
-                        this.showToast('Connection error. Please try again.', 'error');
+                        console.log('🔄 PeerJS connection failed, switching to localStorage mode');
+                        
+                        // Auto-fallback to local storage mode for cross-tab play
+                        this.updateConnectionStatus('Using localStorage mode');
+                        this.showToast('Using localStorage fallback for local play', 'info');
+                        
+                        // Clean up failed peer
+                        if (this.peer) {
+                            try { this.peer.destroy(); } catch (e) {}
+                            this.peer = null;
+                        }
+                        
+                        this.setupLocalTesting();
                     });
                     
                 } catch (error) {
                     console.error('Failed to initialize peer:', error);
                     
                     // If PeerJS fails, fall back to local mode
-                    console.log('🔄 PeerJS failed, falling back to local testing mode');
+                    console.log('🔄 PeerJS failed, falling back to localStorage mode');
+                    this.updateConnectionStatus('Using localStorage fallback');
                     this.setupLocalTesting();
                 }
             }
