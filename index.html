@@ -377,14 +377,23 @@
                 document.getElementById('start-game').addEventListener('click', () => this.startGame());
                 document.getElementById('player-name').addEventListener('input', (e) => {
                     this.playerName = e.target.value.trim();
-                    console.log('Player name updated to:', this.playerName);
+                    console.log('✏️ Player name updated to:', this.playerName);
                     
                     // Update the player in gameState
                     if (this.gameState.players.has(this.playerId)) {
                         const player = this.gameState.players.get(this.playerId);
-                        player.name = this.playerName || 'Player';
+                        player.name = this.playerName || (this.isHost ? 'Host' : 'Player');
                         this.gameState.players.set(this.playerId, player);
-                        console.log('Updated player in gameState:', player);
+                        console.log('✅ Updated player in gameState:', player);
+                    } else {
+                        // Player not in gameState yet, add them
+                        this.gameState.players.set(this.playerId, {
+                            id: this.playerId,
+                            name: this.playerName || (this.isHost ? 'Host' : 'Player'),
+                            score: 0,
+                            connected: true
+                        });
+                        console.log('➕ Added new player to gameState');
                     }
                     
                     // Broadcast the name change
@@ -392,9 +401,9 @@
                         this.broadcastLocal({
                             type: 'PLAYER_UPDATE',
                             playerId: this.playerId,
-                            playerName: this.playerName || 'Player'
+                            playerName: this.playerName || (this.isHost ? 'Host' : 'Player')
                         });
-                        console.log('Broadcasted player update');
+                        console.log('📡 Broadcasted player update');
                     }
                     
                     this.updateStartButton();
@@ -940,13 +949,22 @@
                 document.getElementById('current-room-code').textContent = this.roomCode;
                 document.getElementById('room-code').textContent = `Room: ${this.roomCode}`;
                 
-                // Add host as first player
+                // Add current player to game state (don't assume name yet)
                 this.gameState.players.set(this.playerId, {
                     id: this.playerId,
-                    name: this.playerName || 'Host',
+                    name: this.playerName || (this.isHost ? 'Host' : 'Player'),
                     score: 0,
                     connected: true
                 });
+                
+                // Focus the name input for easy editing
+                setTimeout(() => {
+                    const nameInput = document.getElementById('player-name');
+                    if (nameInput) {
+                        nameInput.focus();
+                        nameInput.placeholder = `Enter your name...`;
+                    }
+                }, 100);
                 
                 this.updatePlayersDisplay();
             }
@@ -979,22 +997,28 @@
             
             updateStartButton() {
                 const startButton = document.getElementById('start-game');
-                const canStart = this.isHost && 
-                                this.gameState.players.size >= 3 && 
-                                this.playerName.length > 0;
+                const hasName = this.playerName && this.playerName.length > 0;
+                const canStart = this.isHost && this.gameState.players.size >= 2 && hasName; // Reduced to 2 for testing
                 
                 startButton.disabled = !canStart;
                 
                 const waitingMessage = document.getElementById('waiting-message');
-                if (this.gameState.players.size < 3) {
-                    waitingMessage.textContent = `Waiting for more players... (need at least 3, have ${this.gameState.players.size})`;
-                } else if (!this.playerName) {
+                if (this.gameState.players.size < 2) {
+                    waitingMessage.textContent = `Waiting for more players... (need at least 2, have ${this.gameState.players.size})`;
+                } else if (!hasName) {
                     waitingMessage.textContent = 'Enter your name to continue';
                 } else if (this.isHost) {
                     waitingMessage.textContent = 'Ready to start!';
                 } else {
                     waitingMessage.textContent = 'Waiting for host to start the game...';
                 }
+                
+                console.log('🎮 Start button state:', {
+                    isHost: this.isHost,
+                    playerCount: this.gameState.players.size,
+                    hasName: hasName,
+                    canStart: canStart
+                });
             }
             
             shareGame() {
