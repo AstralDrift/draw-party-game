@@ -377,33 +377,28 @@
                 document.getElementById('start-game').addEventListener('click', () => this.startGame());
                 document.getElementById('player-name').addEventListener('input', (e) => {
                     this.playerName = e.target.value.trim();
-                    console.log('✏️ Player name updated to:', this.playerName);
                     
-                    // Update the player in gameState
+                    // Update player in game state
                     if (this.gameState.players.has(this.playerId)) {
                         const player = this.gameState.players.get(this.playerId);
                         player.name = this.playerName || (this.isHost ? 'Host' : 'Player');
                         this.gameState.players.set(this.playerId, player);
-                        console.log('✅ Updated player in gameState:', player);
                     } else {
-                        // Player not in gameState yet, add them
                         this.gameState.players.set(this.playerId, {
                             id: this.playerId,
                             name: this.playerName || (this.isHost ? 'Host' : 'Player'),
                             score: 0,
                             connected: true
                         });
-                        console.log('➕ Added new player to gameState');
                     }
                     
-                    // Broadcast the name change
+                    // Broadcast to other players
                     if (this.broadcastLocal) {
                         this.broadcastLocal({
                             type: 'PLAYER_UPDATE',
                             playerId: this.playerId,
                             playerName: this.playerName || (this.isHost ? 'Host' : 'Player')
                         });
-                        console.log('📡 Broadcasted player update');
                     }
                     
                     this.updateStartButton();
@@ -568,25 +563,17 @@
                 this.roomCode = this.generateRoomCode();
                 this.isHost = true;
                 
-                console.log('🏠 Creating new room:', this.roomCode, 'as host');
-                
-                // IMMEDIATELY save host presence to localStorage - don't wait for showLobby
+                // Save host presence for cross-tab detection
                 const storageKey = `drawparty_${this.roomCode}`;
                 const hostData = {
                     timestamp: Date.now(),
                     fromPlayer: this.playerId,
                     isHost: true,
-                    message: {
-                        type: 'HOST_PRESENCE',
-                        playerId: this.playerId,
-                        playerName: this.playerName || 'Host',
-                        timestamp: Date.now()
-                    }
+                    message: { type: 'HOST_PRESENCE', playerId: this.playerId }
                 };
                 localStorage.setItem(storageKey, JSON.stringify(hostData));
-                console.log('💾 IMMEDIATELY saved host presence to localStorage:', storageKey);
                 
-                // Update URL - handle GitHub Pages path
+                // Update URL for sharing
                 const basePath = window.location.pathname.includes('/draw-party-game') ? '/draw-party-game' : '';
                 window.history.pushState({}, '', `${basePath}/${this.roomCode}`);
                 
@@ -597,49 +584,24 @@
             joinRoom(code) {
                 this.roomCode = code;
                 
-                // Check if there's already a host for this room in localStorage
+                // Check for existing host in localStorage (for same-device testing)
                 const storageKey = `drawparty_${code}`;
                 const existingRoomData = localStorage.getItem(storageKey);
-                
-                console.log('🔍 Checking for existing room:', storageKey);
-                console.log('🔍 Found data:', existingRoomData);
-                
-                // Debug: show all localStorage keys
-                const allKeys = [];
-                for (let i = 0; i < localStorage.length; i++) {
-                    const key = localStorage.key(i);
-                    if (key.startsWith('drawparty_')) {
-                        allKeys.push(key);
-                    }
-                }
-                console.log('🔍 All game rooms in localStorage:', allKeys);
                 
                 if (existingRoomData) {
                     try {
                         const data = JSON.parse(existingRoomData);
-                        console.log('🔍 Parsed data:', data);
-                        
-                        // If there's recent activity (within last 5 minutes), join as player
-                        if (data.timestamp && (Date.now() - data.timestamp) < 5 * 60 * 1000) {
-                            // Check if the existing data is from a host
-                            if (data.isHost) {
-                                this.isHost = false;
-                                console.log('🎮 Joining existing room as player (host already exists)');
-                            } else {
-                                this.isHost = true;
-                                console.log('🏠 No host found, becoming host');
-                            }
+                        // If recent activity and has host, join as player
+                        if (data.timestamp && (Date.now() - data.timestamp) < 5 * 60 * 1000 && data.isHost) {
+                            this.isHost = false;
                         } else {
                             this.isHost = true;
-                            console.log('🏠 Room expired, becoming new host');
                         }
                     } catch (e) {
                         this.isHost = true;
-                        console.log('🏠 Invalid room data, becoming host', e);
                     }
                 } else {
                     this.isHost = true;
-                    console.log('🏠 No existing room data, becoming host');
                 }
                 
                 // Update URL - handle GitHub Pages path
@@ -651,23 +613,17 @@
             }
             
             initializePeer() {
-                console.log('Initializing peer connection...');
-                console.log('Current hostname:', window.location.hostname);
-                console.log('Current protocol:', window.location.protocol);
-                
                 try {
-                    // For local testing, we'll use a different approach
+                    // Local testing mode for same-device development
                     if (window.location.hostname === 'localhost' || 
                         window.location.hostname === '127.0.0.1' || 
                         window.location.protocol === 'file:') {
-                        console.log('🏠 Local testing mode activated - using localStorage sync');
                         this.setupLocalTesting();
                         return;
                     }
                     
-                    console.log('🌐 Production mode - using PeerJS server');
+                    // Production P2P mode for real cross-device play
                     this.peer = new Peer(this.playerId, {
-                        // Use the free PeerJS cloud service
                         secure: true,
                         debug: 0,
                         config: {
@@ -692,19 +648,12 @@
                     });
                     
                     this.peer.on('error', (err) => {
-                        console.error('Peer error:', err);
-                        console.log('🔄 PeerJS connection failed, switching to localStorage mode');
-                        
-                        // Auto-fallback to local storage mode for cross-tab play
-                        this.updateConnectionStatus('Using localStorage mode');
-                        this.showToast('Using localStorage fallback for local play', 'info');
-                        
-                        // Clean up failed peer
+                        // Auto-fallback to localStorage mode for local testing
+                        this.updateConnectionStatus('Local mode');
                         if (this.peer) {
                             try { this.peer.destroy(); } catch (e) {}
                             this.peer = null;
                         }
-                        
                         this.setupLocalTesting();
                     });
                     
@@ -719,45 +668,26 @@
             }
             
             setupLocalTesting() {
-                console.log('🏠 Setting up local testing mode...');
+                if (this.isLocalMode) return;
                 
-                // Prevent duplicate setup
-                if (this.isLocalMode) {
-                    console.log('Local mode already initialized');
-                    return;
-                }
-                
-                // Mark as local mode to prevent PeerJS initialization
                 this.isLocalMode = true;
                 
                 // Clean up any existing peer connection
                 if (this.peer) {
-                    try {
-                        this.peer.destroy();
-                    } catch (e) {
-                        console.log('Cleaned up peer connection');
-                    }
+                    try { this.peer.destroy(); } catch (e) {}
                     this.peer = null;
                 }
                 
-                // For local testing, simulate peer connections
-                this.updateConnectionStatus('Local testing mode');
+                this.updateConnectionStatus('Local mode');
                 this.localConnections = new Map();
                 
-                // Simulate successful peer initialization
                 setTimeout(() => {
-                    console.log('✅ Local testing mode initialized');
                     this.updateConnectionStatus('Connected (Local)');
-                    
                     if (!this.isHost) {
                         this.connectToLocalHost();
                     }
-                    
-                    // Show success message
-                    this.showToast('Local testing mode active! Open multiple tabs to test multiplayer.', 'success');
                 }, 500);
                 
-                // Set up local storage for cross-tab communication
                 this.setupLocalStorageSync();
             }
             
@@ -781,7 +711,6 @@
                         isHost: this.isHost,
                         message: message
                     };
-                    console.log('💾 Storing to localStorage:', storageKey, data);
                     localStorage.setItem(storageKey, JSON.stringify(data));
                 };
                 
@@ -883,8 +812,7 @@
                         break;
                         
                     case 'HOST_PRESENCE':
-                        console.log('👑 Detected host presence:', message);
-                        // This is just for detection, no action needed
+                        // Host presence detected, no action needed
                         break;
                         
                     case 'GAME_STATE_UPDATE':
@@ -1021,7 +949,7 @@
             updateStartButton() {
                 const startButton = document.getElementById('start-game');
                 const hasName = this.playerName && this.playerName.length > 0;
-                const canStart = this.isHost && this.gameState.players.size >= 2 && hasName; // Reduced to 2 for testing
+                const canStart = this.isHost && this.gameState.players.size >= 2 && hasName;
                 
                 startButton.disabled = !canStart;
                 
@@ -1035,13 +963,6 @@
                 } else {
                     waitingMessage.textContent = 'Waiting for host to start the game...';
                 }
-                
-                console.log('🎮 Start button state:', {
-                    isHost: this.isHost,
-                    playerCount: this.gameState.players.size,
-                    hasName: hasName,
-                    canStart: canStart
-                });
             }
             
             shareGame() {
