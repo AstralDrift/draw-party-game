@@ -973,17 +973,25 @@
                 
                 this.updatePlayersDisplay();
                 
-                // IMPORTANT: If we're the host, immediately broadcast our presence to localStorage
+                // IMPORTANT: If we're the host, immediately save our presence to localStorage
                 // This ensures other tabs can detect us when they join
-                if (this.isHost && this.broadcastLocal) {
+                if (this.isHost) {
                     setTimeout(() => {
-                        console.log('🏠 Host broadcasting initial presence to localStorage');
-                        this.broadcastLocal({
-                            type: 'HOST_PRESENCE',
-                            playerId: this.playerId,
-                            playerName: this.playerName || 'Host',
-                            timestamp: Date.now()
-                        });
+                        console.log('🏠 Host saving initial presence to localStorage');
+                        const storageKey = `drawparty_${this.roomCode}`;
+                        const hostData = {
+                            timestamp: Date.now(),
+                            fromPlayer: this.playerId,
+                            isHost: true,
+                            message: {
+                                type: 'HOST_PRESENCE',
+                                playerId: this.playerId,
+                                playerName: this.playerName || 'Host',
+                                timestamp: Date.now()
+                            }
+                        };
+                        localStorage.setItem(storageKey, JSON.stringify(hostData));
+                        console.log('💾 Saved host presence to localStorage:', storageKey, hostData);
                     }, 200);
                 }
             }
