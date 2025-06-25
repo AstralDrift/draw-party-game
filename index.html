@@ -275,7 +275,7 @@
         // Game Core - All functionality embedded
         class DrawPartyGame {
             constructor() {
-                console.log('🎨 Draw Party Game v1.4.0 - MAP FIX VERSION LOADED!', new Date().toISOString());
+                console.log('🎨 Draw Party Game v1.5.0 - SERIALIZATION FIX LOADED!', new Date().toISOString());
                 console.log('🔧 If you see old behavior, clear browser cache or hard refresh (Ctrl+Shift+R)');
                 
                 this.peer = null;
@@ -945,22 +945,42 @@
                         console.log('📥 Received GAME_STATE_UPDATE:', message.gameState);
                         console.log('🔍 Before update - players.size:', this.gameState.players.size);
                         
-                        // CRITICAL FIX: Handle players separately to preserve Map integrity
+                        // CRITICAL FIX: Rebuild ALL Maps from arrays
                         if (message.gameState.players && Array.isArray(message.gameState.players)) {
                             console.log('🔄 Converting players array to Map:', message.gameState.players);
-                            
-                            // Clear existing players and rebuild from scratch
                             this.gameState.players.clear();
                             message.gameState.players.forEach(([id, player]) => {
                                 console.log('➕ Adding player from game state:', id, player);
                                 this.gameState.players.set(id, player);
                             });
-                            console.log('✅ Map rebuilt - players.size:', this.gameState.players.size);
+                            console.log('✅ Players Map rebuilt - size:', this.gameState.players.size);
                         }
                         
-                        // Update other game state properties WITHOUT touching players
-                        const { players, ...otherGameState } = message.gameState;
-                        Object.assign(this.gameState, otherGameState);
+                        // Rebuild other Maps from arrays
+                        if (message.gameState.guesses && Array.isArray(message.gameState.guesses)) {
+                            this.gameState.guesses.clear();
+                            message.gameState.guesses.forEach(([id, guess]) => this.gameState.guesses.set(id, guess));
+                        }
+                        
+                        if (message.gameState.votes && Array.isArray(message.gameState.votes)) {
+                            this.gameState.votes.clear();
+                            message.gameState.votes.forEach(([id, vote]) => this.gameState.votes.set(id, vote));
+                        }
+                        
+                        if (message.gameState.scores && Array.isArray(message.gameState.scores)) {
+                            this.gameState.scores.clear();
+                            message.gameState.scores.forEach(([id, score]) => this.gameState.scores.set(id, score));
+                        }
+                        
+                        if (message.gameState.playerPrompts && Array.isArray(message.gameState.playerPrompts)) {
+                            if (!this.gameState.playerPrompts) this.gameState.playerPrompts = new Map();
+                            this.gameState.playerPrompts.clear();
+                            message.gameState.playerPrompts.forEach(([id, prompt]) => this.gameState.playerPrompts.set(id, prompt));
+                        }
+                        
+                        // Update scalar properties only
+                        const { players, guesses, votes, scores, playerPrompts, ...scalarState } = message.gameState;
+                        Object.assign(this.gameState, scalarState);
                         
                         console.log('📊 Final gameState players.size:', this.gameState.players.size);
                         this.updateUI();
@@ -1023,13 +1043,24 @@
                 console.log('📊 Current players before broadcast:', this.gameState.players.size);
                 console.log('📋 Players being broadcast:', Array.from(this.gameState.players.entries()));
                 
-                // Convert Map to Array for serialization
+                // CRITICAL FIX: Convert ALL Maps to Arrays for serialization
                 const gameStateForBroadcast = {
-                    ...this.gameState,
-                    players: Array.from(this.gameState.players.entries())
+                    currentRound: this.gameState.currentRound || 0,
+                    totalRounds: this.gameState.totalRounds || 5,
+                    phase: this.gameState.phase || 'lobby',
+                    currentDrawer: this.gameState.currentDrawer || null,
+                    currentPrompt: this.gameState.currentPrompt || null,
+                    timeLeft: this.gameState.timeLeft || 0,
+                    players: Array.from(this.gameState.players.entries()),
+                    guesses: Array.from(this.gameState.guesses.entries()),
+                    votes: Array.from(this.gameState.votes.entries()),
+                    scores: Array.from(this.gameState.scores.entries()),
+                    playerPrompts: this.gameState.playerPrompts ? Array.from(this.gameState.playerPrompts.entries()) : []
                 };
                 
-                console.log('📤 Sending GAME_STATE_UPDATE to', this.connections.size, 'connections');
+                console.log('📤 Sending GAME_STATE_UPDATE with safe data to', this.connections.size, 'connections');
+                console.log('🔍 Safe gameState:', gameStateForBroadcast);
+                
                 this.broadcastMessage({
                     type: 'GAME_STATE_UPDATE',
                     gameState: gameStateForBroadcast

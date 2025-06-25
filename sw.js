@@ -1,7 +1,7 @@
 // Draw Party Service Worker
 // Enables offline play after first load
 
-const CACHE_NAME = 'draw-party-v4';
+const CACHE_NAME = 'draw-party-v5';
 const CACHE_URLS = [
     '/draw-party-game/',
     '/draw-party-game/index.html',
