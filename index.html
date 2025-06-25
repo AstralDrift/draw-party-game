@@ -559,6 +559,8 @@
                 this.roomCode = this.generateRoomCode();
                 this.isHost = true;
                 
+                console.log('🏠 Creating new room:', this.roomCode, 'as host');
+                
                 // Update URL - handle GitHub Pages path
                 const basePath = window.location.pathname.includes('/draw-party-game') ? '/draw-party-game' : '';
                 window.history.pushState({}, '', `${basePath}/${this.roomCode}`);
@@ -571,25 +573,48 @@
                 this.roomCode = code;
                 
                 // Check if there's already a host for this room in localStorage
-                const existingRoomData = localStorage.getItem(`drawparty_${code}`);
+                const storageKey = `drawparty_${code}`;
+                const existingRoomData = localStorage.getItem(storageKey);
+                
+                console.log('🔍 Checking for existing room:', storageKey);
+                console.log('🔍 Found data:', existingRoomData);
+                
+                // Debug: show all localStorage keys
+                const allKeys = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key.startsWith('drawparty_')) {
+                        allKeys.push(key);
+                    }
+                }
+                console.log('🔍 All game rooms in localStorage:', allKeys);
+                
                 if (existingRoomData) {
                     try {
                         const data = JSON.parse(existingRoomData);
+                        console.log('🔍 Parsed data:', data);
+                        
                         // If there's recent activity (within last 5 minutes), join as player
                         if (data.timestamp && (Date.now() - data.timestamp) < 5 * 60 * 1000) {
-                            this.isHost = false;
-                            console.log('🎮 Joining existing room as player');
+                            // Check if the existing data is from a host
+                            if (data.isHost) {
+                                this.isHost = false;
+                                console.log('🎮 Joining existing room as player (host already exists)');
+                            } else {
+                                this.isHost = true;
+                                console.log('🏠 No host found, becoming host');
+                            }
                         } else {
                             this.isHost = true;
                             console.log('🏠 Room expired, becoming new host');
                         }
                     } catch (e) {
                         this.isHost = true;
-                        console.log('🏠 Invalid room data, becoming host');
+                        console.log('🏠 Invalid room data, becoming host', e);
                     }
                 } else {
                     this.isHost = true;
-                    console.log('🏠 New room, becoming host');
+                    console.log('🏠 No existing room data, becoming host');
                 }
                 
                 // Update URL - handle GitHub Pages path
@@ -731,6 +756,7 @@
                         isHost: this.isHost,
                         message: message
                     };
+                    console.log('💾 Storing to localStorage:', storageKey, data);
                     localStorage.setItem(storageKey, JSON.stringify(data));
                 };
                 
