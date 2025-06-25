@@ -570,6 +570,22 @@
                 
                 console.log('🏠 Creating new room:', this.roomCode, 'as host');
                 
+                // IMMEDIATELY save host presence to localStorage - don't wait for showLobby
+                const storageKey = `drawparty_${this.roomCode}`;
+                const hostData = {
+                    timestamp: Date.now(),
+                    fromPlayer: this.playerId,
+                    isHost: true,
+                    message: {
+                        type: 'HOST_PRESENCE',
+                        playerId: this.playerId,
+                        playerName: this.playerName || 'Host',
+                        timestamp: Date.now()
+                    }
+                };
+                localStorage.setItem(storageKey, JSON.stringify(hostData));
+                console.log('💾 IMMEDIATELY saved host presence to localStorage:', storageKey);
+                
                 // Update URL - handle GitHub Pages path
                 const basePath = window.location.pathname.includes('/draw-party-game') ? '/draw-party-game' : '';
                 window.history.pushState({}, '', `${basePath}/${this.roomCode}`);
@@ -973,27 +989,7 @@
                 
                 this.updatePlayersDisplay();
                 
-                // IMPORTANT: If we're the host, immediately save our presence to localStorage
-                // This ensures other tabs can detect us when they join
-                if (this.isHost) {
-                    setTimeout(() => {
-                        console.log('🏠 Host saving initial presence to localStorage');
-                        const storageKey = `drawparty_${this.roomCode}`;
-                        const hostData = {
-                            timestamp: Date.now(),
-                            fromPlayer: this.playerId,
-                            isHost: true,
-                            message: {
-                                type: 'HOST_PRESENCE',
-                                playerId: this.playerId,
-                                playerName: this.playerName || 'Host',
-                                timestamp: Date.now()
-                            }
-                        };
-                        localStorage.setItem(storageKey, JSON.stringify(hostData));
-                        console.log('💾 Saved host presence to localStorage:', storageKey, hostData);
-                    }, 200);
-                }
+                // Host presence is now saved immediately in createRoom(), no need to duplicate here
             }
             
             updatePlayersDisplay() {
