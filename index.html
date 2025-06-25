@@ -866,6 +866,11 @@
                         }
                         break;
                         
+                    case 'HOST_PRESENCE':
+                        console.log('👑 Detected host presence:', message);
+                        // This is just for detection, no action needed
+                        break;
+                        
                     case 'GAME_STATE_UPDATE':
                         // Convert Array back to Map and merge players
                         if (message.gameState.players && Array.isArray(message.gameState.players)) {
@@ -967,6 +972,20 @@
                 }, 100);
                 
                 this.updatePlayersDisplay();
+                
+                // IMPORTANT: If we're the host, immediately broadcast our presence to localStorage
+                // This ensures other tabs can detect us when they join
+                if (this.isHost && this.broadcastLocal) {
+                    setTimeout(() => {
+                        console.log('🏠 Host broadcasting initial presence to localStorage');
+                        this.broadcastLocal({
+                            type: 'HOST_PRESENCE',
+                            playerId: this.playerId,
+                            playerName: this.playerName || 'Host',
+                            timestamp: Date.now()
+                        });
+                    }, 200);
+                }
             }
             
             updatePlayersDisplay() {
