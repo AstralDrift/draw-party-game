@@ -587,7 +587,19 @@
                 });
                 
                 this.peer.on('open', (id) => {
+                    console.log('🎯 Host peer opened with ID:', id);
                     this.updateConnectionStatus('Host ready - share room code!');
+                    
+                    // CRITICAL FIX: Host must add themselves to the players list
+                    console.log('➕ Host adding themselves to players list');
+                    this.gameState.players.set(this.playerId, {
+                        id: this.playerId,
+                        name: this.playerName || 'Host',
+                        score: 0,
+                        connected: true
+                    });
+                    
+                    this.updatePlayersDisplay();
                 });
                 
                 this.peer.on('connection', (conn) => {
@@ -795,7 +807,17 @@
                 });
                 
                 this.peer.on('open', () => {
+                    console.log('🎯 becomeHost peer opened');
                     this.updateConnectionStatus('Host ready');
+                    
+                    // CRITICAL FIX: Host must add themselves to the players list when they become host
+                    console.log('➕ becomeHost adding themselves to players list');
+                    this.gameState.players.set(this.playerId, {
+                        id: this.playerId,
+                        name: this.playerName || 'Host',
+                        score: 0,
+                        connected: true
+                    });
                 });
                 
                 this.peer.on('connection', (conn) => {
@@ -807,12 +829,15 @@
             
             handleConnection(conn) {
                 conn.on('open', () => {
-                    console.log('Connection established');
+                    console.log('🔗 Connection established with:', conn.peer);
+                    console.log('🎭 I am:', this.playerId, 'Host?', this.isHost);
                     this.connections.set(conn.peer, conn);
                     
                     if (this.isHost) {
+                        console.log('📡 Host sending ROOM_JOINED to:', conn.peer);
                         this.sendToPlayer(conn.peer, { type: 'ROOM_JOINED', roomCode: this.roomCode });
                     } else {
+                        console.log('📡 Player sending PLAYER_JOIN to host:', conn.peer);
                         this.sendToPlayer(conn.peer, { type: 'PLAYER_JOIN', playerId: this.playerId, playerName: this.playerName });
                     }
                 });
@@ -833,16 +858,24 @@
             }
             
             handleMessage(message, fromPeer) {
+                console.log('📨 Received message:', message.type, 'from:', fromPeer);
+                console.log('📨 Message details:', message);
+                
                 switch (message.type) {
                     case 'PLAYER_JOIN':
+                        console.log('🎯 Handling PLAYER_JOIN. I am host?', this.isHost);
                         if (this.isHost) {
+                            console.log('➕ Host adding player to gameState:', message.playerId, message.playerName);
                             this.gameState.players.set(message.playerId, {
                                 id: message.playerId,
                                 name: message.playerName || 'Player',
                                 score: 0,
                                 connected: true
                             });
+                            console.log('📡 Host broadcasting game state after adding player');
                             this.broadcastGameState();
+                        } else {
+                            console.log('👤 Non-host received PLAYER_JOIN, ignoring');
                         }
                         this.updatePlayersDisplay();
                         break;
@@ -864,15 +897,20 @@
                         break;
                         
                     case 'GAME_STATE_UPDATE':
+                        console.log('📥 Received GAME_STATE_UPDATE:', message.gameState);
+                        
                         // Convert Array back to Map and merge players
                         if (message.gameState.players && Array.isArray(message.gameState.players)) {
+                            console.log('🔄 Converting players array to Map:', message.gameState.players);
                             message.gameState.players.forEach(([id, player]) => {
+                                console.log('➕ Adding player from game state:', id, player);
                                 this.gameState.players.set(id, player);
                             });
                             delete message.gameState.players; // Don't overwrite the Map
                         }
                         
                         this.gameState = { ...this.gameState, ...message.gameState };
+                        console.log('📊 Updated gameState, total players:', this.gameState.players.size);
                         this.updateUI();
                         this.updatePlayersDisplay();
                         break;
@@ -929,12 +967,17 @@
             }
             
             broadcastGameState() {
+                console.log('📡 Broadcasting game state');
+                console.log('📊 Current players before broadcast:', this.gameState.players.size);
+                console.log('📋 Players being broadcast:', Array.from(this.gameState.players.entries()));
+                
                 // Convert Map to Array for serialization
                 const gameStateForBroadcast = {
                     ...this.gameState,
                     players: Array.from(this.gameState.players.entries())
                 };
                 
+                console.log('📤 Sending GAME_STATE_UPDATE to', this.connections.size, 'connections');
                 this.broadcastMessage({
                     type: 'GAME_STATE_UPDATE',
                     gameState: gameStateForBroadcast
@@ -969,6 +1012,11 @@
             }
             
             updatePlayersDisplay() {
+                console.log('🔄 updatePlayersDisplay called');
+                console.log('📊 Current players in gameState:', this.gameState.players.size);
+                console.log('📋 Players list:', Array.from(this.gameState.players.entries()));
+                console.log('🎭 I am:', this.playerId, 'Host?', this.isHost);
+                
                 const playersList = document.getElementById('players-list');
                 playersList.innerHTML = '';
                 
