@@ -356,7 +356,28 @@
                 document.getElementById('start-game').addEventListener('click', () => this.startGame());
                 document.getElementById('player-name').addEventListener('input', (e) => {
                     this.playerName = e.target.value.trim();
+                    console.log('Player name updated to:', this.playerName);
+                    
+                    // Update the player in gameState
+                    if (this.gameState.players.has(this.playerId)) {
+                        const player = this.gameState.players.get(this.playerId);
+                        player.name = this.playerName || 'Player';
+                        this.gameState.players.set(this.playerId, player);
+                        console.log('Updated player in gameState:', player);
+                    }
+                    
+                    // Broadcast the name change
+                    if (this.broadcastLocal) {
+                        this.broadcastLocal({
+                            type: 'PLAYER_UPDATE',
+                            playerId: this.playerId,
+                            playerName: this.playerName || 'Player'
+                        });
+                        console.log('Broadcasted player update');
+                    }
+                    
                     this.updateStartButton();
+                    this.updatePlayersDisplay();
                 });
                 
                 // Drawing tools
@@ -668,12 +689,14 @@
                     localStorage.setItem(storageKey, JSON.stringify(data));
                 };
                 
-                // Announce presence
-                this.broadcastLocal({
-                    type: 'PLAYER_JOIN',
-                    playerId: this.playerId,
-                    playerName: this.playerName || 'Player'
-                });
+                // Announce presence after a short delay to ensure setup is complete
+                setTimeout(() => {
+                    this.broadcastLocal({
+                        type: 'PLAYER_JOIN',
+                        playerId: this.playerId,
+                        playerName: this.playerName || 'Player'
+                    });
+                }, 100);
             }
             
             handleLocalMessage(data) {
@@ -681,6 +704,13 @@
                 if (data.fromPlayer === this.playerId) return;
                 
                 this.handleMessage(data.message, data.fromPlayer);
+                
+                // If this is a new player joining, send them our current state
+                if (data.message.type === 'PLAYER_JOIN' && this.isHost) {
+                    setTimeout(() => {
+                        this.broadcastGameState();
+                    }, 200);
+                }
             }
             
             connectToLocalHost() {
@@ -735,7 +765,7 @@
                         if (this.isHost) {
                             this.gameState.players.set(message.playerId, {
                                 id: message.playerId,
-                                name: message.playerName,
+                                name: message.playerName || 'Player',
                                 score: 0,
                                 connected: true
                             });
@@ -744,9 +774,30 @@
                         this.updatePlayersDisplay();
                         break;
                         
+                    case 'PLAYER_UPDATE':
+                        if (this.gameState.players.has(message.playerId)) {
+                            const player = this.gameState.players.get(message.playerId);
+                            player.name = message.playerName || 'Player';
+                            this.gameState.players.set(message.playerId, player);
+                        }
+                        this.updatePlayersDisplay();
+                        if (this.isHost) {
+                            this.broadcastGameState();
+                        }
+                        break;
+                        
                     case 'GAME_STATE_UPDATE':
+                        // Convert Array back to Map and merge players
+                        if (message.gameState.players && Array.isArray(message.gameState.players)) {
+                            message.gameState.players.forEach(([id, player]) => {
+                                this.gameState.players.set(id, player);
+                            });
+                            delete message.gameState.players; // Don't overwrite the Map
+                        }
+                        
                         this.gameState = { ...this.gameState, ...message.gameState };
                         this.updateUI();
+                        this.updatePlayersDisplay();
                         break;
                         
                     case 'START_GAME':
@@ -801,9 +852,15 @@
             }
             
             broadcastGameState() {
+                // Convert Map to Array for serialization
+                const gameStateForBroadcast = {
+                    ...this.gameState,
+                    players: Array.from(this.gameState.players.entries())
+                };
+                
                 this.broadcastMessage({
                     type: 'GAME_STATE_UPDATE',
-                    gameState: this.gameState
+                    gameState: gameStateForBroadcast
                 });
             }
             
