@@ -574,10 +574,11 @@
             
             createHostPeer() {
                 const hostId = `${this.roomCode}_HOST`;
+                console.log('👑 Creating host peer with ID:', hostId);
                 
                 this.peer = new Peer(hostId, {
                     secure: true,
-                    debug: 0,
+                    debug: 1, // Enable PeerJS debugging
                     config: {
                         iceServers: [
                             { urls: 'stun:stun.l.google.com:19302' },
@@ -588,6 +589,7 @@
                 
                 this.peer.on('open', (id) => {
                     console.log('🎯 Host peer opened with ID:', id);
+                    console.log('🌐 Host peer object:', this.peer);
                     this.updateConnectionStatus('Host ready - share room code!');
                     
                     // CRITICAL FIX: Host must add themselves to the players list
@@ -603,12 +605,18 @@
                 });
                 
                 this.peer.on('connection', (conn) => {
+                    console.log('📞 Host received incoming connection from:', conn.peer);
                     this.handleConnection(conn);
                 });
                 
                 this.peer.on('error', (err) => {
-                    this.updateConnectionStatus('Connection error');
+                    console.log('❌ Host peer error:', err);
+                    this.updateConnectionStatus('Host connection error');
                     this.setupLocalTesting();
+                });
+                
+                this.peer.on('disconnected', () => {
+                    console.log('🔌 Host peer disconnected');
                 });
             }
             
@@ -651,9 +659,11 @@
             }
             
             createPlayerPeer() {
+                console.log('🎭 Creating player peer with ID:', this.playerId);
+                
                 this.peer = new Peer(this.playerId, {
                     secure: true,
-                    debug: 0,
+                    debug: 1, // Enable PeerJS debugging
                     config: {
                         iceServers: [
                             { urls: 'stun:stun.l.google.com:19302' },
@@ -663,13 +673,29 @@
                 });
                 
                 this.peer.on('open', (id) => {
-                    this.updateConnectionStatus('Connecting...');
-                    this.connectToHost();
+                    console.log('🎯 Player peer opened with ID:', id);
+                    console.log('🌐 Peer object:', this.peer);
+                    this.updateConnectionStatus('Peer ready, connecting to host...');
+                    
+                    // Small delay to ensure peer is fully ready
+                    setTimeout(() => {
+                        this.connectToHost();
+                    }, 500);
                 });
                 
                 this.peer.on('error', (err) => {
-                    this.updateConnectionStatus('Connection failed');
+                    console.log('❌ Player peer error:', err);
+                    this.updateConnectionStatus('Peer connection failed');
                     this.setupLocalTesting();
+                });
+                
+                this.peer.on('connection', (conn) => {
+                    console.log('📞 Player received incoming connection from:', conn.peer);
+                    this.handleConnection(conn);
+                });
+                
+                this.peer.on('disconnected', () => {
+                    console.log('🔌 Player peer disconnected');
                 });
             }
             
@@ -754,30 +780,42 @@
             
             connectToHost() {
                 const hostId = `${this.roomCode}_HOST`;
+                console.log('🔌 Attempting to connect to host:', hostId);
                 
-                // Set a timeout for connection attempt
+                // Increase timeout to 8 seconds for better connection reliability
                 const connectionTimeout = setTimeout(() => {
-                    // No host found, become the host
+                    console.log('⏰ Connection timeout - no host found, becoming host');
                     this.becomeHost();
-                }, 3000);
+                }, 8000);
                 
                 try {
+                    console.log('📞 Creating connection to host...');
                     const conn = this.peer.connect(hostId);
                     
                     conn.on('open', () => {
+                        console.log('✅ Successfully connected to host!');
                         clearTimeout(connectionTimeout);
-                        // Successfully connected to host, we're a player
                         this.updateConnectionStatus('Connected to host');
                         this.handleConnection(conn);
                     });
                     
                     conn.on('error', (err) => {
+                        console.log('❌ Connection error:', err);
                         clearTimeout(connectionTimeout);
-                        // Host not found, become the host
                         this.becomeHost();
                     });
                     
+                    conn.on('close', () => {
+                        console.log('🔌 Connection to host closed');
+                    });
+                    
+                    // Add debugging for connection metadata
+                    conn.on('data', (data) => {
+                        console.log('📥 Data from host:', data);
+                    });
+                    
                 } catch (error) {
+                    console.log('💥 Exception connecting to host:', error);
                     clearTimeout(connectionTimeout);
                     this.becomeHost();
                 }
