@@ -943,19 +943,26 @@
                         
                     case 'GAME_STATE_UPDATE':
                         console.log('📥 Received GAME_STATE_UPDATE:', message.gameState);
+                        console.log('🔍 Before update - players.size:', this.gameState.players.size);
                         
-                        // Convert Array back to Map and merge players
+                        // CRITICAL FIX: Handle players separately to preserve Map integrity
                         if (message.gameState.players && Array.isArray(message.gameState.players)) {
                             console.log('🔄 Converting players array to Map:', message.gameState.players);
+                            
+                            // Clear existing players and rebuild from scratch
+                            this.gameState.players.clear();
                             message.gameState.players.forEach(([id, player]) => {
                                 console.log('➕ Adding player from game state:', id, player);
                                 this.gameState.players.set(id, player);
                             });
-                            delete message.gameState.players; // Don't overwrite the Map
+                            console.log('✅ Map rebuilt - players.size:', this.gameState.players.size);
                         }
                         
-                        this.gameState = { ...this.gameState, ...message.gameState };
-                        console.log('📊 Updated gameState, total players:', this.gameState.players.size);
+                        // Update other game state properties WITHOUT touching players
+                        const { players, ...otherGameState } = message.gameState;
+                        Object.assign(this.gameState, otherGameState);
+                        
+                        console.log('📊 Final gameState players.size:', this.gameState.players.size);
                         this.updateUI();
                         this.updatePlayersDisplay();
                         break;
@@ -1058,6 +1065,15 @@
             
             updatePlayersDisplay() {
                 console.log('🔄 updatePlayersDisplay called');
+                
+                // CRITICAL: Add Map validation
+                if (!(this.gameState.players instanceof Map)) {
+                    console.error('❌ CRITICAL: gameState.players is not a Map!', typeof this.gameState.players, this.gameState.players);
+                    console.log('🔧 Attempting to fix by creating new Map');
+                    this.gameState.players = new Map();
+                    return;
+                }
+                
                 console.log('📊 Current players in gameState:', this.gameState.players.size);
                 const playersArray = Array.from(this.gameState.players.entries());
                 console.log('📋 Players list:', playersArray);
@@ -1093,6 +1109,14 @@
             
             updateStartButton() {
                 console.log('🚀 updateStartButton called');
+                
+                // CRITICAL: Add Map validation
+                if (!(this.gameState.players instanceof Map)) {
+                    console.error('❌ CRITICAL: gameState.players is not a Map in updateStartButton!', typeof this.gameState.players, this.gameState.players);
+                    console.log('🔧 Attempting to fix by creating new Map');
+                    this.gameState.players = new Map();
+                }
+                
                 console.log('📏 gameState.players.size:', this.gameState.players.size);
                 console.log('🗺️ gameState.players Map:', this.gameState.players);
                 console.log('📝 playerName:', this.playerName);
