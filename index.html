@@ -275,7 +275,7 @@
         // Game Core - All functionality embedded
         class DrawPartyGame {
             constructor() {
-                console.log('🎨 Draw Party Game v1.6.0 - CONNECTION STABILITY FIX LOADED!', new Date().toISOString());
+                console.log('🎨 Draw Party Game v1.7.0 - CONNECTION TIMING FIX LOADED!', new Date().toISOString());
                 console.log('🔧 If you see old behavior, clear browser cache or hard refresh (Ctrl+Shift+R)');
                 
                 this.peer = null;
@@ -916,17 +916,87 @@
                         this.startConnectionMonitoring();
                     }
                     
-                    if (this.isHost) {
-                        console.log('📡 Host sending ROOM_JOINED to:', conn.peer);
-                        this.sendToPlayer(conn.peer, { type: 'ROOM_JOINED', roomCode: this.roomCode });
+                    // CRITICAL FIX: Add delay to ensure connection is fully ready
+                    setTimeout(() => {
+                        console.log('🔄 Connection ready delay completed, checking connection state...');
+                        console.log('🔍 Connection state:', conn.readyState, 'Open:', conn.open);
                         
-                        // CRITICAL: Host should also immediately send current game state to new player
-                        console.log('📡 Host also sending current game state to new player');
-                        this.broadcastGameState();
-                    } else {
-                        console.log('📡 Player sending PLAYER_JOIN to host:', conn.peer);
-                        this.sendToPlayer(conn.peer, { type: 'PLAYER_JOIN', playerId: this.playerId, playerName: this.playerName });
-                    }
+                        if (this.isHost) {
+                            console.log('📡 Host sending ROOM_JOINED to:', conn.peer);
+                            
+                            // Use enhanced sendToPlayer with connection readiness waiting
+                            const sendResult = this.sendToPlayer(conn.peer, 
+                                { type: 'ROOM_JOINED', roomCode: this.roomCode },
+                                { waitForReady: true, retries: 3, retryDelay: 200 }
+                            );
+                            
+                            // Handle both sync and async results
+                            const handleResult = (result) => {
+                                if (result.success) {
+                                    console.log('✅ ROOM_JOINED sent successfully:', result);
+                                    // Only send game state if initial message succeeded
+                                    setTimeout(() => {
+                                        console.log('📡 Host also sending current game state to new player');
+                                        this.broadcastGameState();
+                                    }, 100);
+                                } else {
+                                    console.log('❌ ROOM_JOINED failed after retries:', result);
+                                    // Fallback: try one more time without waiting
+                                    setTimeout(() => {
+                                        this.sendToPlayer(conn.peer, 
+                                            { type: 'ROOM_JOINED', roomCode: this.roomCode },
+                                            { waitForReady: false, retries: 0 }
+                                        );
+                                        this.broadcastGameState();
+                                    }, 1000);
+                                }
+                            };
+                            
+                            // Handle Promise or immediate result
+                            if (sendResult && typeof sendResult.then === 'function') {
+                                sendResult.then(handleResult).catch(error => {
+                                    console.error('❌ ROOM_JOINED promise error:', error);
+                                    handleResult({ success: false, error: error.message });
+                                });
+                            } else {
+                                handleResult(sendResult);
+                            }
+                        } else {
+                            console.log('📡 Player sending PLAYER_JOIN to host:', conn.peer);
+                            
+                            // Use enhanced sendToPlayer with connection readiness waiting
+                            const sendResult = this.sendToPlayer(conn.peer, 
+                                { type: 'PLAYER_JOIN', playerId: this.playerId, playerName: this.playerName },
+                                { waitForReady: true, retries: 3, retryDelay: 200 }
+                            );
+                            
+                            // Handle both sync and async results
+                            const handleResult = (result) => {
+                                if (result.success) {
+                                    console.log('✅ PLAYER_JOIN sent successfully:', result);
+                                } else {
+                                    console.log('❌ PLAYER_JOIN failed after retries:', result);
+                                    // Fallback: try one more time without waiting
+                                    setTimeout(() => {
+                                        this.sendToPlayer(conn.peer, 
+                                            { type: 'PLAYER_JOIN', playerId: this.playerId, playerName: this.playerName },
+                                            { waitForReady: false, retries: 0 }
+                                        );
+                                    }, 1000);
+                                }
+                            };
+                            
+                            // Handle Promise or immediate result
+                            if (sendResult && typeof sendResult.then === 'function') {
+                                sendResult.then(handleResult).catch(error => {
+                                    console.error('❌ PLAYER_JOIN promise error:', error);
+                                    handleResult({ success: false, error: error.message });
+                                });
+                            } else {
+                                handleResult(sendResult);
+                            }
+                        }
+                    }, 200); // 200ms delay to ensure connection is fully ready
                 });
                 
                 conn.on('data', (data) => {
@@ -1083,10 +1153,11 @@
                         
                         // Respond with heartbeat ack if we're the host
                         if (this.isHost) {
+                            // Use lightweight options for heartbeat - no retries to avoid overhead
                             this.sendToPlayer(fromPeer, {
                                 type: 'HEARTBEAT_ACK',
                                 timestamp: Date.now()
-                            });
+                            }, { waitForReady: false, retries: 0 });
                         }
                         break;
                         
@@ -1098,26 +1169,91 @@
                 }
             }
             
-            sendToPlayer(playerId, message) {
+            sendToPlayer(playerId, message, options = {}) {
+                const {
+                    timeout = 5000,
+                    retries = 2,
+                    retryDelay = 1000,
+                    waitForReady = true
+                } = options;
+                
+                const startTime = Date.now();
+                
+                // Enhanced status object with detailed information
+                const createStatus = (success, details = {}) => ({
+                    success,
+                    playerId,
+                    messageType: message.type,
+                    timestamp: Date.now(),
+                    duration: Date.now() - startTime,
+                    ...details
+                });
+                
                 // For local testing, use localStorage
                 if (this.broadcastLocal) {
-                    this.broadcastLocal(message);
-                    return true;
+                    try {
+                        this.broadcastLocal(message);
+                        return createStatus(true, { method: 'localStorage' });
+                    } catch (error) {
+                        return createStatus(false, { 
+                            error: error.message, 
+                            method: 'localStorage' 
+                        });
+                    }
                 }
                 
                 const conn = this.connections.get(playerId);
                 if (!conn) {
                     console.warn(`⚠️ No connection found for player: ${playerId}`);
-                    return false;
+                    return createStatus(false, { 
+                        error: 'No connection found',
+                        connectionExists: false
+                    });
                 }
                 
-                try {
-                    if (conn.open && conn.readyState === 'open') {
-                        conn.send(message);
-                        console.log(`📤 Message sent to ${playerId}:`, message.type);
-                        return true;
-                    } else {
-                        console.warn(`⚠️ Connection to ${playerId} is not open:`, conn.readyState);
+                // Enhanced connection validation with timing consideration
+                const validateConnection = () => {
+                    if (!conn) return { valid: false, reason: 'Connection is null' };
+                    if (conn.destroyed) return { valid: false, reason: 'Connection destroyed' };
+                    if (!conn.open) return { valid: false, reason: 'Connection not open' };
+                    if (conn.readyState !== 'open') return { 
+                        valid: false, 
+                        reason: `Connection state: ${conn.readyState}` 
+                    };
+                    return { valid: true };
+                };
+                
+                // Recursive function to attempt sending with retries
+                const attemptSend = async (attempt = 0) => {
+                    const validation = validateConnection();
+                    
+                    if (!validation.valid) {
+                        console.warn(`⚠️ Connection to ${playerId} invalid: ${validation.reason}`);
+                        
+                        // If we should wait for connection to be ready and we have retries left
+                        if (waitForReady && attempt < retries && validation.reason.includes('state')) {
+                            console.log(`🔄 Waiting for connection to be ready (attempt ${attempt + 1}/${retries + 1})`);
+                            
+                            // Wait for connection to be ready or timeout
+                            const readyPromise = new Promise((resolve) => {
+                                const checkReady = () => {
+                                    const newValidation = validateConnection();
+                                    if (newValidation.valid) {
+                                        resolve(true);
+                                    } else if (Date.now() - startTime > timeout) {
+                                        resolve(false);
+                                    } else {
+                                        setTimeout(checkReady, 100);
+                                    }
+                                };
+                                setTimeout(checkReady, retryDelay);
+                            });
+                            
+                            const isReady = await readyPromise;
+                            if (isReady) {
+                                return attemptSend(attempt + 1);
+                            }
+                        }
                         
                         // Clean up dead connection
                         this.connections.delete(playerId);
@@ -1127,20 +1263,136 @@
                             this.attemptReconnection(playerId, conn);
                         }
                         
-                        return false;
+                        return createStatus(false, {
+                            error: validation.reason,
+                            connectionState: conn?.readyState || 'unknown',
+                            attemptsUsed: attempt + 1,
+                            cleanedUp: true
+                        });
+                    }
+                    
+                    try {
+                        // Send the message
+                        conn.send(message);
+                        console.log(`📤 Message sent to ${playerId}:`, message.type);
+                        
+                        // Update connection health
+                        this.connectionHealth.set(playerId, Date.now());
+                        
+                        return createStatus(true, {
+                            connectionState: conn.readyState,
+                            attemptsUsed: attempt + 1,
+                            method: 'peerjs'
+                        });
+                        
+                    } catch (error) {
+                        console.error(`❌ Send attempt ${attempt + 1} failed to ${playerId}:`, error);
+                        
+                        // If we have retries left, try again
+                        if (attempt < retries) {
+                            console.log(`🔄 Retrying send to ${playerId} in ${retryDelay}ms`);
+                            await new Promise(resolve => setTimeout(resolve, retryDelay));
+                            return attemptSend(attempt + 1);
+                        }
+                        
+                        // Clean up failed connection
+                        this.connections.delete(playerId);
+                        
+                        // Attempt reconnection on certain errors
+                        if (error.name === 'DataCloneError' || error.message.includes('connection')) {
+                            this.attemptReconnection(playerId, conn);
+                        }
+                        
+                        return createStatus(false, {
+                            error: error.message,
+                            errorType: error.name,
+                            connectionState: conn?.readyState || 'unknown',
+                            attemptsUsed: attempt + 1,
+                            cleanedUp: true
+                        });
+                    }
+                };
+                
+                // For non-async context, we need to handle the Promise
+                if (waitForReady || retries > 0) {
+                    // Return a Promise for better async handling
+                    return attemptSend();
+                } else {
+                    // Synchronous single attempt for backwards compatibility
+                    const validation = validateConnection();
+                    if (!validation.valid) {
+                        this.connections.delete(playerId);
+                        if (message.type === 'GAME_STATE_UPDATE' || message.type === 'START_GAME') {
+                            this.attemptReconnection(playerId, conn);
+                        }
+                        return createStatus(false, {
+                            error: validation.reason,
+                            connectionState: conn?.readyState || 'unknown'
+                        });
+                    }
+                    
+                    try {
+                        conn.send(message);
+                        console.log(`📤 Message sent to ${playerId}:`, message.type);
+                        this.connectionHealth.set(playerId, Date.now());
+                        return createStatus(true, {
+                            connectionState: conn.readyState,
+                            method: 'peerjs'
+                        });
+                    } catch (error) {
+                        console.error(`❌ Failed to send message to ${playerId}:`, error);
+                        this.connections.delete(playerId);
+                        if (error.name === 'DataCloneError' || error.message.includes('connection')) {
+                            this.attemptReconnection(playerId, conn);
+                        }
+                        return createStatus(false, {
+                            error: error.message,
+                            errorType: error.name,
+                            connectionState: conn?.readyState || 'unknown'
+                        });
+                    }
+                }
+            }
+            
+            // Helper method for reliable message sending with error handling
+            async sendReliably(playerId, message, options = {}) {
+                const defaultOptions = {
+                    waitForReady: true,
+                    retries: 2,
+                    retryDelay: 500,
+                    ...options
+                };
+                
+                try {
+                    const result = await this.sendToPlayer(playerId, message, defaultOptions);
+                    
+                    if (result.success) {
+                        console.log(`✅ Reliable send success to ${playerId}:`, result);
+                        return result;
+                    } else {
+                        console.warn(`⚠️ Reliable send failed to ${playerId}:`, result);
+                        // Show user feedback for critical failures
+                        if (message.type === 'GUESS_SUBMITTED' || message.type === 'VOTE_SUBMITTED') {
+                            this.showToast(`Failed to send ${message.type.toLowerCase()} - connection issue`, 'warning');
+                        }
+                        return result;
                     }
                 } catch (error) {
-                    console.error(`❌ Failed to send message to ${playerId}:`, error);
+                    console.error(`❌ Reliable send error to ${playerId}:`, error);
+                    const errorResult = {
+                        success: false,
+                        error: error.message,
+                        playerId,
+                        messageType: message.type,
+                        timestamp: Date.now()
+                    };
                     
-                    // Clean up failed connection
-                    this.connections.delete(playerId);
-                    
-                    // Attempt reconnection on certain errors
-                    if (error.name === 'DataCloneError' || error.message.includes('connection')) {
-                        this.attemptReconnection(playerId, conn);
+                    // Show user feedback for critical failures
+                    if (message.type === 'GUESS_SUBMITTED' || message.type === 'VOTE_SUBMITTED') {
+                        this.showToast(`Network error sending ${message.type.toLowerCase()}`, 'error');
                     }
                     
-                    return false;
+                    return errorResult;
                 }
             }
             
@@ -1666,11 +1918,22 @@
                     this.gameState.guesses.set(this.playerId, guess);
                     this.checkAllGuessesSubmitted();
                 } else {
-                    this.sendToPlayer(`${this.roomCode}_HOST`, {
+                    // Use enhanced sendToPlayer for better reliability
+                    const sendResult = this.sendToPlayer(`${this.roomCode}_HOST`, {
                         type: 'GUESS_SUBMITTED',
                         playerId: this.playerId,
                         guess: guess
-                    });
+                    }, { waitForReady: true, retries: 2 });
+                    
+                    // Handle async result if needed
+                    if (sendResult && typeof sendResult.then === 'function') {
+                        sendResult.then(result => {
+                            if (!result.success) {
+                                console.warn('Failed to submit guess:', result);
+                                this.showToast('Failed to submit guess - please try again', 'error');
+                            }
+                        });
+                    }
                 }
                 
                 guessInput.disabled = true;
@@ -1760,11 +2023,22 @@
                     this.gameState.votes.set(this.playerId, vote);
                     this.checkAllVotesSubmitted();
                 } else {
-                    this.sendToPlayer(`${this.roomCode}_HOST`, {
+                    // Use enhanced sendToPlayer for better reliability
+                    const sendResult = this.sendToPlayer(`${this.roomCode}_HOST`, {
                         type: 'VOTE_SUBMITTED',
                         playerId: this.playerId,
                         vote: vote
-                    });
+                    }, { waitForReady: true, retries: 2 });
+                    
+                    // Handle async result if needed
+                    if (sendResult && typeof sendResult.then === 'function') {
+                        sendResult.then(result => {
+                            if (!result.success) {
+                                console.warn('Failed to submit vote:', result);
+                                this.showToast('Failed to submit vote - please try again', 'error');
+                            }
+                        });
+                    }
                 }
                 
                 // Disable all voting buttons
