@@ -312,7 +312,7 @@
         // Game Core - All functionality embedded
         class DrawPartyGame {
             constructor() {
-                console.log('🎨 Draw Party Game v1.7.1 - DEBUG DASHBOARD READY!', new Date().toISOString());
+                console.log('🎨 Draw Party Game v1.7.2 - ENHANCED DEBUG LOGGING!', new Date().toISOString());
                 console.log('🔧 If you see old behavior, clear browser cache or hard refresh (Ctrl+Shift+R)');
                 
                 this.peer = null;
@@ -1077,10 +1077,14 @@
                             }
                         } else {
                             console.log('📡 Player sending PLAYER_JOIN to host:', conn.peer);
+                            console.log('🏷️ Player name at join time:', this.playerName, '(empty is normal)');
+                            
+                            // Add to debug panel
+                            this.logDebugMessage('PLAYER_JOIN', `To host: ${conn.peer}`, 'out');
                             
                             // Use enhanced sendToPlayer with connection readiness waiting
                             const sendResult = this.sendToPlayer(conn.peer, 
-                                { type: 'PLAYER_JOIN', playerId: this.playerId, playerName: this.playerName },
+                                { type: 'PLAYER_JOIN', playerId: this.playerId, playerName: this.playerName || 'Player' },
                                 { waitForReady: true, retries: 3, retryDelay: 200 }
                             );
                             
@@ -1163,6 +1167,8 @@
                 switch (message.type) {
                     case 'PLAYER_JOIN':
                         console.log('🎯 Handling PLAYER_JOIN. I am host?', this.isHost);
+                        console.log('🎯 Player joining:', message.playerId, 'Name:', message.playerName);
+                        console.log('🎯 Current players before adding:', this.gameState.players.size);
                         if (this.isHost) {
                             console.log('➕ Host adding player to gameState:', message.playerId, message.playerName);
                             this.gameState.players.set(message.playerId, {
@@ -1171,6 +1177,8 @@
                                 score: 0,
                                 connected: true
                             });
+                            console.log('✅ Player added! New player count:', this.gameState.players.size);
+                            console.log('📋 All players now:', Array.from(this.gameState.players.entries()));
                             console.log('📡 Host broadcasting game state after adding player');
                             this.broadcastGameState();
                         } else {
