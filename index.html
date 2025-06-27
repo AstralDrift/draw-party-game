@@ -94,6 +94,43 @@
                 <h1 class="text-2xl font-bold">🎨 Draw Party!</h1>
                 <div id="room-code" class="text-gray-400 mt-1"></div>
                 <div id="connection-status" class="text-sm mt-1"></div>
+                
+                <!-- Debug Dashboard -->
+                <div id="debug-panel" class="mt-2 p-2 bg-gray-900 rounded text-xs text-left hidden">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="font-bold text-yellow-400">🔍 Debug Dashboard</span>
+                        <button id="toggle-debug" class="text-blue-400 hover:text-blue-300">Hide</button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                            <div class="text-gray-400">Mode:</div>
+                            <div id="debug-mode" class="text-white font-mono">-</div>
+                        </div>
+                        <div>
+                            <div class="text-gray-400">Connections:</div>
+                            <div id="debug-connections" class="text-white font-mono">0</div>
+                        </div>
+                        <div>
+                            <div class="text-gray-400">Players in State:</div>
+                            <div id="debug-players" class="text-white font-mono">0</div>
+                        </div>
+                        <div>
+                            <div class="text-gray-400">Role:</div>
+                            <div id="debug-role" class="text-white font-mono">-</div>
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <div class="text-gray-400">Last Message:</div>
+                        <div id="debug-last-message" class="text-green-400 font-mono text-xs">None</div>
+                    </div>
+                    <div class="mt-2">
+                        <div class="text-gray-400">Message Log:</div>
+                        <div id="debug-message-log" class="text-xs font-mono max-h-20 overflow-y-auto bg-black p-1 rounded"></div>
+                    </div>
+                </div>
+                
+                <!-- Debug Toggle Button -->
+                <button id="show-debug" class="mt-1 text-xs text-blue-400 hover:text-blue-300">Show Debug Panel</button>
             </header>
             
             <!-- Game Content -->
@@ -275,7 +312,7 @@
         // Game Core - All functionality embedded
         class DrawPartyGame {
             constructor() {
-                console.log('🎨 Draw Party Game v1.7.0 - CONNECTION TIMING FIX LOADED!', new Date().toISOString());
+                console.log('🎨 Draw Party Game v1.7.1 - DEBUG DASHBOARD READY!', new Date().toISOString());
                 console.log('🔧 If you see old behavior, clear browser cache or hard refresh (Ctrl+Shift+R)');
                 
                 this.peer = null;
@@ -323,6 +360,55 @@
                     result += chars.charAt(Math.floor(Math.random() * chars.length));
                 }
                 return result;
+            }
+            
+            // Debug Dashboard Functions
+            updateDebugPanel() {
+                const mode = this.isLocalMode ? 'LOCAL' : 'P2P';
+                const connections = this.connections ? this.connections.size : 0;
+                const players = this.gameState.players ? this.gameState.players.size : 0;
+                const role = this.isHost ? 'HOST' : 'PLAYER';
+                
+                const debugMode = document.getElementById('debug-mode');
+                const debugConnections = document.getElementById('debug-connections');
+                const debugPlayers = document.getElementById('debug-players');
+                const debugRole = document.getElementById('debug-role');
+                
+                if (debugMode) debugMode.textContent = mode;
+                if (debugConnections) debugConnections.textContent = connections;
+                if (debugPlayers) debugPlayers.textContent = players;
+                if (debugRole) debugRole.textContent = role;
+            }
+            
+            logDebugMessage(type, message, direction = 'out') {
+                const timestamp = new Date().toLocaleTimeString();
+                const arrow = direction === 'out' ? '→' : '←';
+                const color = direction === 'out' ? 'text-blue-400' : 'text-green-400';
+                
+                // Update last message
+                const lastMsg = document.getElementById('debug-last-message');
+                if (lastMsg) {
+                    lastMsg.textContent = `${arrow} ${type}`;
+                    lastMsg.className = `${color} font-mono text-xs`;
+                }
+                
+                // Add to message log
+                const log = document.getElementById('debug-message-log');
+                if (log) {
+                    const entry = document.createElement('div');
+                    entry.className = `${color}`;
+                    entry.textContent = `${timestamp} ${arrow} ${type}`;
+                    log.appendChild(entry);
+                    log.scrollTop = log.scrollHeight;
+                    
+                    // Keep only last 10 messages
+                    while (log.children.length > 10) {
+                        log.removeChild(log.firstChild);
+                    }
+                }
+                
+                // Update the debug panel
+                this.updateDebugPanel();
             }
             
             init() {
@@ -439,6 +525,19 @@
                 });
                 document.getElementById('guess-input').addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') document.getElementById('submit-guess').click();
+                });
+                
+                // Debug Panel Toggle
+                // Debug panel toggle handlers
+                document.getElementById('show-debug').addEventListener('click', () => {
+                    document.getElementById('debug-panel').classList.remove('hidden');
+                    document.getElementById('show-debug').classList.add('hidden');
+                    this.updateDebugPanel();
+                });
+                
+                document.getElementById('toggle-debug').addEventListener('click', () => {
+                    document.getElementById('debug-panel').classList.add('hidden');
+                    document.getElementById('show-debug').classList.remove('hidden');
                 });
             }
             
@@ -568,16 +667,24 @@
             }
             
             createRoom() {
+                this.logDebugMessage('CREATE_ROOM', 'Starting room creation', 'out');
+                
                 this.roomCode = this.generateRoomCode();
                 this.isHost = true;
+                
+                this.logDebugMessage('ROOM_CODE', `Generated: ${this.roomCode}`, 'out');
                 
                 // Update URL for sharing
                 const basePath = window.location.pathname.includes('/draw-party-game') ? '/draw-party-game' : '';
                 window.history.pushState({}, '', `${basePath}/${this.roomCode}`);
                 
+                this.logDebugMessage('HOST_SETUP', 'Becoming host, creating peer', 'out');
+                
                 // Create peer with host ID so others can find us
                 this.createHostPeer();
                 this.showLobby();
+                
+                this.logDebugMessage('ROOM_READY', 'Room created successfully', 'out');
             }
             
             createHostPeer() {
@@ -658,18 +765,25 @@
             }
             
             joinRoom(code) {
+                this.logDebugMessage('JOIN_ROOM', `Attempting to join: ${code}`, 'out');
+                
                 this.roomCode = code;
                 
                 // For cross-device multiplayer, we always start as player and try to connect to host
                 // Only become host if no host exists
                 this.isHost = false;
                 
+                this.logDebugMessage('PLAYER_SETUP', 'Set as player, looking for host', 'out');
+                
                 // Update URL - handle GitHub Pages path
                 const basePath = window.location.pathname.includes('/draw-party-game') ? '/draw-party-game' : '';
                 window.history.pushState({}, '', `${basePath}/${this.roomCode}`);
                 
+                this.logDebugMessage('PEER_INIT', 'Initializing peer connection', 'out');
                 this.initializePeer();
                 this.showLobby();
+                
+                this.logDebugMessage('JOIN_COMPLETE', 'Join room setup complete', 'out');
             }
             
             initializePeer() {
@@ -1043,6 +1157,9 @@
                 console.log('📨 Received message:', message.type, 'from:', fromPeer);
                 console.log('📨 Message details:', message);
                 
+                // Add to debug panel
+                this.logDebugMessage(message.type, fromPeer, 'in');
+                
                 switch (message.type) {
                     case 'PLAYER_JOIN':
                         console.log('🎯 Handling PLAYER_JOIN. I am host?', this.isHost);
@@ -1397,6 +1514,9 @@
             }
             
             broadcastMessage(message) {
+                // Add to debug panel
+                this.logDebugMessage(`BROADCAST_${message.type}`, `To ${this.connections.size} players`, 'out');
+                
                 // For local testing, use localStorage
                 if (this.broadcastLocal) {
                     this.broadcastLocal(message);
@@ -1663,8 +1783,12 @@
                     console.error('❌ CRITICAL: gameState.players is not a Map!', typeof this.gameState.players, this.gameState.players);
                     console.log('🔧 Attempting to fix by creating new Map');
                     this.gameState.players = new Map();
+                    this.logDebugMessage('MAP_ERROR', 'Players Map corrupted, fixed', 'out');
                     return;
                 }
+                
+                // Update debug panel with current state
+                this.updateDebugPanel();
                 
                 console.log('📊 Current players in gameState:', this.gameState.players.size);
                 const playersArray = Array.from(this.gameState.players.entries());

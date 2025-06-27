@@ -9,7 +9,9 @@
       "Bash(git commit:*)",
       "Bash(gh:*)",
       "Bash(git push:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)"
     ],
     "deny": []
   }
