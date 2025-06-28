@@ -353,6 +353,8 @@
 
     <script>
         const DEBUG_MODE = false; // Set to true for development logging
+        // Lightweight debug logger that respects the DEBUG_MODE flag
+        const debugLog = (...args) => { if (typeof DEBUG_MODE !== 'undefined' && DEBUG_MODE) console.log(...args); };
 
         class DrawingHistory {
             constructor(maxSteps = 20) {
@@ -888,8 +890,9 @@
                 debugLog('🔌 Attempting to connect to host:', hostId);
                 
                 const connectionTimeout = setTimeout(() => {
-                    debugLog('⏰ Connection timeout - no host found, becoming host');
-                    this.becomeHost();
+                    debugLog('⏰ Connection timeout - no host found.');
+                    this.updateConnectionStatus('Host not found. The room may have been closed.');
+                    this.showToast('Could not connect to the game room.', 'error');
                 }, 8000);
                 
                 try {
@@ -906,7 +909,8 @@
                     conn.on('error', (err) => {
                         console.error('❌ Connection error:', err);
                         clearTimeout(connectionTimeout);
-                        this.becomeHost();
+                        this.updateConnectionStatus('Failed to connect to host.');
+                        this.showToast('Error connecting to room.', 'error');
                     });
                     
                     conn.on('close', () => {
@@ -920,7 +924,8 @@
                 } catch (error) {
                     console.error('💥 Exception connecting to host:', error);
                     clearTimeout(connectionTimeout);
-                    this.becomeHost();
+                    this.updateConnectionStatus('Failed to connect to host.');
+                    this.showToast('Error creating connection.', 'error');
                 }
             }
             
@@ -1223,6 +1228,11 @@
                         
                     case 'HEARTBEAT_ACK':
                         debugLog(`💓 Heartbeat ACK received from ${fromPeer}`);
+                        break;
+                        
+                    case 'RESET_TO_LOBBY':
+                        // Simple approach: reload the page to reset UI/state
+                        window.location.reload();
                         break;
                 }
             }
@@ -2266,6 +2276,8 @@
                     this.gameState.players.set(playerId, player);
                 });
                 
+                // Inform all clients to return to the lobby for a fresh start
+                this.broadcastMessage({ type: 'RESET_TO_LOBBY' });
                 this.broadcastGameState();
                 this.showLobby();
             }
