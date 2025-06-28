@@ -473,6 +473,13 @@
                 this.currentTimer = null;
                 this.timerDisplay = null;
                 
+                // Resource management for memory leak prevention
+                this.eventListeners = [];
+                this.activeTimeouts = new Set();
+                this.activeIntervals = new Set();
+                this.canvasEventListeners = [];
+                this.resizeTimeout = null;
+                
                 // Prompt system
                 this.prompts = [
                     'Cat', 'Dog', 'House', 'Car', 'Tree', 'Sun', 'Moon', 'Fish', 'Bird', 'Flower',
@@ -484,7 +491,136 @@
                 
                 this.gameState.totalRounds = this.gameConfig.gameplay.totalRounds;
                 
+                // Cleanup on page unload
+                this.addManagedEventListener(window, 'beforeunload', () => this.cleanup());
+                this.addManagedEventListener(window, 'unload', () => this.cleanup());
+                
                 this.init();
+            }
+            
+            // Resource management methods
+            addManagedEventListener(element, event, handler, options = {}) {
+                element.addEventListener(event, handler, options);
+                this.eventListeners.push({ element, event, handler, options });
+            }
+            
+            createManagedTimeout(callback, delay) {
+                const timeoutId = setTimeout(() => {
+                    this.activeTimeouts.delete(timeoutId);
+                    callback();
+                }, delay);
+                this.activeTimeouts.add(timeoutId);
+                return timeoutId;
+            }
+            
+            createManagedInterval(callback, interval) {
+                const intervalId = setInterval(callback, interval);
+                this.activeIntervals.add(intervalId);
+                return intervalId;
+            }
+            
+            clearManagedTimeout(timeoutId) {
+                if (this.activeTimeouts.has(timeoutId)) {
+                    clearTimeout(timeoutId);
+                    this.activeTimeouts.delete(timeoutId);
+                }
+            }
+            
+            clearManagedInterval(intervalId) {
+                if (this.activeIntervals.has(intervalId)) {
+                    clearInterval(intervalId);
+                    this.activeIntervals.delete(intervalId);
+                }
+            }
+            
+            cleanup() {
+                console.log('🧹 Cleaning up resources to prevent memory leaks...');
+                
+                // Clear all managed event listeners
+                this.eventListeners.forEach(({ element, event, handler, options }) => {
+                    try {
+                        element.removeEventListener(event, handler, options);
+                    } catch (error) {
+                        console.warn('Error removing event listener:', error);
+                    }
+                });
+                this.eventListeners = [];
+                
+                // Clear all managed timeouts
+                this.activeTimeouts.forEach(timeoutId => {
+                    try {
+                        clearTimeout(timeoutId);
+                    } catch (error) {
+                        console.warn('Error clearing timeout:', error);
+                    }
+                });
+                this.activeTimeouts.clear();
+                
+                // Clear all managed intervals
+                this.activeIntervals.forEach(intervalId => {
+                    try {
+                        clearInterval(intervalId);
+                    } catch (error) {
+                        console.warn('Error clearing interval:', error);
+                    }
+                });
+                this.activeIntervals.clear();
+                
+                // Clear canvas event listeners
+                this.cleanupCanvasEventListeners();
+                
+                // Clear timers
+                this.clearTimer();
+                
+                // Clear animation frames
+                if (this.animationFrameId) {
+                    cancelAnimationFrame(this.animationFrameId);
+                    this.animationFrameId = null;
+                }
+                
+                // Clear resize timeout
+                if (this.resizeTimeout) {
+                    clearTimeout(this.resizeTimeout);
+                    this.resizeTimeout = null;
+                }
+                
+                // Close peer connections
+                if (this.peer) {
+                    try {
+                        this.peer.destroy();
+                    } catch (error) {
+                        console.warn('Error destroying peer:', error);
+                    }
+                    this.peer = null;
+                }
+                
+                // Close all connections
+                this.connections.forEach((conn, peerId) => {
+                    try {
+                        conn.close();
+                    } catch (error) {
+                        console.warn(`Error closing connection to ${peerId}:`, error);
+                    }
+                });
+                this.connections.clear();
+                
+                console.log('✅ Resource cleanup completed');
+            }
+            
+            cleanupCanvasEventListeners() {
+                this.canvasEventListeners.forEach(({ element, event, handler, options }) => {
+                    try {
+                        element.removeEventListener(event, handler, options);
+                    } catch (error) {
+                        console.warn('Error removing canvas event listener:', error);
+                    }
+                });
+                this.canvasEventListeners = [];
+            }
+            
+            addCanvasEventListener(element, event, handler, options = {}) {
+                element.addEventListener(event, handler, options);
+                this.canvasEventListeners.push({ element, event, handler, options });
             }
             
             init() {
@@ -538,7 +674,7 @@
             }
 
             hideLoading() {
-                setTimeout(() => {
+                this.createManagedTimeout(() => {
                     document.getElementById('loading').classList.add('hidden');
                     document.getElementById('game-container').classList.remove('hidden');
                 }, 500);
@@ -1443,7 +1579,7 @@
                 } else {
                     // Player tries to reconnect to host
                     this.updateConnectionStatus('Reconnecting to host...');
-                    setTimeout(() => this.connectToHost(), 3000);
+                    this.createManagedTimeout(() => this.connectToHost(), 3000);
                 }
             }
             
@@ -1688,7 +1824,7 @@
                     }
                     
                     // Wait a bit for final submissions, then start guessing rounds
-                    setTimeout(() => {
+                    this.createManagedTimeout(() => {
                         console.log('Host starting guessing rounds...');
                         console.log('Total drawings completed:', this.gameState.drawingsCompleted.size);
                         console.log('Total players:', this.gameState.players.size);
@@ -1723,7 +1859,7 @@
                 this.showScreen('drawing-screen');
                 
                 // Wait for screen to be visible, then setup canvas
-                setTimeout(() => {
+                this.createManagedTimeout(() => {
                     console.log('Initializing canvas for drawing phase...');
                     this.drawingHistory.clear();
                     this.clearCanvas(false);
@@ -2295,14 +2431,14 @@
                 // Handle edge case where there are no non-artist players
                 if (nonArtistPlayers.length === 0) {
                     console.log('📝 No players to guess (only artist), advancing to voting');
-                    setTimeout(() => this.endGuessingPhase(), 1000);
+                    this.createManagedTimeout(() => this.endGuessingPhase(), 1000);
                     return;
                 }
                 
                 if (submittedGuesses.length >= nonArtistPlayers.length) {
                     console.log('📝 All guesses submitted, advancing to voting');
                     // Small delay to let UI update
-                    setTimeout(() => this.endGuessingPhase(), 1000);
+                    this.createManagedTimeout(() => this.endGuessingPhase(), 1000);
                 }
             }
             
@@ -2319,14 +2455,14 @@
                 // Handle edge case where there are no non-artist players
                 if (nonArtistPlayers.length === 0) {
                     console.log('🗳️ No players to vote (only artist), showing results');
-                    setTimeout(() => this.endVotingPhase(), 1000);
+                    this.createManagedTimeout(() => this.endVotingPhase(), 1000);
                     return;
                 }
                 
                 if (submittedVotes.length >= nonArtistPlayers.length) {
                     console.log('🗳️ All votes submitted, showing results');
                     // Small delay to let UI update
-                    setTimeout(() => this.endVotingPhase(), 1000);
+                    this.createManagedTimeout(() => this.endVotingPhase(), 1000);
                 }
             }
 
@@ -2339,7 +2475,57 @@
                 toast.textContent = message;
                 toast.className = `toast shadow-lg px-6 py-3 ${type === 'success' ? 'bg-green-500' : 'bg-red-500'} text-white`;
                 toast.classList.remove('hidden');
-                setTimeout(() => toast.classList.add('hidden'), 3000);
+                this.createManagedTimeout(() => toast.classList.add('hidden'), 3000);
+            }
+
+            // Memory leak prevention test method
+            testMemoryLeakPrevention() {
+                console.log('🧪 Testing memory leak prevention...');
+                
+                const initialCounts = {
+                    eventListeners: this.eventListeners.length,
+                    canvasEventListeners: this.canvasEventListeners.length,
+                    activeTimeouts: this.activeTimeouts.size,
+                    activeIntervals: this.activeIntervals.size
+                };
+                
+                console.log('📊 Initial resource counts:', initialCounts);
+                
+                // Create some test resources
+                this.addManagedEventListener(document, 'test-event', () => {});
+                this.createManagedTimeout(() => {}, 5000);
+                this.createManagedInterval(() => {}, 1000);
+                
+                const afterCreationCounts = {
+                    eventListeners: this.eventListeners.length,
+                    canvasEventListeners: this.canvasEventListeners.length,
+                    activeTimeouts: this.activeTimeouts.size,
+                    activeIntervals: this.activeIntervals.size
+                };
+                
+                console.log('📊 After creation counts:', afterCreationCounts);
+                
+                // Test cleanup
+                this.cleanup();
+                
+                const afterCleanupCounts = {
+                    eventListeners: this.eventListeners.length,
+                    canvasEventListeners: this.canvasEventListeners.length,
+                    activeTimeouts: this.activeTimeouts.size,
+                    activeIntervals: this.activeIntervals.size
+                };
+                
+                console.log('📊 After cleanup counts:', afterCleanupCounts);
+                
+                const cleanupSuccessful = 
+                    afterCleanupCounts.eventListeners === 0 &&
+                    afterCleanupCounts.canvasEventListeners === 0 &&
+                    afterCleanupCounts.activeTimeouts === 0 &&
+                    afterCleanupCounts.activeIntervals === 0;
+                
+                console.log(cleanupSuccessful ? '✅ Memory leak prevention test PASSED' : '❌ Memory leak prevention test FAILED');
+                
+                return cleanupSuccessful;
             }
 
             // Timer System
@@ -2351,7 +2537,7 @@
                 this.updateTimerDisplay(timeLeft);
                 console.log(`⏰ Starting timer: ${seconds} seconds`);
                 
-                this.currentTimer = setInterval(() => {
+                this.currentTimer = this.createManagedInterval(() => {
                     timeLeft--;
                     this.updateTimerDisplay(timeLeft);
                     
@@ -2365,7 +2551,7 @@
             
             clearTimer() {
                 if (this.currentTimer) {
-                    clearInterval(this.currentTimer);
+                    this.clearManagedInterval(this.currentTimer);
                     this.currentTimer = null;
                     console.log('⏰ Timer cleared');
                 }
@@ -2566,6 +2752,9 @@
                     return;
                 }
                 
+                // Clear any existing canvas event listeners first
+                this.cleanupCanvasEventListeners();
+                
                 const ctx = canvas.getContext('2d', {
                     alpha: false,           // Disable alpha for performance
                     desynchronized: true,   // Optimize for frequent redraws
@@ -2612,15 +2801,18 @@
                     console.log('Canvas resized and initialized:', containerRect.width, 'x', containerRect.height, 'DPR:', dpr);
                 };
                 
-                // Debounced resize for performance
-                let resizeTimeout;
-                window.addEventListener('resize', () => {
-                    clearTimeout(resizeTimeout);
-                    resizeTimeout = setTimeout(resize, 100);
-                });
+                // Managed debounced resize for performance
+                const handleResize = () => {
+                    if (this.resizeTimeout) {
+                        clearTimeout(this.resizeTimeout);
+                    }
+                    this.resizeTimeout = this.createManagedTimeout(resize, 100);
+                };
+                
+                this.addManagedEventListener(window, 'resize', handleResize);
                 
                 // Force initial resize
-                setTimeout(resize, 100);
+                this.createManagedTimeout(resize, 100);
 
                 const getPos = (e) => {
                     const rect = canvas.getBoundingClientRect();
@@ -2679,7 +2871,7 @@
                     // Process any remaining drawing buffer
                     if (this.drawingBuffer.length > 0) {
                         // Let the drawing loop finish processing
-                        setTimeout(() => {
+                        this.createManagedTimeout(() => {
                             this.drawingHistory.saveState(canvas);
                         }, 50);
                     } else {
@@ -2689,15 +2881,16 @@
                     console.log('Drawing stopped');
                 };
 
-                canvas.addEventListener('mousedown', start);
-                canvas.addEventListener('mousemove', draw);
-                canvas.addEventListener('mouseup', stop);
-                canvas.addEventListener('mouseout', stop);
-                canvas.addEventListener('touchstart', start, { passive: false });
-                canvas.addEventListener('touchmove', draw, { passive: false });
-                canvas.addEventListener('touchend', stop);
+                // Use managed event listeners for canvas events
+                this.addCanvasEventListener(canvas, 'mousedown', start);
+                this.addCanvasEventListener(canvas, 'mousemove', draw);
+                this.addCanvasEventListener(canvas, 'mouseup', stop);
+                this.addCanvasEventListener(canvas, 'mouseout', stop);
+                this.addCanvasEventListener(canvas, 'touchstart', start, { passive: false });
+                this.addCanvasEventListener(canvas, 'touchmove', draw, { passive: false });
+                this.addCanvasEventListener(canvas, 'touchend', stop);
                 
-                console.log('Canvas setup complete with performance optimizations');
+                console.log('Canvas setup complete with performance optimizations and memory leak prevention');
             }
         }
 
