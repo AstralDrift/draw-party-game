@@ -1279,7 +1279,14 @@
                         }
                         
                         const { players, guesses, votes, scores, playerPrompts, playerDrawings, drawingsCompleted, votingOptions, ...scalarState } = message.gameState;
+                        
+                        // Validate phase transition
+                        const previousPhase = this.gameState.phase;
                         Object.assign(this.gameState, scalarState);
+                        
+                        if (previousPhase !== this.gameState.phase) {
+                            console.log('🔄 Phase transition:', previousPhase, '→', this.gameState.phase);
+                        }
                         
                         debugLog('📊 Final gameState players.size:', this.gameState.players.size);
                         this.updateUI();
@@ -1733,6 +1740,7 @@
             
             handleStartGame() {
                 // Called when receiving START_GAME message
+                console.log('📢 Received START_GAME message');
                 this.gameState.phase = 'DRAWING';
                 this.startDrawingPhase();
             }
@@ -1836,19 +1844,29 @@
             startGuessingRounds() {
                 if (!this.isHost) return;
                 
+                console.log('🎯 Starting guessing rounds. Remaining drawings:', this.gameState.roundOrder.length);
+                
                 // Get the first drawing to show
                 if (this.gameState.roundOrder.length > 0) {
                     this.gameState.currentViewingPlayer = this.gameState.roundOrder.shift();
                     this.gameState.currentViewingDrawing = this.gameState.playerDrawings.get(this.gameState.currentViewingPlayer);
                     this.gameState.currentViewingPrompt = this.gameState.playerPrompts.get(this.gameState.currentViewingPlayer);
                     
+                    console.log('📋 Now viewing:', {
+                        player: this.gameState.currentViewingPlayer,
+                        prompt: this.gameState.currentViewingPrompt,
+                        hasDrawing: !!this.gameState.currentViewingDrawing
+                    });
+                    
                     this.gameState.phase = 'GUESSING';
                     this.gameState.guesses.clear();
+                    this.gameState.votes.clear();
                     this.broadcastGameState();
                     
                     this.startGuessingPhase();
                 } else {
                     // All drawings shown, go to final results
+                    console.log('🏆 All drawings shown, showing final results');
                     this.showFinalResults();
                 }
             }
@@ -2005,7 +2023,17 @@
             
             endGuessingPhase() {
                 console.log('🤔 Guessing phase ended');
+                
+                // Clear timer first
+                this.clearTimer();
+                
                 if (this.isHost) {
+                    // Validate phase transition
+                    if (this.gameState.phase !== 'GUESSING') {
+                        console.warn('⚠️ EndGuessingPhase called but not in GUESSING phase:', this.gameState.phase);
+                        return;
+                    }
+                    
                     this.gameState.phase = 'VOTING';
                     this.prepareVotingOptions();
                     
@@ -2175,7 +2203,17 @@
             
             endVotingPhase() {
                 console.log('🗳️ Voting phase ended');
+                
+                // Clear timer first
+                this.clearTimer();
+                
                 if (this.isHost) {
+                    // Validate phase transition
+                    if (this.gameState.phase !== 'VOTING') {
+                        console.warn('⚠️ EndVotingPhase called but not in VOTING phase:', this.gameState.phase);
+                        return;
+                    }
+                    
                     this.calculateResults();
                     this.gameState.phase = 'RESULTS';
                     this.broadcastGameState();
