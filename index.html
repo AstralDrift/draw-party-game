@@ -30,6 +30,10 @@
         .canvas-container {
             touch-action: none;
             position: relative;
+            width: 100%;
+            max-width: min(90vw, 90vh, 500px);
+            aspect-ratio: 4/3;
+            margin: 0 auto;
         }
         
         .drawing-canvas {
@@ -37,6 +41,76 @@
             border-radius: 0.5rem;
             background: white;
             cursor: crosshair;
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        
+        /* Mobile-specific canvas optimization */
+        @media (max-width: 768px) {
+            .canvas-container {
+                max-width: min(95vw, 80vh);
+                padding: 0 10px;
+            }
+            
+            /* Mobile-optimized touch targets */
+            .mobile-touch-target {
+                min-width: 44px !important;
+                min-height: 44px !important;
+                padding: 8px 12px !important;
+            }
+            
+            .color-btn.mobile-touch-target {
+                width: 40px !important;
+                height: 40px !important;
+                margin: 2px;
+            }
+            
+            /* Show mobile text, hide desktop text */
+            .mobile-text {
+                display: inline !important;
+            }
+            
+            .desktop-text {
+                display: none !important;
+            }
+            
+            /* Optimize tool layout for mobile */
+            #drawing-tools {
+                gap: 8px !important;
+                margin-bottom: 1rem !important;
+            }
+            
+            #color-palette, #tool-palette {
+                padding: 8px !important;
+                gap: 4px !important;
+            }
+        }
+        
+        @media (max-height: 600px) {
+            .canvas-container {
+                max-width: min(90vw, 60vh);
+            }
+            
+            /* Compact layout for landscape orientation */
+            #drawing-tools {
+                margin-bottom: 0.5rem !important;
+            }
+        }
+        
+        /* Enhanced touch feedback */
+        .mobile-touch-target:active {
+            transform: scale(0.95);
+            transition: transform 0.1s ease;
+        }
+        
+        /* Prevent text selection on mobile tools */
+        .mobile-touch-target {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
         }
         
         .toast {
@@ -201,30 +275,45 @@
                         <div id="drawing-timer" class="text-2xl font-mono"></div>
                     </div>
                     
-                    <div class="canvas-container mx-auto mb-4" style="max-width: 400px;">
-                        <canvas id="drawing-canvas" class="drawing-canvas w-full" width="400" height="300"></canvas>
+                    <div class="canvas-container mx-auto mb-4" id="canvas-container">
+                        <canvas id="drawing-canvas" class="drawing-canvas w-full"></canvas>
                     </div>
                     
-                    <div class="flex flex-wrap gap-2 justify-center mb-4">
+                    <div class="flex flex-wrap gap-2 justify-center mb-4" id="drawing-tools">
                         <!-- Color palette -->
-                        <div class="flex gap-1 bg-gray-800 rounded-lg p-2">
-                            <button class="color-btn w-8 h-8 rounded-full bg-black border-2 border-white" data-color="#000000"></button>
-                            <button class="color-btn w-8 h-8 rounded-full bg-red-500" data-color="#ef4444"></button>
-                            <button class="color-btn w-8 h-8 rounded-full bg-blue-500" data-color="#3b82f6"></button>
-                            <button class="color-btn w-8 h-8 rounded-full bg-green-500" data-color="#10b981"></button>
-                            <button class="color-btn w-8 h-8 rounded-full bg-yellow-500" data-color="#f59e0b"></button>
-                            <button class="color-btn w-8 h-8 rounded-full bg-purple-500" data-color="#8b5cf6"></button>
-                            <button class="color-btn w-8 h-8 rounded-full bg-pink-500" data-color="#ec4899"></button>
-                            <button class="color-btn w-8 h-8 rounded-full bg-orange-500" data-color="#f97316"></button>
+                        <div class="flex gap-1 bg-gray-800 rounded-lg p-2" id="color-palette">
+                            <button class="color-btn mobile-touch-target w-8 h-8 rounded-full bg-black border-2 border-white" data-color="#000000"></button>
+                            <button class="color-btn mobile-touch-target w-8 h-8 rounded-full bg-red-500" data-color="#ef4444"></button>
+                            <button class="color-btn mobile-touch-target w-8 h-8 rounded-full bg-blue-500" data-color="#3b82f6"></button>
+                            <button class="color-btn mobile-touch-target w-8 h-8 rounded-full bg-green-500" data-color="#10b981"></button>
+                            <button class="color-btn mobile-touch-target w-8 h-8 rounded-full bg-yellow-500" data-color="#f59e0b"></button>
+                            <button class="color-btn mobile-touch-target w-8 h-8 rounded-full bg-purple-500" data-color="#8b5cf6"></button>
+                            <button class="color-btn mobile-touch-target w-8 h-8 rounded-full bg-pink-500" data-color="#ec4899"></button>
+                            <button class="color-btn mobile-touch-target w-8 h-8 rounded-full bg-orange-500" data-color="#f97316"></button>
                         </div>
                         
                         <!-- Tools -->
-                        <div class="flex gap-1 bg-gray-800 rounded-lg p-2">
-                            <button id="brush-small" class="tool-btn bg-gray-600 hover:bg-gray-500 px-3 py-2 rounded text-sm">Small</button>
-                            <button id="brush-medium" class="tool-btn bg-blue-600 hover:bg-blue-500 px-3 py-2 rounded text-sm">Medium</button>
-                            <button id="brush-large" class="tool-btn bg-gray-600 hover:bg-gray-500 px-3 py-2 rounded text-sm">Large</button>
-                            <button id="eraser" class="tool-btn bg-gray-600 hover:bg-gray-500 px-3 py-2 rounded text-sm">Eraser</button>
-                            <button id="clear-canvas" class="tool-btn bg-red-600 hover:bg-red-500 px-3 py-2 rounded text-sm">Clear</button>
+                        <div class="flex gap-1 bg-gray-800 rounded-lg p-2" id="tool-palette">
+                            <button id="brush-small" class="tool-btn mobile-touch-target bg-gray-600 hover:bg-gray-500 active:bg-gray-400 px-3 py-2 rounded text-sm transition-colors">
+                                <span class="desktop-text">Small</span>
+                                <span class="mobile-text hidden">S</span>
+                            </button>
+                            <button id="brush-medium" class="tool-btn mobile-touch-target bg-blue-600 hover:bg-blue-500 active:bg-blue-400 px-3 py-2 rounded text-sm transition-colors">
+                                <span class="desktop-text">Medium</span>
+                                <span class="mobile-text hidden">M</span>
+                            </button>
+                            <button id="brush-large" class="tool-btn mobile-touch-target bg-gray-600 hover:bg-gray-500 active:bg-gray-400 px-3 py-2 rounded text-sm transition-colors">
+                                <span class="desktop-text">Large</span>
+                                <span class="mobile-text hidden">L</span>
+                            </button>
+                            <button id="eraser" class="tool-btn mobile-touch-target bg-gray-600 hover:bg-gray-500 active:bg-gray-400 px-3 py-2 rounded text-sm transition-colors">
+                                <span class="desktop-text">Eraser</span>
+                                <span class="mobile-text hidden">🗑️</span>
+                            </button>
+                            <button id="clear-canvas" class="tool-btn mobile-touch-target bg-red-600 hover:bg-red-500 active:bg-red-400 px-3 py-2 rounded text-sm transition-colors">
+                                <span class="desktop-text">Clear</span>
+                                <span class="mobile-text hidden">✖️</span>
+                            </button>
                         </div>
                     </div>
                     
@@ -243,7 +332,9 @@
                     </div>
                     
                     <div class="mb-6 bg-gray-800 rounded-lg p-4">
-                        <canvas id="guess-canvas" class="w-full border rounded" width="400" height="300"></canvas>
+                        <div class="canvas-container">
+                            <canvas id="guess-canvas" class="drawing-canvas"></canvas>
+                        </div>
                         <div class="text-center mt-2 text-sm text-gray-400" id="artist-name"></div>
                     </div>
                     
@@ -265,7 +356,9 @@
                     </div>
                     
                     <div class="mb-6 bg-gray-800 rounded-lg p-4">
-                        <canvas id="vote-canvas" class="w-full border rounded" width="400" height="300"></canvas>
+                        <div class="canvas-container">
+                            <canvas id="vote-canvas" class="drawing-canvas"></canvas>
+                        </div>
                     </div>
                     
                     <div id="voting-options" class="space-y-3 max-w-md mx-auto">
@@ -331,13 +424,14 @@
                     phase: 'LOBBY',
                     players: new Map(),
                     currentRound: 0,
-                    totalRounds: 5,
+                    totalRounds: 5, // Will be updated from gameConfig after initialization
                     currentArtist: null,
                     currentDrawing: null,
                     currentPrompt: '',
                     guesses: new Map(),
                     votes: new Map(),
-                    scores: new Map()
+                    scores: new Map(),
+                    likes: new Map() // Track likes given by artists
                 };
                 
                 // Drawing canvas state
@@ -346,12 +440,114 @@
                 this.currentSize = 3;
                 this.currentTool = 'brush';
                 
+                // Game configuration with improved defaults
+                this.gameConfig = {
+                    timers: {
+                        drawing: 90,     // Increased from 60s to 90s for more comfortable drawing
+                        guessing: 45,    // Increased from 30s to 45s for better thinking time
+                        voting: 30       // Increased from 20s to 30s for proper deliberation
+                    },
+                    gameplay: {
+                        minPlayers: 2,
+                        maxPlayers: 8,
+                        totalRounds: 5
+                    },
+                    mobile: {
+                        drawingThrottleMs: 16,  // ~60fps drawing updates for smooth mobile experience
+                        touchDebounceMs: 10,    // Debounce rapid touch events
+                        hapticEnabled: true     // Enable haptic feedback if available
+                    }
+                };
+                
+                // Update game state with configuration
+                this.gameState.totalRounds = this.gameConfig.gameplay.totalRounds;
+                
                 // Connection monitoring
                 this.connectionHealth = new Map();
                 this.heartbeatInterval = null;
                 this.lastHeartbeat = Date.now();
                 
                 this.init();
+                this.initializeResponsiveCanvas();
+                this.initializeMobileTouchIndicator();
+            }
+            
+            initializeResponsiveCanvas() {
+                // Set up responsive canvas sizing
+                this.resizeCanvas();
+                
+                // Resize on window resize with debouncing
+                let resizeTimeout;
+                window.addEventListener('resize', () => {
+                    clearTimeout(resizeTimeout);
+                    resizeTimeout = setTimeout(() => this.resizeCanvas(), 250);
+                });
+                
+                // Resize on orientation change
+                window.addEventListener('orientationchange', () => {
+                    setTimeout(() => this.resizeCanvas(), 500);
+                });
+            }
+            
+            resizeCanvas() {
+                const canvas = document.getElementById('drawing-canvas');
+                const container = document.getElementById('canvas-container');
+                
+                if (!canvas || !container) return;
+                
+                // Get container dimensions
+                const containerRect = container.getBoundingClientRect();
+                const containerWidth = containerRect.width;
+                const containerHeight = containerRect.height;
+                
+                // Use device pixel ratio for crisp rendering
+                const dpr = window.devicePixelRatio || 1;
+                
+                // Set canvas actual size (scaled for device pixel ratio)
+                canvas.width = containerWidth * dpr;
+                canvas.height = containerHeight * dpr;
+                
+                // Scale canvas back down using CSS
+                canvas.style.width = containerWidth + 'px';
+                canvas.style.height = containerHeight + 'px';
+                
+                // Scale the drawing context to account for device pixel ratio
+                const ctx = canvas.getContext('2d');
+                ctx.scale(dpr, dpr);
+                
+                // Reset canvas background
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(0, 0, containerWidth, containerHeight);
+                
+                console.log(`📱 Canvas resized: ${containerWidth}x${containerHeight} (DPR: ${dpr})`);
+            }
+            
+            setupCanvasSize(canvas) {
+                if (!canvas) return;
+                
+                const container = canvas.parentElement;
+                const containerRect = container.getBoundingClientRect();
+                const containerWidth = containerRect.width;
+                const containerHeight = containerRect.height;
+                
+                // Use device pixel ratio for crisp rendering
+                const dpr = window.devicePixelRatio || 1;
+                
+                // Set canvas actual size (scaled for device pixel ratio)
+                canvas.width = containerWidth * dpr;
+                canvas.height = containerHeight * dpr;
+                
+                // Scale canvas back down using CSS
+                canvas.style.width = containerWidth + 'px';
+                canvas.style.height = containerHeight + 'px';
+                
+                // Scale the drawing context to account for device pixel ratio
+                const ctx = canvas.getContext('2d');
+                ctx.scale(dpr, dpr);
+                
+                // Reset canvas background
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(0, 0, containerWidth, containerHeight);
             }
             
             generateId() {
@@ -503,7 +699,8 @@
                             id: this.playerId,
                             name: this.playerName,
                             score: 0,
-                            connected: true
+                            connected: true,
+                            likes: 0
                         });
                     }
                     
@@ -577,20 +774,117 @@
                 const canvas = document.getElementById('drawing-canvas');
                 const ctx = canvas.getContext('2d');
                 
-                // Touch events
+                // Mobile-optimized touch events with improved sensitivity
                 canvas.addEventListener('touchstart', (e) => this.startDrawing(e), { passive: false });
                 canvas.addEventListener('touchmove', (e) => this.draw(e), { passive: false });
-                canvas.addEventListener('touchend', () => this.stopDrawing());
+                canvas.addEventListener('touchend', (e) => this.stopDrawing(e), { passive: false });
+                canvas.addEventListener('touchcancel', () => this.stopDrawing());
                 
-                // Mouse events  
+                // Mouse events for desktop
                 canvas.addEventListener('mousedown', (e) => this.startDrawing(e));
                 canvas.addEventListener('mousemove', (e) => this.draw(e));
                 canvas.addEventListener('mouseup', () => this.stopDrawing());
                 canvas.addEventListener('mouseout', () => this.stopDrawing());
                 
-                // Prevent scrolling when drawing
-                canvas.addEventListener('touchstart', (e) => e.preventDefault());
-                canvas.addEventListener('touchmove', (e) => e.preventDefault());
+                // Enhanced mobile drawing prevention of unwanted interactions
+                canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }, { passive: false });
+                
+                canvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }, { passive: false });
+                
+                canvas.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }, { passive: false });
+                
+                // Prevent context menu on long press
+                canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+                
+                // Prevent text selection while drawing
+                canvas.addEventListener('selectstart', (e) => e.preventDefault());
+                
+                // Initialize mobile drawing settings
+                this.initializeMobileDrawingSettings();
+            }
+            
+            initializeMobileDrawingSettings() {
+                // Detect if user is on mobile device
+                this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                this.isTouch = 'ontouchstart' in window;
+                
+                // Mobile-specific drawing optimizations
+                if (this.isMobile || this.isTouch) {
+                    // Optimize brush sizes for touch
+                    this.touchBrushSizes = {
+                        small: 2,    // Slightly larger than desktop
+                        medium: 5,   // Better for finger drawing
+                        large: 8     // Good for broader strokes
+                    };
+                    
+                    // Touch pressure simulation for more natural drawing
+                    this.touchPressureEnabled = true;
+                    this.lastTouchTime = 0;
+                    this.touchVelocity = 0;
+                    
+                    // Anti-aliasing for smoother lines on mobile
+                    this.enableAntiAliasing = true;
+                    
+                    // Performance throttling for mobile
+                    this.lastDrawTime = 0;
+                    this.drawThrottleMs = this.gameConfig.mobile.drawingThrottleMs;
+                } else {
+                    // Desktop optimized sizes
+                    this.touchBrushSizes = {
+                        small: 1,
+                        medium: 3,
+                        large: 6
+                    };
+                    this.touchPressureEnabled = false;
+                    this.enableAntiAliasing = false;
+                }
+                
+                console.log(`🎨 Mobile drawing initialized - isMobile: ${this.isMobile}, isTouch: ${this.isTouch}`);
+            }
+            
+            initializeMobileTouchIndicator() {
+                // Create touch indicator for mobile devices
+                if (this.isMobile || this.isTouch) {
+                    this.touchIndicator = document.createElement('div');
+                    this.touchIndicator.id = 'touch-indicator';
+                    this.touchIndicator.style.cssText = `
+                        position: absolute;
+                        width: 20px;
+                        height: 20px;
+                        border: 2px solid rgba(255, 255, 255, 0.8);
+                        border-radius: 50%;
+                        pointer-events: none;
+                        z-index: 1000;
+                        display: none;
+                        box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+                        transition: transform 0.1s ease;
+                    `;
+                    document.body.appendChild(this.touchIndicator);
+                }
+            }
+            
+            showTouchIndicator(x, y) {
+                if (this.touchIndicator && (this.isMobile || this.isTouch)) {
+                    this.touchIndicator.style.display = 'block';
+                    this.touchIndicator.style.left = (x - 10) + 'px';
+                    this.touchIndicator.style.top = (y - 10) + 'px';
+                    this.touchIndicator.style.borderColor = this.currentColor;
+                }
+            }
+            
+            hideTouchIndicator() {
+                if (this.touchIndicator) {
+                    this.touchIndicator.style.display = 'none';
+                }
             }
             
             getCanvasCoordinates(e, canvas) {
@@ -599,17 +893,40 @@
                 const scaleY = canvas.height / rect.height;
                 
                 let clientX, clientY;
+                
+                // Enhanced touch coordinate handling for mobile
                 if (e.touches && e.touches[0]) {
+                    // Use the first touch point
                     clientX = e.touches[0].clientX;
                     clientY = e.touches[0].clientY;
+                    
+                    // Show touch indicator for mobile
+                    this.showTouchIndicator(clientX, clientY);
+                    
+                    // Calculate touch velocity for pressure simulation
+                    if (this.touchPressureEnabled) {
+                        const now = Date.now();
+                        const timeDelta = now - (this.lastTouchTime || now);
+                        const distance = this.lastPos ? 
+                            Math.sqrt(Math.pow(clientX - this.lastTouchX || 0, 2) + Math.pow(clientY - this.lastTouchY || 0, 2)) : 0;
+                        
+                        this.touchVelocity = timeDelta > 0 ? distance / timeDelta : 0;
+                        this.lastTouchTime = now;
+                        this.lastTouchX = clientX;
+                        this.lastTouchY = clientY;
+                    }
                 } else {
+                    // Mouse events
                     clientX = e.clientX;
                     clientY = e.clientY;
                 }
                 
+                // Account for device pixel ratio in coordinate scaling
+                const dpr = window.devicePixelRatio || 1;
+                
                 return {
-                    x: (clientX - rect.left) * scaleX,
-                    y: (clientY - rect.top) * scaleY
+                    x: (clientX - rect.left) * (scaleX / dpr),
+                    y: (clientY - rect.top) * (scaleY / dpr)
                 };
             }
             
@@ -621,57 +938,181 @@
                 const ctx = canvas.getContext('2d');
                 const pos = this.getCanvasCoordinates(e, canvas);
                 
+                // Mobile-optimized drawing settings
+                if (this.isMobile || this.isTouch) {
+                    // Enable anti-aliasing for smoother lines
+                    ctx.imageSmoothingEnabled = this.enableAntiAliasing;
+                    ctx.imageSmoothingQuality = 'high';
+                    
+                    // Reset touch tracking
+                    this.touchVelocity = 0;
+                    this.lastTouchTime = Date.now();
+                }
+                
                 ctx.beginPath();
                 ctx.moveTo(pos.x, pos.y);
                 
                 this.lastPos = pos;
+                
+                // Add a small dot for touch start to ensure visibility
+                if (this.isMobile || this.isTouch) {
+                    ctx.fillStyle = this.currentTool === 'eraser' ? '#FFFFFF' : this.currentColor;
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, Math.max(1, this.currentSize / 2), 0, 2 * Math.PI);
+                    ctx.fill();
+                }
             }
             
             draw(e) {
                 if (!this.isDrawing || this.gameState.phase !== 'DRAWING') return;
                 
+                // Mobile performance throttling
+                if (this.isMobile || this.isTouch) {
+                    const now = Date.now();
+                    if (now - this.lastDrawTime < this.drawThrottleMs) {
+                        return; // Skip this draw call for performance
+                    }
+                    this.lastDrawTime = now;
+                }
+                
                 const canvas = document.getElementById('drawing-canvas');
                 const ctx = canvas.getContext('2d');
                 const pos = this.getCanvasCoordinates(e, canvas);
                 
-                ctx.lineWidth = this.currentSize;
+                // Calculate dynamic brush size based on velocity (mobile only)
+                let dynamicSize = this.currentSize;
+                if (this.touchPressureEnabled && this.touchVelocity !== undefined) {
+                    // Slower movements = thicker lines (more pressure)
+                    // Faster movements = thinner lines (less pressure)
+                    const velocityFactor = Math.max(0.3, Math.min(1.5, 1 - (this.touchVelocity * 0.01)));
+                    dynamicSize = this.currentSize * velocityFactor;
+                }
+                
+                ctx.lineWidth = dynamicSize;
                 ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
                 ctx.strokeStyle = this.currentTool === 'eraser' ? '#FFFFFF' : this.currentColor;
                 ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
                 
-                ctx.beginPath();
-                ctx.moveTo(this.lastPos.x, this.lastPos.y);
-                ctx.lineTo(pos.x, pos.y);
-                ctx.stroke();
+                // Enhanced line smoothing for mobile
+                if (this.isMobile || this.isTouch) {
+                    // Use quadratic curves for smoother lines on touch devices
+                    const midPointX = (this.lastPos.x + pos.x) / 2;
+                    const midPointY = (this.lastPos.y + pos.y) / 2;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(this.lastPos.x, this.lastPos.y);
+                    ctx.quadraticCurveTo(this.lastPos.x, this.lastPos.y, midPointX, midPointY);
+                    ctx.stroke();
+                } else {
+                    // Standard line drawing for desktop
+                    ctx.beginPath();
+                    ctx.moveTo(this.lastPos.x, this.lastPos.y);
+                    ctx.lineTo(pos.x, pos.y);
+                    ctx.stroke();
+                }
                 
                 this.lastPos = pos;
                 
-                // Broadcast drawing to other players if host
-                if (this.isHost) {
-                    this.broadcastDrawingData();
-                }
+                // Note: During DRAWING phase, each player draws independently
+                // Broadcasting is handled separately during GUESSING/VOTING phases
             }
             
-            stopDrawing() {
+            stopDrawing(e) {
                 this.isDrawing = false;
+                
+                // Hide touch indicator
+                this.hideTouchIndicator();
+                
+                // Reset mobile touch tracking
+                if (this.isMobile || this.isTouch) {
+                    this.touchVelocity = 0;
+                    this.lastTouchTime = 0;
+                    this.lastTouchX = undefined;
+                    this.lastTouchY = undefined;
+                }
             }
             
             selectColor(color) {
                 this.currentColor = color;
                 this.currentTool = 'brush';
                 this.updateToolButtons();
+                
+                // Mobile haptic feedback
+                this.provideMobileHapticFeedback();
+                
+                console.log(`🎨 Color selected: ${color}`);
             }
             
             selectBrush(size) {
-                this.currentSize = size;
+                // Use mobile-optimized brush sizes if on touch device
+                if (this.isMobile || this.isTouch) {
+                    const sizeMap = {
+                        1: this.touchBrushSizes.small,
+                        3: this.touchBrushSizes.medium,
+                        6: this.touchBrushSizes.large
+                    };
+                    this.currentSize = sizeMap[size] || size;
+                } else {
+                    this.currentSize = size;
+                }
+                
                 this.currentTool = 'brush';
                 this.updateToolButtons();
+                
+                // Mobile haptic feedback
+                this.provideMobileHapticFeedback();
+                
+                console.log(`🖌️ Brush selected: ${this.currentSize}px (mobile optimized: ${this.isMobile || this.isTouch})`);
             }
             
             selectEraser() {
                 this.currentTool = 'eraser';
-                this.currentSize = 10;
+                
+                // Mobile-optimized eraser size
+                if (this.isMobile || this.isTouch) {
+                    this.currentSize = 15; // Larger eraser for touch devices
+                } else {
+                    this.currentSize = 10; // Standard eraser size for desktop
+                }
+                
                 this.updateToolButtons();
+                
+                // Mobile haptic feedback
+                this.provideMobileHapticFeedback();
+                
+                console.log(`🗑️ Eraser selected: ${this.currentSize}px (mobile optimized: ${this.isMobile || this.isTouch})`);
+            }
+            
+            provideMobileHapticFeedback() {
+                // Provide haptic feedback on mobile devices
+                if (this.isMobile && 'vibrate' in navigator && this.gameConfig.mobile.hapticEnabled) {
+                    navigator.vibrate(50); // Light haptic feedback
+                }
+            }
+            
+            clearCanvas() {
+                const canvas = document.getElementById('drawing-canvas');
+                const container = document.getElementById('canvas-container');
+                const ctx = canvas.getContext('2d');
+                
+                // Get logical dimensions (not scaled by device pixel ratio)
+                const containerRect = container.getBoundingClientRect();
+                const width = containerRect.width;
+                const height = containerRect.height;
+                
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(0, 0, width, height);
+                
+                // Mobile haptic feedback for clear action
+                if (this.isMobile && 'vibrate' in navigator && this.gameConfig.mobile.hapticEnabled) {
+                    navigator.vibrate([100, 50, 100]); // Double buzz for clear action
+                }
+                
+                console.log('🗑️ Canvas cleared');
+                
+                // Note: Canvas clearing is local to each player during DRAWING phase
+                // No broadcasting needed as each player manages their own canvas
             }
             
             updateToolButtons() {
@@ -687,16 +1128,6 @@
                 }
             }
             
-            clearCanvas() {
-                const canvas = document.getElementById('drawing-canvas');
-                const ctx = canvas.getContext('2d');
-                ctx.fillStyle = '#FFFFFF';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                
-                if (this.isHost) {
-                    this.broadcastDrawingData();
-                }
-            }
             
             createRoom() {
                 this.logDebugMessage('CREATE_ROOM', 'Starting room creation', 'out');
@@ -745,7 +1176,8 @@
                         id: this.playerId,
                         name: this.playerName || 'Host',
                         score: 0,
-                        connected: true
+                        connected: true,
+                        likes: 0
                     });
                     
                     this.updatePlayersDisplay();
@@ -1037,7 +1469,8 @@
                         id: this.playerId,
                         name: this.playerName || 'Host',
                         score: 0,
-                        connected: true
+                        connected: true,
+                        likes: 0
                     });
                 });
                 
@@ -1207,7 +1640,8 @@
                                 id: message.playerId,
                                 name: message.playerName || 'Player',
                                 score: 0,
-                                connected: true
+                                connected: true,
+                                likes: 0
                             });
                             console.log('✅ Player added! New player count:', this.gameState.players.size);
                             console.log('📋 All players now:', Array.from(this.gameState.players.entries()));
@@ -1330,6 +1764,16 @@
                         if (this.isHost) {
                             this.gameState.votes.set(message.playerId, message.vote);
                             this.checkAllVotesSubmitted();
+                        }
+                        break;
+                        
+                    case 'LIKE_SUBMITTED':
+                        if (this.isHost) {
+                            this.gameState.likes.set(message.playerId, {
+                                targetPlayerId: message.targetPlayerId,
+                                guessText: message.guessText
+                            });
+                            this.checkAllVotesSubmitted(); // Same check works since it counts all players - 1
                         }
                         break;
                         
@@ -1819,18 +2263,23 @@
                 console.log('📋 Players being broadcast:', Array.from(this.gameState.players.entries()));
                 
                 // CRITICAL FIX: Convert ALL Maps to Arrays for serialization
+                // SECURITY FIX: Filter sensitive information during active gameplay
                 const gameStateForBroadcast = {
                     currentRound: this.gameState.currentRound || 0,
                     totalRounds: this.gameState.totalRounds || 5,
                     phase: this.gameState.phase || 'lobby',
                     currentDrawer: this.gameState.currentDrawer || null,
-                    currentPrompt: this.gameState.currentPrompt || null,
+                    // Only share currentPrompt during VOTING and RESULTS phases
+                    currentPrompt: (this.gameState.phase === 'VOTING' || this.gameState.phase === 'RESULTS') ? 
+                        (this.gameState.currentPrompt || null) : null,
                     timeLeft: this.gameState.timeLeft || 0,
                     players: Array.from(this.gameState.players.entries()),
                     guesses: Array.from(this.gameState.guesses.entries()),
                     votes: Array.from(this.gameState.votes.entries()),
                     scores: Array.from(this.gameState.scores.entries()),
-                    playerPrompts: this.gameState.playerPrompts ? Array.from(this.gameState.playerPrompts.entries()) : []
+                    // NEVER share all playerPrompts - this would reveal all answers
+                    // Only individual players should know their own prompts
+                    playerPrompts: []
                 };
                 
                 console.log('📤 Sending GAME_STATE_UPDATE with safe data to', this.connections.size, 'connections');
@@ -1865,7 +2314,8 @@
                     id: this.playerId,
                     name: this.playerName || (this.isHost ? 'Host' : 'Player'),
                     score: 0,
-                    connected: true
+                    connected: true,
+                    likes: 0
                 });
                 
                 // Focus the name input for easy editing
@@ -2044,13 +2494,15 @@
                 const myPrompt = this.gameState.playerPrompts?.get(this.playerId) || 'Draw something fun!';
                 document.getElementById('drawing-prompt').textContent = `Draw this: ${myPrompt}`;
                 
-                // Clear and prepare canvas
-                this.clearCanvas();
-                this.updateToolButtons();
+                // Ensure canvas is properly sized for mobile
+                setTimeout(() => {
+                    this.resizeCanvas();
+                    this.updateToolButtons();
+                }, 100);
             }
             
             startDrawingTimer() {
-                let timeLeft = 60;
+                let timeLeft = this.gameConfig.timers.drawing;
                 const timerElement = document.getElementById('drawing-timer');
                 
                 const timer = setInterval(() => {
@@ -2094,30 +2546,40 @@
             showGuessingScreen() {
                 this.showScreen('guessing-screen');
                 
-                // Copy drawing to guess canvas
-                const sourceCanvas = document.getElementById('drawing-canvas');
-                const guessCanvas = document.getElementById('guess-canvas');
-                const ctx = guessCanvas.getContext('2d');
-                
-                if (this.gameState.currentDrawing) {
-                    const img = new Image();
-                    img.onload = () => {
-                        ctx.clearRect(0, 0, guessCanvas.width, guessCanvas.height);
-                        ctx.drawImage(img, 0, 0);
-                    };
-                    img.src = this.gameState.currentDrawing;
-                } else {
-                    ctx.drawImage(sourceCanvas, 0, 0);
-                }
-                
-                const artistName = this.gameState.players.get(this.gameState.currentArtist)?.name || 'Someone';
-                document.getElementById('artist-name').textContent = `Drawn by ${artistName}`;
-                
-                this.startGuessingTimer();
+                // Setup responsive guess canvas
+                setTimeout(() => {
+                    const guessCanvas = document.getElementById('guess-canvas');
+                    this.setupCanvasSize(guessCanvas);
+                    
+                    const ctx = guessCanvas.getContext('2d');
+                    const container = guessCanvas.parentElement;
+                    const containerRect = container.getBoundingClientRect();
+                    
+                    if (this.gameState.currentDrawing) {
+                        const img = new Image();
+                        img.onload = () => {
+                            ctx.clearRect(0, 0, containerRect.width, containerRect.height);
+                            ctx.drawImage(img, 0, 0, containerRect.width, containerRect.height);
+                        };
+                        img.src = this.gameState.currentDrawing;
+                    } else {
+                        // Fallback - copy from source canvas if available
+                        const sourceCanvas = document.getElementById('drawing-canvas');
+                        if (sourceCanvas) {
+                            ctx.clearRect(0, 0, containerRect.width, containerRect.height);
+                            ctx.drawImage(sourceCanvas, 0, 0, containerRect.width, containerRect.height);
+                        }
+                    }
+                    
+                    const artistName = this.gameState.players.get(this.gameState.currentArtist)?.name || 'Someone';
+                    document.getElementById('artist-name').textContent = `Drawn by ${artistName}`;
+                    
+                    this.startGuessingTimer();
+                }, 100);
             }
             
             startGuessingTimer() {
-                let timeLeft = 30;
+                let timeLeft = this.gameConfig.timers.guessing;
                 const timerElement = document.getElementById('guessing-timer');
                 
                 const timer = setInterval(() => {
@@ -2187,21 +2649,33 @@
             showVotingScreen() {
                 this.showScreen('voting-screen');
                 
-                // Copy drawing to vote canvas
-                const voteCanvas = document.getElementById('vote-canvas');
-                const ctx = voteCanvas.getContext('2d');
-                
-                if (this.gameState.currentDrawing) {
-                    const img = new Image();
-                    img.onload = () => {
-                        ctx.clearRect(0, 0, voteCanvas.width, voteCanvas.height);
-                        ctx.drawImage(img, 0, 0);
-                    };
-                    img.src = this.gameState.currentDrawing;
-                }
-                
-                this.displayVotingOptions();
-                this.startVotingTimer();
+                // Setup responsive vote canvas
+                setTimeout(() => {
+                    const voteCanvas = document.getElementById('vote-canvas');
+                    this.setupCanvasSize(voteCanvas);
+                    
+                    const ctx = voteCanvas.getContext('2d');
+                    const container = voteCanvas.parentElement;
+                    const containerRect = container.getBoundingClientRect();
+                    
+                    if (this.gameState.currentDrawing) {
+                        const img = new Image();
+                        img.onload = () => {
+                            ctx.clearRect(0, 0, containerRect.width, containerRect.height);
+                            ctx.drawImage(img, 0, 0, containerRect.width, containerRect.height);
+                        };
+                        img.src = this.gameState.currentDrawing;
+                    }
+                    
+                    // Check if current player is the artist
+                    if (this.playerId === this.gameState.currentArtist) {
+                        this.displayLikingOptions();
+                    } else {
+                        this.displayVotingOptions();
+                    }
+                    
+                    this.startVotingTimer();
+                }, 100);
             }
             
             displayVotingOptions() {
@@ -2224,8 +2698,50 @@
                 });
             }
             
+            displayLikingOptions() {
+                const votingOptions = document.getElementById('voting-options');
+                votingOptions.innerHTML = '';
+                
+                // Show artist-specific message
+                const artistMessage = document.createElement('div');
+                artistMessage.className = 'text-center mb-4 p-4 bg-blue-600 rounded-lg';
+                artistMessage.innerHTML = `
+                    <h3 class="text-lg font-bold mb-2">🎨 You're the Artist!</h3>
+                    <p class="text-sm">You can't vote on your own drawing, but you can give "likes" to answers you find funny or creative!</p>
+                `;
+                votingOptions.appendChild(artistMessage);
+                
+                // Show only the guessed answers (not the real answer)
+                const guessedAnswers = Array.from(this.gameState.guesses.entries());
+                
+                if (guessedAnswers.length === 0) {
+                    const noAnswersMessage = document.createElement('div');
+                    noAnswersMessage.className = 'text-center text-gray-400 p-4';
+                    noAnswersMessage.textContent = 'No guesses submitted yet...';
+                    votingOptions.appendChild(noAnswersMessage);
+                    return;
+                }
+                
+                guessedAnswers.forEach(([playerId, guess]) => {
+                    const playerName = this.gameState.players.get(playerId)?.name || 'Unknown';
+                    const likeButton = document.createElement('button');
+                    likeButton.className = 'w-full bg-gray-800 hover:bg-purple-600 border border-gray-600 rounded-lg p-4 text-left transition-colors mb-2';
+                    likeButton.innerHTML = `
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <div class="font-semibold">"${guess}"</div>
+                                <div class="text-sm text-gray-400">by ${playerName}</div>
+                            </div>
+                            <div class="text-2xl">👍</div>
+                        </div>
+                    `;
+                    likeButton.addEventListener('click', () => this.submitLike(playerId, guess));
+                    votingOptions.appendChild(likeButton);
+                });
+            }
+            
             startVotingTimer() {
-                let timeLeft = 20;
+                let timeLeft = this.gameConfig.timers.voting;
                 const timerElement = document.getElementById('voting-timer');
                 
                 const timer = setInterval(() => {
@@ -2283,6 +2799,42 @@
                 this.showToast('Vote submitted!', 'success');
             }
             
+            submitLike(targetPlayerId, guessText) {
+                if (this.isHost) {
+                    this.gameState.likes.set(this.playerId, { targetPlayerId, guessText });
+                    this.checkAllVotesSubmitted(); // This function will be renamed to checkAllInteractionsSubmitted
+                } else {
+                    // Use enhanced sendToPlayer for better reliability
+                    const sendResult = this.sendToPlayer(`${this.roomCode}_HOST`, {
+                        type: 'LIKE_SUBMITTED',
+                        playerId: this.playerId,
+                        targetPlayerId: targetPlayerId,
+                        guessText: guessText
+                    }, { waitForReady: true, retries: 2 });
+                    
+                    // Handle async result if needed
+                    if (sendResult && typeof sendResult.then === 'function') {
+                        sendResult.then(result => {
+                            if (!result.success) {
+                                console.warn('Failed to submit like:', result);
+                                this.showToast('Failed to submit like - please try again', 'error');
+                            }
+                        });
+                    }
+                }
+                
+                // Disable all like buttons and highlight the selected one
+                document.querySelectorAll('#voting-options button').forEach(btn => {
+                    btn.disabled = true;
+                    if (btn.innerHTML.includes(guessText)) {
+                        btn.classList.remove('hover:bg-purple-600');
+                        btn.classList.add('bg-purple-600');
+                    }
+                });
+                
+                this.showToast('Like submitted!', 'success');
+            }
+            
             checkAllVotesSubmitted() {
                 if (this.gameState.votes.size >= this.gameState.players.size - 1) { // -1 for artist
                     this.calculateScores();
@@ -2324,6 +2876,17 @@
                 if (artist) {
                     artist.score += correctGuesses * 100;
                 }
+                
+                // Award likes to players who received them from the artist
+                this.gameState.likes.forEach((likeData, artistId) => {
+                    if (likeData && likeData.targetPlayerId) {
+                        const likedPlayer = this.gameState.players.get(likeData.targetPlayerId);
+                        if (likedPlayer) {
+                            likedPlayer.likes += 1;
+                            console.log(`👍 ${likedPlayer.name} received a like from the artist!`);
+                        }
+                    }
+                });
             }
             
             showResults() {
@@ -2431,11 +2994,17 @@
                                     <div class="text-sm text-gray-400">${index === 0 ? 'Winner!' : `${index + 1}${this.getOrdinalSuffix(index + 1)} place`}</div>
                                 </div>
                             </div>
-                            <div class="text-2xl font-bold">${player.score}</div>
+                            <div class="text-right">
+                                <div class="text-2xl font-bold">${player.score}</div>
+                                <div class="text-sm text-gray-400">${player.likes} 👍</div>
+                            </div>
                         </div>
                     `;
                     finalScoresContent.appendChild(playerDiv);
                 });
+                
+                // Add Most Liked Player section
+                this.addMostLikedPlayerSection(finalScoresContent);
             }
             
             getOrdinalSuffix(num) {
@@ -2445,6 +3014,70 @@
                 if (j == 2 && k != 12) return "nd";
                 if (j == 3 && k != 13) return "rd";
                 return "th";
+            }
+            
+            addMostLikedPlayerSection(container) {
+                // Find the player with the most likes
+                const playersWithLikes = Array.from(this.gameState.players.values())
+                    .filter(player => player.likes > 0)
+                    .sort((a, b) => b.likes - a.likes);
+                
+                if (playersWithLikes.length === 0) {
+                    // No likes given during the game
+                    return;
+                }
+                
+                const mostLikedPlayer = playersWithLikes[0];
+                const hasMultipleMostLiked = playersWithLikes.length > 1 && playersWithLikes[1].likes === mostLikedPlayer.likes;
+                
+                // Add separator
+                const separatorDiv = document.createElement('div');
+                separatorDiv.className = 'w-full border-t border-gray-600 my-6';
+                container.appendChild(separatorDiv);
+                
+                // Add Most Liked Player section header
+                const headerDiv = document.createElement('div');
+                headerDiv.className = 'text-center mb-4';
+                headerDiv.innerHTML = `
+                    <h3 class="text-xl font-bold text-purple-400 mb-2">👍 Most Liked Player${hasMultipleMostLiked ? 's' : ''}</h3>
+                    <p class="text-sm text-gray-400">For creativity and humor in their guesses!</p>
+                `;
+                container.appendChild(headerDiv);
+                
+                // Show all players tied for most likes
+                const topLikesCount = mostLikedPlayer.likes;
+                const topLikedPlayers = playersWithLikes.filter(player => player.likes === topLikesCount);
+                
+                topLikedPlayers.forEach((player, index) => {
+                    const likedPlayerDiv = document.createElement('div');
+                    likedPlayerDiv.className = 'bg-purple-600 bg-opacity-20 border-2 border-purple-400 rounded-lg p-4 mb-3';
+                    
+                    likedPlayerDiv.innerHTML = `
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center gap-3">
+                                <span class="text-3xl">👑</span>
+                                <div>
+                                    <div class="font-bold text-lg text-purple-300">${player.name}</div>
+                                    <div class="text-sm text-purple-400">${hasMultipleMostLiked ? 'Co-' : ''}Most Liked Player!</div>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-3xl font-bold text-purple-300">${player.likes}</div>
+                                <div class="text-sm text-purple-400">likes received</div>
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(likedPlayerDiv);
+                });
+                
+                // Add likes summary if there are multiple players with likes
+                if (playersWithLikes.length > topLikedPlayers.length) {
+                    const summaryDiv = document.createElement('div');
+                    summaryDiv.className = 'text-center mt-4 text-sm text-gray-400';
+                    const totalLikes = playersWithLikes.reduce((sum, player) => sum + player.likes, 0);
+                    summaryDiv.textContent = `Total likes given in this game: ${totalLikes}`;
+                    container.appendChild(summaryDiv);
+                }
             }
             
             playAgain() {
