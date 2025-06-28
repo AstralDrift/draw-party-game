@@ -1109,7 +1109,12 @@
                             this.gameState.drawingsCompleted = new Set(message.gameState.drawingsCompleted);
                         }
                         
-                        const { players, guesses, votes, scores, playerPrompts, playerDrawings, drawingsCompleted, ...scalarState } = message.gameState;
+                        // Sync voting options
+                        if (message.gameState.votingOptions && Array.isArray(message.gameState.votingOptions)) {
+                            this.gameState.votingOptions = message.gameState.votingOptions;
+                        }
+                        
+                        const { players, guesses, votes, scores, playerPrompts, playerDrawings, drawingsCompleted, votingOptions, ...scalarState } = message.gameState;
                         Object.assign(this.gameState, scalarState);
                         
                         debugLog('📊 Final gameState players.size:', this.gameState.players.size);
@@ -1439,7 +1444,11 @@
                     votes: Array.from(this.gameState.votes.entries()),
                     scores: Array.from(this.gameState.scores.entries()),
                     drawingsCompleted: Array.from(this.gameState.drawingsCompleted),
+                    // Add missing votingOptions for proper sync
+                    votingOptions: this.gameState.votingOptions || []
                 };
+                
+                console.log('Broadcasting game state:', stateToBroadcast.phase, 'to', this.connections.size, 'players');
                 
                 this.connections.forEach((conn, peerId) => {
                     if (peerId !== this.playerId) { // Don't send to self
@@ -1512,20 +1521,33 @@
             
             shareGame() {
                 const shareUrl = window.location.href;
+                console.log('Sharing game URL:', shareUrl);
+                
                 if (navigator.share) {
                     navigator.share({
                         title: 'Draw Party!',
                         text: 'Join my Draw Party game!',
                         url: shareUrl,
-                    }).then(() => debugLog('Successful share')).catch((error) => console.error('Error sharing', error));
-                } else {
-                    navigator.clipboard.writeText(shareUrl).then(() => {
-                        this.showToast('Game link copied to clipboard!', 'success');
-                    }).catch(err => {
-                        console.error('Could not copy text: ', err);
-                        this.showToast('Failed to copy link.', 'error');
+                    }).then(() => {
+                        console.log('Share successful');
+                        this.showToast('Game shared successfully!', 'success');
+                    }).catch((error) => {
+                        console.error('Error sharing:', error);
+                        // Fallback to clipboard
+                        this.copyToClipboard(shareUrl);
                     });
+                } else {
+                    this.copyToClipboard(shareUrl);
                 }
+            }
+            
+            copyToClipboard(url) {
+                navigator.clipboard.writeText(url).then(() => {
+                    this.showToast('Game link copied to clipboard!', 'success');
+                }).catch(err => {
+                    console.error('Could not copy text:', err);
+                    this.showToast('Failed to copy link. Please copy manually: ' + url, 'error');
+                });
             }
 
             startGame() {
@@ -1588,7 +1610,7 @@
             }
             
             endDrawingPhase() {
-                debugLog('🎨 Drawing phase ended');
+                console.log('🎨 Drawing phase ended');
                 
                 // Auto-submit drawing if not already submitted
                 if (!this.gameState.drawingsCompleted.has(this.playerId)) {
@@ -1597,6 +1619,13 @@
                 }
                 
                 if (this.isHost) {
+                    // Check if we have enough drawings to continue
+                    if (this.gameState.drawingsCompleted.size === 0) {
+                        console.warn('No drawings submitted! Cannot continue.');
+                        this.showToast('No drawings were submitted. Game cannot continue.', 'error');
+                        return;
+                    }
+                    
                     // Wait a bit for final submissions, then start guessing rounds
                     setTimeout(() => {
                         console.log('Host starting guessing rounds...');
@@ -1690,7 +1719,7 @@
 
             
             startGuessingPhase() {
-                debugLog('🤔 Starting guessing phase');
+                console.log('🤔 Starting guessing phase for player:', this.gameState.currentViewingPlayer);
                 this.showScreen('guessing-screen');
                 
                 // Load the current viewing drawing
@@ -1711,7 +1740,18 @@
                         guessCtx.clearRect(0, 0, guessCanvas.width, guessCanvas.height);
                         guessCtx.drawImage(img, 0, 0, guessCanvas.width / dpr, guessCanvas.height / dpr);
                     };
+                    img.onerror = () => {
+                        console.error('Failed to load guessing canvas image');
+                        // Fill with white background as fallback
+                        guessCtx.fillStyle = 'white';
+                        guessCtx.fillRect(0, 0, guessCanvas.width / dpr, guessCanvas.height / dpr);
+                    };
                     img.src = this.gameState.currentViewingDrawing;
+                } else {
+                    console.warn('No drawing data for guessing phase');
+                    // Fill with white background as fallback
+                    guessCtx.fillStyle = 'white';
+                    guessCtx.fillRect(0, 0, guessCanvas.width / dpr, guessCanvas.height / dpr);
                 }
                 
                 // Update UI - hide artist name if it's the guesser's own drawing
@@ -1724,11 +1764,17 @@
                     document.getElementById('submit-guess').style.display = 'none';
                 } else {
                     artistNameElement.textContent = `What do you think this is?`;
-                    document.getElementById('guess-input').style.display = 'block';
-                    document.getElementById('submit-guess').style.display = 'block';
-                    document.getElementById('guess-input').value = '';
-                    document.getElementById('guess-input').disabled = false;
-                    document.getElementById('submit-guess').disabled = false;
+                    const guessInput = document.getElementById('guess-input');
+                    const submitBtn = document.getElementById('submit-guess');
+                    
+                    guessInput.style.display = 'block';
+                    submitBtn.style.display = 'block';
+                    guessInput.value = '';
+                    guessInput.disabled = false;
+                    submitBtn.disabled = false;
+                    
+                    // Focus the input for better UX
+                    setTimeout(() => guessInput.focus(), 100);
                 }
                 
                 this.startTimer(this.gameConfig.timers.guessing, () => this.endGuessingPhase());
@@ -1761,10 +1807,21 @@
             }
             
             endGuessingPhase() {
-                debugLog('🤔 Guessing phase ended');
+                console.log('🤔 Guessing phase ended');
                 if (this.isHost) {
                     this.gameState.phase = 'VOTING';
                     this.prepareVotingOptions();
+                    
+                    // Check if we have any voting options
+                    if (this.gameState.votingOptions.length === 0) {
+                        console.warn('No voting options available! Adding correct answer only.');
+                        this.gameState.votingOptions = [{
+                            text: this.gameState.currentViewingPrompt,
+                            playerId: 'CORRECT',
+                            playerName: 'The Truth'
+                        }];
+                    }
+                    
                     this.broadcastGameState();
                 }
                 this.startVotingPhase();
@@ -1811,11 +1868,10 @@
             }
             
             startVotingPhase() {
-                debugLog('🗳️ Starting voting phase');
+                console.log('🗳️ Starting voting phase');
                 this.showScreen('voting-screen');
                 
-                // Copy drawing to voting canvas
-                const drawingCanvas = document.getElementById('drawing-canvas');
+                // Load the current viewing drawing (same as guessing phase)
                 const voteCanvas = document.getElementById('vote-canvas');
                 const voteCtx = voteCanvas.getContext('2d');
                 
@@ -1826,8 +1882,26 @@
                 voteCanvas.height = container.clientHeight * dpr;
                 voteCtx.scale(dpr, dpr);
                 
-                // Copy drawing
-                voteCtx.drawImage(drawingCanvas, 0, 0);
+                // Load drawing from data URL (not from drawing canvas)
+                if (this.gameState.currentViewingDrawing) {
+                    const img = new Image();
+                    img.onload = () => {
+                        voteCtx.clearRect(0, 0, voteCanvas.width, voteCanvas.height);
+                        voteCtx.drawImage(img, 0, 0, voteCanvas.width / dpr, voteCanvas.height / dpr);
+                    };
+                    img.onerror = () => {
+                        console.error('Failed to load voting canvas image');
+                        // Fill with white background as fallback
+                        voteCtx.fillStyle = 'white';
+                        voteCtx.fillRect(0, 0, voteCanvas.width / dpr, voteCanvas.height / dpr);
+                    };
+                    img.src = this.gameState.currentViewingDrawing;
+                } else {
+                    console.warn('No drawing data for voting phase');
+                    // Fill with white background as fallback
+                    voteCtx.fillStyle = 'white';
+                    voteCtx.fillRect(0, 0, voteCanvas.width / dpr, voteCanvas.height / dpr);
+                }
                 
                 // Create voting options
                 this.createVotingButtons();
@@ -1882,7 +1956,7 @@
             }
             
             endVotingPhase() {
-                debugLog('🗳️ Voting phase ended');
+                console.log('🗳️ Voting phase ended');
                 if (this.isHost) {
                     this.calculateResults();
                     this.gameState.phase = 'RESULTS';
@@ -1949,11 +2023,18 @@
             }
             
             showResults() {
-                debugLog('🎉 Showing results');
+                console.log('🎉 Showing results');
                 this.showScreen('results-screen');
                 
                 const container = document.getElementById('results-content');
                 const results = this.gameState.roundResults;
+                
+                if (!results) {
+                    console.error('No results data available!');
+                    container.innerHTML = '<div class="card text-center"><h3>Error: No results available</h3></div>';
+                    return;
+                }
+                
                 const artistName = this.gameState.players.get(results.artistId)?.name || 'Unknown';
                 
                 // Build who voted for what display
@@ -2045,6 +2126,7 @@
             }
             
             showFinalResults() {
+                console.log('🏆 Showing final results');
                 this.showScreen('final-scores-screen');
                 
                 const container = document.getElementById('final-scores-content');
@@ -2055,6 +2137,17 @@
                         score
                     }))
                     .sort((a, b) => b.score - a.score);
+                
+                if (scores.length === 0) {
+                    console.warn('No scores available for final results');
+                    container.innerHTML = `
+                        <div class="card text-center">
+                            <h3 class="text-3xl font-bold mb-4">🎉 Game Complete!</h3>
+                            <p class="text-lg">No scores were recorded during this game.</p>
+                        </div>
+                    `;
+                    return;
+                }
                 
                 const winner = scores[0];
                 
@@ -2113,10 +2206,10 @@
                     .filter(playerId => playerId !== this.gameState.currentViewingPlayer);
                 const submittedGuesses = Array.from(this.gameState.guesses.keys());
                 
-                debugLog(`📝 Guesses: ${submittedGuesses.length}/${nonArtistPlayers.length}`);
+                console.log(`📝 Guesses: ${submittedGuesses.length}/${nonArtistPlayers.length}`);
                 
                 if (submittedGuesses.length >= nonArtistPlayers.length) {
-                    debugLog('📝 All guesses submitted, advancing to voting');
+                    console.log('📝 All guesses submitted, advancing to voting');
                     // Small delay to let UI update
                     setTimeout(() => this.endGuessingPhase(), 1000);
                 }
@@ -2128,10 +2221,10 @@
                     .filter(playerId => playerId !== this.gameState.currentViewingPlayer);
                 const submittedVotes = Array.from(this.gameState.votes.keys());
                 
-                debugLog(`🗳️ Votes: ${submittedVotes.length}/${nonArtistPlayers.length}`);
+                console.log(`🗳️ Votes: ${submittedVotes.length}/${nonArtistPlayers.length}`);
                 
                 if (submittedVotes.length >= nonArtistPlayers.length) {
-                    debugLog('🗳️ All votes submitted, showing results');
+                    console.log('🗳️ All votes submitted, showing results');
                     // Small delay to let UI update
                     setTimeout(() => this.endVotingPhase(), 1000);
                 }
@@ -2151,23 +2244,31 @@
 
             // Timer System
             startTimer(seconds, onComplete) {
-                if (this.currentTimer) {
-                    clearInterval(this.currentTimer);
-                }
+                // Always clear any existing timer first
+                this.clearTimer();
                 
                 let timeLeft = seconds;
                 this.updateTimerDisplay(timeLeft);
+                console.log(`⏰ Starting timer: ${seconds} seconds`);
                 
                 this.currentTimer = setInterval(() => {
                     timeLeft--;
                     this.updateTimerDisplay(timeLeft);
                     
                     if (timeLeft <= 0) {
-                        clearInterval(this.currentTimer);
-                        this.currentTimer = null;
+                        console.log('⏰ Timer completed');
+                        this.clearTimer();
                         onComplete();
                     }
                 }, 1000);
+            }
+            
+            clearTimer() {
+                if (this.currentTimer) {
+                    clearInterval(this.currentTimer);
+                    this.currentTimer = null;
+                    console.log('⏰ Timer cleared');
+                }
             }
             
             updateTimerDisplay(seconds) {
