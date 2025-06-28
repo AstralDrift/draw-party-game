@@ -312,7 +312,7 @@
         // Game Core - All functionality embedded
         class DrawPartyGame {
             constructor() {
-                console.log('🎨 Draw Party Game v1.7.5 - PLAYER_JOIN MESSAGE FIX!', new Date().toISOString());
+                console.log('🎨 Draw Party Game v1.7.6 - CONNECTION ROUTING FIX!', new Date().toISOString());
                 console.log('🔧 If you see old behavior, clear browser cache or hard refresh (Ctrl+Shift+R)');
                 
                 this.peer = null;
@@ -1118,7 +1118,7 @@
                 });
                 
                 conn.on('data', (data) => {
-                    this.handleMessage(data, conn.peer);
+                    this.handleMessage(data, conn.peer, conn);
                 });
                 
                 conn.on('close', () => {
@@ -1157,7 +1157,7 @@
                 });
             }
             
-            handleMessage(message, fromPeer) {
+            handleMessage(message, fromPeer, connection = null) {
                 console.log('📨 Received message:', message.type, 'from:', fromPeer);
                 console.log('📨 Message details:', message);
                 
@@ -1216,8 +1216,20 @@
                             console.log('📡 Sending PLAYER_JOIN to host:', playerJoinMessage);
                             this.logDebugMessage('PLAYER_JOIN', 'To host', 'out');
                             
-                            // Send to the host who sent us ROOM_JOINED
-                            this.sendToPlayer(fromPeer, playerJoinMessage);
+                            // Send back through the same connection that sent us ROOM_JOINED
+                            if (connection && connection.open) {
+                                try {
+                                    connection.send(playerJoinMessage);
+                                    console.log('✅ PLAYER_JOIN sent successfully via direct connection');
+                                } catch (error) {
+                                    console.error('❌ Failed to send PLAYER_JOIN:', error);
+                                    // Fallback to sendToPlayer
+                                    this.sendToPlayer(fromPeer, playerJoinMessage);
+                                }
+                            } else {
+                                console.log('🔄 Using sendToPlayer fallback');
+                                this.sendToPlayer(fromPeer, playerJoinMessage);
+                            }
                         }
                         break;
                         
