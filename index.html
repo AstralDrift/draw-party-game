@@ -417,12 +417,16 @@
                     players: new Map(),
                     currentRound: 0,
                     totalRounds: 5,
-                    currentArtist: null,
-                    currentDrawing: null,
-                    currentPrompt: '',
-                    guesses: new Map(),
-                    votes: new Map(),
+                    playerDrawings: new Map(), // Each player's drawing
+                    playerPrompts: new Map(),  // Each player's unique prompt
+                    currentViewingPlayer: null, // Whose drawing we're viewing
+                    currentViewingDrawing: null,
+                    currentViewingPrompt: '',
+                    guesses: new Map(), // Player guesses for current drawing
+                    votes: new Map(),   // Player votes for which guess is correct
                     scores: new Map(),
+                    drawingsCompleted: new Set(), // Track who finished drawing
+                    roundOrder: [], // Order of drawings to show
                 };
                 
                 this.isDrawing = false;
@@ -430,6 +434,21 @@
                 this.currentSize = 5;
                 this.currentTool = 'brush';
                 this.drawingHistory = new DrawingHistory();
+
+                // Performance optimizations
+                this.drawingBuffer = [];
+                this.lastNetworkUpdate = 0;
+                this.networkUpdateInterval = 50; // Update network every 50ms max
+                this.animationFrameId = null;
+                this.isProcessingDrawing = false;
+                
+                // Performance monitoring
+                this.performanceMetrics = {
+                    fps: 60,
+                    drawLatency: 0,
+                    networkLatency: 0,
+                    lastFrameTime: performance.now()
+                };
 
                 this.playerColors = [
                     '#ff595e', '#ffca3a', '#8ac926', '#1982c4', '#6a4c93', '#ff924c', '#22d3ee', '#f957a8'
@@ -440,6 +459,19 @@
                     gameplay: { minPlayers: 2, maxPlayers: 8, totalRounds: 5 }
                 };
                 
+                // Timer system
+                this.currentTimer = null;
+                this.timerDisplay = null;
+                
+                // Prompt system
+                this.prompts = [
+                    'Cat', 'Dog', 'House', 'Car', 'Tree', 'Sun', 'Moon', 'Fish', 'Bird', 'Flower',
+                    'Pizza', 'Burger', 'Ice Cream', 'Cake', 'Apple', 'Banana', 'Guitar', 'Piano', 'Book', 'Phone',
+                    'Computer', 'TV', 'Chair', 'Table', 'Bed', 'Door', 'Window', 'Shoe', 'Hat', 'Glasses',
+                    'Bicycle', 'Bus', 'Train', 'Airplane', 'Boat', 'Mountain', 'Beach', 'Forest', 'River', 'Cloud',
+                    'Star', 'Heart', 'Smile', 'Rainbow', 'Snowman', 'Castle', 'Robot', 'Alien', 'Dragon', 'Unicorn'
+                ];
+                
                 this.gameState.totalRounds = this.gameConfig.gameplay.totalRounds;
                 
                 this.init();
@@ -448,9 +480,51 @@
             init() {
                 this.hideLoading();
                 this.setupEventListeners();
-                this.setupCanvas();
+                this.setupCanvas(); 
                 this.checkForRoomInURL();
                 this.populateColorPalette();
+                
+                // Test device performance
+                this.testDevicePerformance();
+            }
+            
+            // Test device performance and adjust settings accordingly
+            testDevicePerformance() {
+                const testCanvas = document.createElement('canvas');
+                testCanvas.width = 500;
+                testCanvas.height = 500;
+                const testCtx = testCanvas.getContext('2d');
+                
+                const startTime = performance.now();
+                
+                // Perform drawing operations to test performance
+                for (let i = 0; i < 100; i++) {
+                    testCtx.beginPath();
+                    testCtx.arc(
+                        Math.random() * 500,
+                        Math.random() * 500,
+                        Math.random() * 50,
+                        0,
+                        2 * Math.PI
+                    );
+                    testCtx.fillStyle = `hsl(${Math.random() * 360}, 50%, 50%)`;
+                    testCtx.fill();
+                }
+                
+                const duration = performance.now() - startTime;
+                
+                // Adjust settings based on performance
+                if (duration > 50) {
+                    // Slow device - reduce network update frequency
+                    this.networkUpdateInterval = 100;
+                    debugLog('⚠️ Slow device detected, adjusting performance settings');
+                } else if (duration < 20) {
+                    // Fast device - increase network update frequency for better responsiveness
+                    this.networkUpdateInterval = 30;
+                    debugLog('⚡ Fast device detected, optimizing for best quality');
+                }
+                
+                debugLog(`📊 Device performance test: ${duration.toFixed(2)}ms`);
             }
 
             hideLoading() {
@@ -475,6 +549,80 @@
                     btn.addEventListener('click', () => this.selectColor(color));
                     palette.appendChild(btn);
                 });
+            }
+            
+            selectColor(color) {
+                this.currentColor = color;
+                this.currentTool = 'brush';
+                document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('ring-2', 'ring-white'));
+                document.querySelector(`[data-color="${color}"]`).classList.add('ring-2', 'ring-white');
+            }
+            
+            selectBrush(size) {
+                this.currentSize = size;
+                this.currentTool = 'brush';
+                // Update UI
+                document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('btn-primary'));
+                if (size === 2) document.getElementById('brush-small').classList.add('btn-primary');
+                if (size === 5) document.getElementById('brush-medium').classList.add('btn-primary');
+                if (size === 10) document.getElementById('brush-large').classList.add('btn-primary');
+            }
+            
+            selectEraser() {
+                this.currentTool = 'eraser';
+                document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('btn-primary'));
+                document.getElementById('eraser').classList.add('btn-primary');
+            }
+            
+            // Optimized canvas clearing
+            clearCanvas(broadcast = true) {
+                const canvas = document.getElementById('drawing-canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // Use clearRect for performance
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Fill with white background
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Clear drawing buffer
+                this.drawingBuffer = [];
+                
+                // Reset drawing history
+                this.drawingHistory.clear();
+                this.drawingHistory.saveState(canvas);
+                
+                if (broadcast && (this.isHost || this.gameState.currentArtist === this.playerId)) {
+                    // Send clear command
+                    this.broadcastMessage({
+                        type: 'DRAWING_UPDATE',
+                        clear: true,
+                        timestamp: performance.now()
+                    });
+                }
+            }
+            
+            undo() {
+                const canvas = document.getElementById('drawing-canvas');
+                const ctx = canvas.getContext('2d');
+                this.drawingHistory.undo(canvas, ctx);
+                
+                // Broadcast the updated canvas
+                if (this.isHost || this.gameState.currentArtist === this.playerId) {
+                    this.broadcastDrawing();
+                }
+            }
+            
+            redo() {
+                const canvas = document.getElementById('drawing-canvas');
+                const ctx = canvas.getContext('2d');
+                this.drawingHistory.redo(canvas, ctx);
+                
+                // Broadcast the updated canvas
+                if (this.isHost || this.gameState.currentArtist === this.playerId) {
+                    this.broadcastDrawing();
+                }
             }
             
             checkForRoomInURL() {
@@ -922,7 +1070,16 @@
                             message.gameState.playerPrompts.forEach(([id, prompt]) => this.gameState.playerPrompts.set(id, prompt));
                         }
                         
-                        const { players, guesses, votes, scores, playerPrompts, ...scalarState } = message.gameState;
+                        if (message.gameState.playerDrawings && Array.isArray(message.gameState.playerDrawings)) {
+                            this.gameState.playerDrawings.clear();
+                            message.gameState.playerDrawings.forEach(([id, drawing]) => this.gameState.playerDrawings.set(id, drawing));
+                        }
+                        
+                        if (message.gameState.drawingsCompleted && Array.isArray(message.gameState.drawingsCompleted)) {
+                            this.gameState.drawingsCompleted = new Set(message.gameState.drawingsCompleted);
+                        }
+                        
+                        const { players, guesses, votes, scores, playerPrompts, playerDrawings, drawingsCompleted, ...scalarState } = message.gameState;
                         Object.assign(this.gameState, scalarState);
                         
                         debugLog('📊 Final gameState players.size:', this.gameState.players.size);
@@ -935,7 +1092,37 @@
                         break;
                         
                     case 'DRAWING_UPDATE':
-                        this.updateCanvas(message.canvasData);
+                        if (message.clear) {
+                            // Handle clear command
+                            this.clearCanvas(false);
+                        } else if (message.drawingData) {
+                            // Handle compressed drawing data (more efficient)
+                            this.updateCanvasFromData(message.drawingData);
+                        } else if (message.imageData || message.canvasData) {
+                            // Handle full canvas data (fallback)
+                            this.updateCanvas(message.imageData || message.canvasData);
+                        }
+                        
+                        // Track network latency
+                        if (message.timestamp) {
+                            this.performanceMetrics.networkLatency = performance.now() - message.timestamp;
+                        }
+                        break;
+                        
+                    case 'DRAWING_SUBMITTED':
+                        if (this.isHost) {
+                            this.gameState.playerDrawings.set(message.playerId, message.drawing);
+                            this.gameState.drawingsCompleted.add(message.playerId);
+                            
+                            // Update UI for all players
+                            this.broadcastGameState();
+                            
+                            // Check if all drawings are submitted
+                            if (this.gameState.drawingsCompleted.size >= this.gameState.players.size) {
+                                debugLog('All drawings submitted!');
+                                this.endDrawingPhase();
+                            }
+                        }
                         break;
                         
                     case 'GUESS_SUBMITTED':
@@ -1212,9 +1399,12 @@
                 const stateToBroadcast = {
                     ...this.gameState,
                     players: Array.from(this.gameState.players.entries()),
+                    playerDrawings: Array.from(this.gameState.playerDrawings.entries()),
+                    playerPrompts: Array.from(this.gameState.playerPrompts.entries()),
                     guesses: Array.from(this.gameState.guesses.entries()),
                     votes: Array.from(this.gameState.votes.entries()),
                     scores: Array.from(this.gameState.scores.entries()),
+                    drawingsCompleted: Array.from(this.gameState.drawingsCompleted),
                 };
                 
                 this.connections.forEach((conn, peerId) => {
@@ -1225,7 +1415,40 @@
             }
 
             updateConnectionStatus(status) {
-                document.getElementById('connection-status').textContent = status;
+                // Check if connection status element exists, if not create it
+                let statusElement = document.getElementById('connection-status');
+                if (!statusElement) {
+                    statusElement = document.createElement('div');
+                    statusElement.id = 'connection-status';
+                    statusElement.className = 'text-sm text-gray-400 text-center mt-2';
+                    const lobbyScreen = document.getElementById('lobby-screen');
+                    if (lobbyScreen) {
+                        lobbyScreen.appendChild(statusElement);
+                    }
+                }
+                statusElement.textContent = status;
+            }
+            
+            updateUI() {
+                // Update UI based on current game state
+                switch (this.gameState.phase) {
+                    case 'LOBBY':
+                        this.showLobby();
+                        break;
+                    case 'DRAWING':
+                        this.showScreen('drawing-screen');
+                        this.updateDrawingUI();
+                        break;
+                    case 'GUESSING':
+                        this.startGuessingPhase();
+                        break;
+                    case 'VOTING':
+                        this.startVotingPhase();
+                        break;
+                    case 'RESULTS':
+                        this.showResults();
+                        break;
+                }
             }
 
             showScreen(screenId) {
@@ -1282,25 +1505,553 @@
                 this.broadcastMessage({ type: 'START_GAME' });
                 this.startDrawingPhase();
             }
+            
+            handleStartGame() {
+                // Called when receiving START_GAME message
+                this.gameState.phase = 'DRAWING';
+                this.startDrawingPhase();
+            }
+            
+            submitDrawing() {
+                // Save the drawing
+                const canvas = document.getElementById('drawing-canvas');
+                const drawingData = canvas.toDataURL('image/webp', 0.8);
+                
+                // Send drawing to host
+                this.broadcastMessage({
+                    type: 'DRAWING_SUBMITTED',
+                    playerId: this.playerId,
+                    drawing: drawingData
+                });
+                
+                // Disable drawing tools
+                document.getElementById('drawing-tools').style.display = 'none';
+                document.getElementById('submit-drawing').disabled = true;
+                document.getElementById('submit-drawing').textContent = 'Drawing Submitted!';
+                
+                this.showToast('Drawing submitted!', 'success');
+            }
+            
+            endDrawingPhase() {
+                debugLog('🎨 Drawing phase ended');
+                
+                // Submit drawing if not already submitted
+                if (!this.gameState.drawingsCompleted.has(this.playerId)) {
+                    this.submitDrawing();
+                }
+                
+                if (this.isHost) {
+                    // Wait a bit for final submissions
+                    setTimeout(() => {
+                        this.startGuessingRounds();
+                    }, 2000);
+                }
+            }
+            
+            startGuessingRounds() {
+                if (!this.isHost) return;
+                
+                // Get the first drawing to show
+                if (this.gameState.roundOrder.length > 0) {
+                    this.gameState.currentViewingPlayer = this.gameState.roundOrder.shift();
+                    this.gameState.currentViewingDrawing = this.gameState.playerDrawings.get(this.gameState.currentViewingPlayer);
+                    this.gameState.currentViewingPrompt = this.gameState.playerPrompts.get(this.gameState.currentViewingPlayer);
+                    
+                    this.gameState.phase = 'GUESSING';
+                    this.gameState.guesses.clear();
+                    this.broadcastGameState();
+                    
+                    this.startGuessingPhase();
+                } else {
+                    // All drawings shown, go to final results
+                    this.showFinalResults();
+                }
+            }
 
             startDrawingPhase() {
+                debugLog('🎨 Starting drawing phase');
+                this.gameState.phase = 'DRAWING';
                 this.showScreen('drawing-screen');
                 this.drawingHistory.clear();
                 this.clearCanvas(false);
-                // Assign prompts and artist (host logic)
-                // Start timer
+                
+                if (this.isHost) {
+                    // Clear previous round data
+                    this.gameState.playerDrawings.clear();
+                    this.gameState.drawingsCompleted.clear();
+                    this.gameState.guesses.clear();
+                    this.gameState.votes.clear();
+                    
+                    // Assign unique prompts to each player
+                    const players = Array.from(this.gameState.players.keys());
+                    const shuffledPrompts = [...this.prompts].sort(() => Math.random() - 0.5);
+                    
+                    players.forEach((playerId, index) => {
+                        const prompt = shuffledPrompts[index % shuffledPrompts.length];
+                        this.gameState.playerPrompts.set(playerId, prompt);
+                    });
+                    
+                    // Create random order for showing drawings
+                    this.gameState.roundOrder = [...players].sort(() => Math.random() - 0.5);
+                    
+                    debugLog('🎯 Player prompts assigned:', this.gameState.playerPrompts);
+                    this.broadcastGameState();
+                }
+                
+                this.updateDrawingUI();
+                this.startTimer(this.gameConfig.timers.drawing, () => this.submitDrawing());
+            }
+
+
+
+
+            
+            startGuessingPhase() {
+                debugLog('🤔 Starting guessing phase');
+                this.showScreen('guessing-screen');
+                
+                // Load the current viewing drawing
+                const guessCanvas = document.getElementById('guess-canvas');
+                const guessCtx = guessCanvas.getContext('2d');
+                
+                // Set canvas size
+                const container = guessCanvas.parentElement;
+                const dpr = window.devicePixelRatio || 1;
+                guessCanvas.width = container.clientWidth * dpr;
+                guessCanvas.height = container.clientHeight * dpr;
+                guessCtx.scale(dpr, dpr);
+                
+                // Load drawing from data URL
+                if (this.gameState.currentViewingDrawing) {
+                    const img = new Image();
+                    img.onload = () => {
+                        guessCtx.clearRect(0, 0, guessCanvas.width, guessCanvas.height);
+                        guessCtx.drawImage(img, 0, 0, guessCanvas.width / dpr, guessCanvas.height / dpr);
+                    };
+                    img.src = this.gameState.currentViewingDrawing;
+                }
+                
+                // Update UI - hide artist name if it's the guesser's own drawing
+                const artistName = this.gameState.players.get(this.gameState.currentViewingPlayer)?.name || 'Unknown';
+                const artistNameElement = document.getElementById('artist-name');
+                
+                if (this.gameState.currentViewingPlayer === this.playerId) {
+                    artistNameElement.textContent = 'This is your drawing - watch others guess!';
+                    document.getElementById('guess-input').style.display = 'none';
+                    document.getElementById('submit-guess').style.display = 'none';
+                } else {
+                    artistNameElement.textContent = `What do you think this is?`;
+                    document.getElementById('guess-input').style.display = 'block';
+                    document.getElementById('submit-guess').style.display = 'block';
+                    document.getElementById('guess-input').value = '';
+                    document.getElementById('guess-input').disabled = false;
+                    document.getElementById('submit-guess').disabled = false;
+                }
+                
+                this.startTimer(this.gameConfig.timers.guessing, () => this.endGuessingPhase());
             }
 
             submitGuess() {
-                // Logic for submitting guess
+                const guessInput = document.getElementById('guess-input');
+                const guess = guessInput.value.trim();
+                
+                if (!guess) {
+                    this.showToast('Please enter a guess!', 'warning');
+                    return;
+                }
+                
+                if (this.gameState.currentViewingPlayer === this.playerId) {
+                    this.showToast('You cannot guess your own drawing!', 'warning');
+                    return;
+                }
+                
+                // Send guess to host
+                this.broadcastMessage({
+                    type: 'GUESS_SUBMITTED',
+                    playerId: this.playerId,
+                    guess: guess
+                });
+                
+                guessInput.disabled = true;
+                document.getElementById('submit-guess').disabled = true;
+                this.showToast('Guess submitted!', 'success');
+            }
+            
+            endGuessingPhase() {
+                debugLog('🤔 Guessing phase ended');
+                if (this.isHost) {
+                    this.gameState.phase = 'VOTING';
+                    this.prepareVotingOptions();
+                    this.broadcastGameState();
+                }
+                this.startVotingPhase();
+            }
+            
+            prepareVotingOptions() {
+                // Get all submitted guesses
+                const guesses = Array.from(this.gameState.guesses.entries());
+                
+                // Add the correct answer
+                const correctAnswer = this.gameState.currentViewingPrompt;
+                
+                // Create voting options - include all unique guesses plus the correct answer
+                const allGuesses = guesses.map(([playerId, guess]) => ({
+                    text: guess,
+                    playerId: playerId,
+                    playerName: this.gameState.players.get(playerId)?.name || 'Unknown'
+                }));
+                
+                // Add correct answer if no one guessed it exactly
+                const hasCorrectAnswer = allGuesses.some(g => g.text.toLowerCase() === correctAnswer.toLowerCase());
+                if (!hasCorrectAnswer) {
+                    allGuesses.push({
+                        text: correctAnswer,
+                        playerId: 'CORRECT',
+                        playerName: 'The Truth'
+                    });
+                }
+                
+                // Remove duplicates and shuffle
+                const uniqueOptions = [];
+                const seenTexts = new Set();
+                
+                for (const option of allGuesses) {
+                    const normalizedText = option.text.toLowerCase().trim();
+                    if (!seenTexts.has(normalizedText)) {
+                        seenTexts.add(normalizedText);
+                        uniqueOptions.push(option);
+                    }
+                }
+                
+                this.gameState.votingOptions = uniqueOptions.sort(() => Math.random() - 0.5);
+                this.gameState.correctAnswer = correctAnswer;
+            }
+            
+            startVotingPhase() {
+                debugLog('🗳️ Starting voting phase');
+                this.showScreen('voting-screen');
+                
+                // Copy drawing to voting canvas
+                const drawingCanvas = document.getElementById('drawing-canvas');
+                const voteCanvas = document.getElementById('vote-canvas');
+                const voteCtx = voteCanvas.getContext('2d');
+                
+                // Set canvas size
+                const container = voteCanvas.parentElement;
+                const dpr = window.devicePixelRatio || 1;
+                voteCanvas.width = container.clientWidth * dpr;
+                voteCanvas.height = container.clientHeight * dpr;
+                voteCtx.scale(dpr, dpr);
+                
+                // Copy drawing
+                voteCtx.drawImage(drawingCanvas, 0, 0);
+                
+                // Create voting options
+                this.createVotingButtons();
+                
+                this.startTimer(this.gameConfig.timers.voting, () => this.endVotingPhase());
+            }
+            
+            createVotingButtons() {
+                const container = document.getElementById('voting-options');
+                container.innerHTML = '';
+                
+                this.gameState.votingOptions.forEach((option, index) => {
+                    const button = document.createElement('button');
+                    button.className = 'w-full btn btn-primary text-lg p-4 mb-2';
+                    button.innerHTML = `
+                        <div class="text-lg font-bold">${option.text}</div>
+                        ${option.playerId !== 'CORRECT' ? `<div class="text-sm text-gray-300">by ${option.playerName}</div>` : ''}
+                    `;
+                    button.addEventListener('click', () => this.submitVote(option));
+                    container.appendChild(button);
+                });
+            }
+            
+            submitVote(selectedOption) {
+                // Artist cannot vote on their own drawing
+                if (this.gameState.currentViewingPlayer === this.playerId) {
+                    this.showToast('You cannot vote on your own drawing!', 'warning');
+                    return;
+                }
+                
+                // Can't vote for your own guess
+                if (selectedOption.playerId === this.playerId) {
+                    this.showToast('You cannot vote for your own guess!', 'warning');
+                    return;
+                }
+                
+                this.broadcastMessage({
+                    type: 'VOTE_SUBMITTED',
+                    playerId: this.playerId,
+                    vote: selectedOption
+                });
+                
+                // Disable all voting buttons
+                document.querySelectorAll('#voting-options button').forEach(btn => {
+                    btn.disabled = true;
+                    if (btn.querySelector('.text-lg').textContent === selectedOption.text) {
+                        btn.classList.add('bg-green-600');
+                    }
+                });
+                
+                this.showToast('Vote submitted!', 'success');
+            }
+            
+            endVotingPhase() {
+                debugLog('🗳️ Voting phase ended');
+                if (this.isHost) {
+                    this.calculateResults();
+                    this.gameState.phase = 'RESULTS';
+                    this.broadcastGameState();
+                }
+                this.showResults();
+            }
+            
+            calculateResults() {
+                const correctAnswer = this.gameState.correctAnswer;
+                const votes = Array.from(this.gameState.votes.entries());
+                const guesses = Array.from(this.gameState.guesses.entries());
+                
+                // Track who voted for what
+                const votesByOption = new Map();
+                let correctVoters = [];
+                
+                votes.forEach(([playerId, vote]) => {
+                    const voteText = vote.text.toLowerCase();
+                    
+                    // Check if this was a correct vote
+                    if (voteText === correctAnswer.toLowerCase()) {
+                        correctVoters.push(playerId);
+                        // Give points for correct guess
+                        const currentScore = this.gameState.scores.get(playerId) || 0;
+                        this.gameState.scores.set(playerId, currentScore + 100);
+                    }
+                    
+                    // Track votes for scoring fake answers
+                    if (vote.playerId !== 'CORRECT' && vote.playerId !== playerId) {
+                        if (!votesByOption.has(vote.playerId)) {
+                            votesByOption.set(vote.playerId, []);
+                        }
+                        votesByOption.get(vote.playerId).push(playerId);
+                    }
+                });
+                
+                // Give points to players whose fake answers got votes
+                votesByOption.forEach((voters, guesserId) => {
+                    const pointsPerVote = 50;
+                    const totalPoints = voters.length * pointsPerVote;
+                    const currentScore = this.gameState.scores.get(guesserId) || 0;
+                    this.gameState.scores.set(guesserId, currentScore + totalPoints);
+                });
+                
+                // Artist (drawing owner) gets points based on correct guesses
+                const artistId = this.gameState.currentViewingPlayer;
+                const totalVoters = votes.length;
+                if (totalVoters > 0 && correctVoters.length > 0) {
+                    const artistPoints = Math.round((correctVoters.length / totalVoters) * 150);
+                    const currentArtistScore = this.gameState.scores.get(artistId) || 0;
+                    this.gameState.scores.set(artistId, currentArtistScore + artistPoints);
+                }
+                
+                this.gameState.roundResults = {
+                    correctAnswer,
+                    artistId,
+                    correctVoters,
+                    totalVoters: votes.length,
+                    votes: votes,
+                    guesses: guesses,
+                    votesByOption
+                };
+            }
+            
+            showResults() {
+                debugLog('🎉 Showing results');
+                this.showScreen('results-screen');
+                
+                const container = document.getElementById('results-content');
+                const results = this.gameState.roundResults;
+                const artistName = this.gameState.players.get(results.artistId)?.name || 'Unknown';
+                
+                // Build who voted for what display
+                let votesDisplay = '<div class="mt-4">';
+                this.gameState.votingOptions.forEach(option => {
+                    const voters = Array.from(results.votes.entries())
+                        .filter(([_, vote]) => vote.text === option.text)
+                        .map(([playerId, _]) => this.gameState.players.get(playerId)?.name || 'Unknown');
+                    
+                    const isCorrect = option.text.toLowerCase() === results.correctAnswer.toLowerCase();
+                    votesDisplay += `
+                        <div class="mb-3 p-3 rounded ${isCorrect ? 'bg-green-800' : 'bg-gray-800'}">
+                            <div class="font-bold ${isCorrect ? 'text-green-400' : ''}">${option.text}</div>
+                            ${option.playerId !== 'CORRECT' ? `<div class="text-sm text-gray-400">Guessed by ${option.playerName}</div>` : ''}
+                            <div class="text-sm mt-1">Voted by: ${voters.length > 0 ? voters.join(', ') : 'Nobody'}</div>
+                        </div>
+                    `;
+                });
+                votesDisplay += '</div>';
+                
+                container.innerHTML = `
+                    <div class="card text-center mb-4">
+                        <h3 class="text-2xl font-bold mb-2">The correct answer was:</h3>
+                        <div class="text-4xl font-bold text-green-400">${results.correctAnswer}</div>
+                        <div class="text-lg text-gray-400 mt-2">Drawing by ${artistName}</div>
+                    </div>
+                    
+                    <div class="card mb-4">
+                        <h4 class="text-xl font-bold mb-2">Who voted for what:</h4>
+                        ${votesDisplay}
+                    </div>
+                    
+                    <div class="card mb-4">
+                        <h4 class="text-xl font-bold mb-2">Points this round:</h4>
+                        <p class="text-lg">${results.correctVoters.length}/${results.totalVoters} players guessed correctly</p>
+                    </div>
+                `;
+                
+                // Check if we have more drawings to show
+                setTimeout(() => {
+                    if (this.isHost) {
+                        if (this.gameState.roundOrder.length > 0) {
+                            // More drawings to show
+                            this.startGuessingRounds();
+                        } else {
+                            // Round complete, check if game over
+                            if (this.gameState.currentRound >= this.gameState.totalRounds) {
+                                this.showFinalResults();
+                            } else {
+                                // Show next round button
+                                const nextBtn = document.createElement('button');
+                                nextBtn.className = 'btn btn-primary text-xl mt-4';
+                                nextBtn.textContent = 'Next Round';
+                                nextBtn.addEventListener('click', () => this.nextRound());
+                                container.appendChild(nextBtn);
+                            }
+                        }
+                    }
+                }, 5000);
+            }
+            
+            updateScoresDisplay() {
+                const container = document.getElementById('current-scores');
+                const scores = Array.from(this.gameState.scores.entries())
+                    .map(([playerId, score]) => ({
+                        playerId,
+                        name: this.gameState.players.get(playerId)?.name || 'Unknown',
+                        score
+                    }))
+                    .sort((a, b) => b.score - a.score);
+                
+                container.innerHTML = scores.map(player => 
+                    `<div class="flex justify-between items-center p-2 bg-gray-700 rounded mb-2">
+                        <span class="font-bold">${player.name}</span>
+                        <span class="text-xl">${player.score}</span>
+                    </div>`
+                ).join('');
             }
 
             nextRound() {
-                // Logic for next round
+                if (!this.isHost) return;
+                
+                this.gameState.currentRound++;
+                this.gameState.guesses.clear();
+                this.gameState.votes.clear();
+                
+                this.broadcastMessage({ type: 'START_GAME' });
+                this.startDrawingPhase();
+            }
+            
+            showFinalResults() {
+                this.showScreen('final-scores-screen');
+                
+                const container = document.getElementById('final-scores-content');
+                const scores = Array.from(this.gameState.scores.entries())
+                    .map(([playerId, score]) => ({
+                        playerId,
+                        name: this.gameState.players.get(playerId)?.name || 'Unknown',
+                        score
+                    }))
+                    .sort((a, b) => b.score - a.score);
+                
+                const winner = scores[0];
+                
+                container.innerHTML = `
+                    <div class="card text-center mb-6">
+                        <h3 class="text-3xl font-bold mb-4">🏆 ${winner.name} Wins!</h3>
+                        <div class="text-6xl font-bold text-yellow-400">${winner.score}</div>
+                        <div class="text-lg text-gray-400">points</div>
+                    </div>
+                    
+                    <div class="card">
+                        <h4 class="text-xl font-bold mb-4">Final Scores:</h4>
+                        ${scores.map((player, index) => 
+                            `<div class="flex justify-between items-center p-3 ${index === 0 ? 'bg-yellow-600' : 'bg-gray-700'} rounded mb-2">
+                                <span class="flex items-center">
+                                    <span class="text-2xl mr-3">${index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '🏅'}</span>
+                                    <span class="font-bold">${player.name}</span>
+                                </span>
+                                <span class="text-xl font-bold">${player.score}</span>
+                            </div>`
+                        ).join('')}
+                    </div>
+                `;
             }
 
             playAgain() {
-                // Logic for playing again
+                if (!this.isHost) return;
+                
+                // Reset game state for new game
+                this.gameState.currentRound = 0;
+                this.gameState.phase = 'LOBBY';
+                this.gameState.playerDrawings.clear();
+                this.gameState.playerPrompts.clear();
+                this.gameState.guesses.clear();
+                this.gameState.votes.clear();
+                this.gameState.scores.clear();
+                this.gameState.drawingsCompleted.clear();
+                this.gameState.currentViewingPlayer = null;
+                this.gameState.currentViewingDrawing = null;
+                this.gameState.currentViewingPrompt = '';
+                this.gameState.roundOrder = [];
+                
+                // Reset all player scores
+                this.gameState.players.forEach((player, playerId) => {
+                    player.score = 0;
+                    this.gameState.players.set(playerId, player);
+                });
+                
+                this.broadcastGameState();
+                this.showLobby();
+            }
+            
+            checkAllGuessesSubmitted() {
+                // Check if all non-artist players have submitted guesses
+                const nonArtistPlayers = Array.from(this.gameState.players.keys())
+                    .filter(playerId => playerId !== this.gameState.currentViewingPlayer);
+                const submittedGuesses = Array.from(this.gameState.guesses.keys());
+                
+                debugLog(`📝 Guesses: ${submittedGuesses.length}/${nonArtistPlayers.length}`);
+                
+                if (submittedGuesses.length >= nonArtistPlayers.length) {
+                    debugLog('📝 All guesses submitted, advancing to voting');
+                    // Small delay to let UI update
+                    setTimeout(() => this.endGuessingPhase(), 1000);
+                }
+            }
+            
+            checkAllVotesSubmitted() {
+                // Check if all non-artist players have submitted votes
+                const nonArtistPlayers = Array.from(this.gameState.players.keys())
+                    .filter(playerId => playerId !== this.gameState.currentViewingPlayer);
+                const submittedVotes = Array.from(this.gameState.votes.keys());
+                
+                debugLog(`🗳️ Votes: ${submittedVotes.length}/${nonArtistPlayers.length}`);
+                
+                if (submittedVotes.length >= nonArtistPlayers.length) {
+                    debugLog('🗳️ All votes submitted, showing results');
+                    // Small delay to let UI update
+                    setTimeout(() => this.endVotingPhase(), 1000);
+                }
             }
 
             newGame() {
@@ -1313,6 +2064,227 @@
                 toast.className = `toast shadow-lg px-6 py-3 ${type === 'success' ? 'bg-green-500' : 'bg-red-500'} text-white`;
                 toast.classList.remove('hidden');
                 setTimeout(() => toast.classList.add('hidden'), 3000);
+            }
+
+            // Timer System
+            startTimer(seconds, onComplete) {
+                if (this.currentTimer) {
+                    clearInterval(this.currentTimer);
+                }
+                
+                let timeLeft = seconds;
+                this.updateTimerDisplay(timeLeft);
+                
+                this.currentTimer = setInterval(() => {
+                    timeLeft--;
+                    this.updateTimerDisplay(timeLeft);
+                    
+                    if (timeLeft <= 0) {
+                        clearInterval(this.currentTimer);
+                        this.currentTimer = null;
+                        onComplete();
+                    }
+                }, 1000);
+            }
+            
+            updateTimerDisplay(seconds) {
+                const minutes = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                const timeString = `${minutes}:${secs.toString().padStart(2, '0')}`;
+                
+                // Update all timer displays
+                const timerElements = ['drawing-timer', 'guessing-timer', 'voting-timer'];
+                timerElements.forEach(id => {
+                    const element = document.getElementById(id);
+                    if (element && !element.classList.contains('hidden')) {
+                        element.textContent = timeString;
+                        
+                        // Add urgency styling for last 10 seconds
+                        if (seconds <= 10) {
+                            element.classList.add('text-red-500', 'animate-pulse');
+                        } else {
+                            element.classList.remove('text-red-500', 'animate-pulse');
+                        }
+                    }
+                });
+            }
+            
+            // Drawing UI Updates
+            updateDrawingUI() {
+                const promptElement = document.getElementById('drawing-prompt');
+                const toolsElement = document.getElementById('drawing-tools');
+                const statusElement = document.getElementById('other-players-status');
+                
+                // All players can draw their own prompt
+                const myPrompt = this.gameState.playerPrompts?.get(this.playerId) || 'Loading...';
+                promptElement.textContent = `Draw: ${myPrompt}`;
+                toolsElement.style.display = 'flex';
+                
+                // Show how many players have finished
+                const completedCount = this.gameState.drawingsCompleted?.size || 0;
+                const totalPlayers = this.gameState.players.size;
+                statusElement.textContent = `${completedCount}/${totalPlayers} players have finished drawing`;
+                
+                // Add submit button if not already there
+                if (!document.getElementById('submit-drawing')) {
+                    const submitBtn = document.createElement('button');
+                    submitBtn.id = 'submit-drawing';
+                    submitBtn.className = 'btn btn-secondary text-lg mt-4';
+                    submitBtn.textContent = 'Submit Drawing';
+                    submitBtn.addEventListener('click', () => this.submitDrawing());
+                    document.getElementById('drawing-screen').appendChild(submitBtn);
+                }
+            }
+            
+            // Performance-optimized drawing loop using requestAnimationFrame
+            startDrawingLoop(canvas, ctx) {
+                const processDrawingBuffer = () => {
+                    if (this.drawingBuffer.length === 0) {
+                        if (!this.isDrawing) {
+                            this.animationFrameId = null;
+                            return;
+                        }
+                        this.animationFrameId = requestAnimationFrame(processDrawingBuffer);
+                        return;
+                    }
+                    
+                    // Process all pending drawing operations in batch
+                    ctx.save();
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    
+                    // Batch similar operations together
+                    let currentColor = null;
+                    let currentSize = null;
+                    
+                    ctx.beginPath();
+                    
+                    while (this.drawingBuffer.length > 0) {
+                        const stroke = this.drawingBuffer.shift();
+                        
+                        // Only update context properties if they changed
+                        if (stroke.color !== currentColor) {
+                            if (currentColor !== null) {
+                                ctx.stroke();
+                                ctx.beginPath();
+                            }
+                            currentColor = stroke.color;
+                            ctx.strokeStyle = currentColor;
+                        }
+                        
+                        if (stroke.size !== currentSize) {
+                            if (currentSize !== null) {
+                                ctx.stroke();
+                                ctx.beginPath();
+                            }
+                            currentSize = stroke.size;
+                            ctx.lineWidth = currentSize;
+                        }
+                        
+                        ctx.moveTo(stroke.from.x, stroke.from.y);
+                        ctx.lineTo(stroke.to.x, stroke.to.y);
+                    }
+                    
+                    ctx.stroke();
+                    ctx.restore();
+                };
+                
+                this.animationFrameId = requestAnimationFrame(processDrawingBuffer);
+            }
+            
+            // Update canvas from received drawing data
+            updateCanvas(imageData) {
+                const canvas = document.getElementById('drawing-canvas');
+                const ctx = canvas.getContext('2d');
+                const img = new Image();
+                img.onload = () => {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0, canvas.width / (window.devicePixelRatio || 1), canvas.height / (window.devicePixelRatio || 1));
+                };
+                img.src = imageData;
+            }
+            
+            // Update canvas from compressed drawing data (e.g., individual strokes)
+            updateCanvasFromData(drawingData) {
+                const canvas = document.getElementById('drawing-canvas');
+                const ctx = canvas.getContext('2d');
+                
+                drawingData.forEach(stroke => {
+                    ctx.strokeStyle = stroke.color;
+                    ctx.lineWidth = stroke.size;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.beginPath();
+                    ctx.moveTo(stroke.from.x, stroke.from.y);
+                    ctx.lineTo(stroke.to.x, stroke.to.y);
+                    ctx.stroke();
+                });
+            }
+            
+            setupCanvas() {
+                const canvas = document.getElementById('drawing-canvas');
+                const ctx = canvas.getContext('2d');
+
+                const resize = () => {
+                    const container = canvas.parentElement;
+                    const dpr = window.devicePixelRatio || 1;
+                    canvas.width = container.clientWidth * dpr;
+                    canvas.height = container.clientHeight * dpr;
+                    ctx.scale(dpr, dpr);
+                    
+                    // Fill with white background
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                };
+                window.addEventListener('resize', resize);
+                resize();
+
+                const getPos = (e) => {
+                    const rect = canvas.getBoundingClientRect();
+                    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                    return { x: clientX - rect.left, y: clientY - rect.top };
+                };
+
+                const start = (e) => {
+                    if (this.gameState.phase !== 'DRAWING') return;
+                    // All players can draw in new game mode
+                    e.preventDefault();
+                    this.isDrawing = true;
+                    this.lastPos = getPos(e);
+                };
+                
+                const draw = (e) => {
+                    if (!this.isDrawing) return;
+                    if (this.gameState.phase !== 'DRAWING') return;
+                    e.preventDefault();
+                    const pos = getPos(e);
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(this.lastPos.x, this.lastPos.y);
+                    ctx.lineTo(pos.x, pos.y);
+                    ctx.strokeStyle = this.currentTool === 'eraser' ? 'white' : this.currentColor;
+                    ctx.lineWidth = this.currentSize;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.stroke();
+                    
+                    this.lastPos = pos;
+                };
+                
+                const stop = () => {
+                    if (!this.isDrawing) return;
+                    this.isDrawing = false;
+                    this.drawingHistory.saveState(canvas);
+                };
+
+                canvas.addEventListener('mousedown', start);
+                canvas.addEventListener('mousemove', draw);
+                canvas.addEventListener('mouseup', stop);
+                canvas.addEventListener('mouseout', stop);
+                canvas.addEventListener('touchstart', start, { passive: false });
+                canvas.addEventListener('touchmove', draw, { passive: false });
+                canvas.addEventListener('touchend', stop);
             }
         }
 
