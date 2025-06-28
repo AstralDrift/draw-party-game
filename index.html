@@ -14,14 +14,20 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 
-    <!-- Tailwind CSS -->
+    <!-- Tailwind CSS (for development only) -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Suppress Tailwind production warning for development
+        if (typeof tailwind !== 'undefined') {
+            tailwind.config = { ...tailwind.config, mode: 'jit' };
+        }
+    </script>
     
     <!-- PeerJS for P2P networking -->
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     
     <!-- PWA manifest -->
-    <link rel="manifest" href="/draw-party-game/manifest.json">
+    <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2c2a4a">
     
     <!-- iOS PWA -->
@@ -427,6 +433,7 @@
                     scores: new Map(),
                     drawingsCompleted: new Set(), // Track who finished drawing
                     roundOrder: [], // Order of drawings to show
+                    votingOptions: [] // Options for voting
                 };
                 
                 this.isDrawing = false;
@@ -593,36 +600,20 @@
                 this.drawingHistory.clear();
                 this.drawingHistory.saveState(canvas);
                 
-                if (broadcast && (this.isHost || this.gameState.currentArtist === this.playerId)) {
-                    // Send clear command
-                    this.broadcastMessage({
-                        type: 'DRAWING_UPDATE',
-                        clear: true,
-                        timestamp: performance.now()
-                    });
-                }
+                // In the new game mode, we don't broadcast individual drawing actions
+                // Each player draws independently
             }
             
             undo() {
                 const canvas = document.getElementById('drawing-canvas');
                 const ctx = canvas.getContext('2d');
                 this.drawingHistory.undo(canvas, ctx);
-                
-                // Broadcast the updated canvas
-                if (this.isHost || this.gameState.currentArtist === this.playerId) {
-                    this.broadcastDrawing();
-                }
             }
             
             redo() {
                 const canvas = document.getElementById('drawing-canvas');
                 const ctx = canvas.getContext('2d');
                 this.drawingHistory.redo(canvas, ctx);
-                
-                // Broadcast the updated canvas
-                if (this.isHost || this.gameState.currentArtist === this.playerId) {
-                    this.broadcastDrawing();
-                }
             }
             
             checkForRoomInURL() {
@@ -1111,15 +1102,19 @@
                         
                     case 'DRAWING_SUBMITTED':
                         if (this.isHost) {
+                            console.log('Host received drawing from:', message.playerId);
                             this.gameState.playerDrawings.set(message.playerId, message.drawing);
                             this.gameState.drawingsCompleted.add(message.playerId);
+                            
+                            console.log('Drawings completed:', this.gameState.drawingsCompleted.size, '/', this.gameState.players.size);
+                            console.log('Completed by:', Array.from(this.gameState.drawingsCompleted));
                             
                             // Update UI for all players
                             this.broadcastGameState();
                             
                             // Check if all drawings are submitted
                             if (this.gameState.drawingsCompleted.size >= this.gameState.players.size) {
-                                debugLog('All drawings submitted!');
+                                console.log('All drawings submitted! Moving to guessing phase...');
                                 this.endDrawingPhase();
                             }
                         }
@@ -1513,9 +1508,18 @@
             }
             
             submitDrawing() {
+                // Check if already submitted
+                if (this.gameState.drawingsCompleted.has(this.playerId)) {
+                    console.log('Drawing already submitted');
+                    return;
+                }
+                
                 // Save the drawing
                 const canvas = document.getElementById('drawing-canvas');
                 const drawingData = canvas.toDataURL('image/webp', 0.8);
+                
+                console.log('Submitting drawing for player:', this.playerId);
+                console.log('Current completed drawings:', this.gameState.drawingsCompleted);
                 
                 // Send drawing to host
                 this.broadcastMessage({
@@ -1524,10 +1528,22 @@
                     drawing: drawingData
                 });
                 
+                // Mark as completed locally (will be synced by host)
+                this.gameState.drawingsCompleted.add(this.playerId);
+                
+                // Update UI
+                this.updateDrawingUI();
+                
                 // Disable drawing tools
-                document.getElementById('drawing-tools').style.display = 'none';
-                document.getElementById('submit-drawing').disabled = true;
-                document.getElementById('submit-drawing').textContent = 'Drawing Submitted!';
+                const toolsElement = document.getElementById('drawing-tools');
+                const submitButton = document.getElementById('submit-drawing');
+                
+                if (toolsElement) toolsElement.style.display = 'none';
+                if (submitButton) {
+                    submitButton.disabled = true;
+                    submitButton.textContent = 'Drawing Submitted!';
+                    submitButton.classList.add('bg-green-600');
+                }
                 
                 this.showToast('Drawing submitted!', 'success');
             }
@@ -1535,16 +1551,20 @@
             endDrawingPhase() {
                 debugLog('🎨 Drawing phase ended');
                 
-                // Submit drawing if not already submitted
+                // Auto-submit drawing if not already submitted
                 if (!this.gameState.drawingsCompleted.has(this.playerId)) {
+                    console.log('Auto-submitting drawing for player:', this.playerId);
                     this.submitDrawing();
                 }
                 
                 if (this.isHost) {
-                    // Wait a bit for final submissions
+                    // Wait a bit for final submissions, then start guessing rounds
                     setTimeout(() => {
+                        console.log('Host starting guessing rounds...');
+                        console.log('Total drawings completed:', this.gameState.drawingsCompleted.size);
+                        console.log('Total players:', this.gameState.players.size);
                         this.startGuessingRounds();
-                    }, 2000);
+                    }, 3000);
                 }
             }
             
@@ -1586,20 +1606,26 @@
                     const players = Array.from(this.gameState.players.keys());
                     const shuffledPrompts = [...this.prompts].sort(() => Math.random() - 0.5);
                     
+                    console.log('🎯 Assigning prompts to players:', players);
+                    
                     players.forEach((playerId, index) => {
                         const prompt = shuffledPrompts[index % shuffledPrompts.length];
                         this.gameState.playerPrompts.set(playerId, prompt);
+                        console.log(`Player ${playerId} gets prompt: ${prompt}`);
                     });
                     
                     // Create random order for showing drawings
                     this.gameState.roundOrder = [...players].sort(() => Math.random() - 0.5);
                     
-                    debugLog('🎯 Player prompts assigned:', this.gameState.playerPrompts);
+                    console.log('🎯 Round order:', this.gameState.roundOrder);
+                    console.log('🎯 Player prompts assigned:', this.gameState.playerPrompts);
                     this.broadcastGameState();
+                } else {
+                    console.log('Waiting for host to assign prompts...');
                 }
                 
                 this.updateDrawingUI();
-                this.startTimer(this.gameConfig.timers.drawing, () => this.submitDrawing());
+                this.startTimer(this.gameConfig.timers.drawing, () => this.endDrawingPhase());
             }
 
 
@@ -2109,21 +2135,34 @@
                 });
             }
             
-            // Drawing UI Updates
+                        // Drawing UI Updates
             updateDrawingUI() {
                 const promptElement = document.getElementById('drawing-prompt');
                 const toolsElement = document.getElementById('drawing-tools');
                 const statusElement = document.getElementById('other-players-status');
                 
+                if (!promptElement || !toolsElement || !statusElement) {
+                    console.warn('Missing drawing UI elements');
+                    return;
+                }
+                
                 // All players can draw their own prompt
                 const myPrompt = this.gameState.playerPrompts?.get(this.playerId) || 'Loading...';
                 promptElement.textContent = `Draw: ${myPrompt}`;
-                toolsElement.style.display = 'flex';
+                
+                // Show drawing tools if not submitted
+                if (this.gameState.drawingsCompleted.has(this.playerId)) {
+                    toolsElement.style.display = 'none';
+                } else {
+                    toolsElement.style.display = 'flex';
+                }
                 
                 // Show how many players have finished
                 const completedCount = this.gameState.drawingsCompleted?.size || 0;
                 const totalPlayers = this.gameState.players.size;
                 statusElement.textContent = `${completedCount}/${totalPlayers} players have finished drawing`;
+                
+                console.log('Updated drawing UI:', myPrompt, `${completedCount}/${totalPlayers} completed`);
                 
                 // Add submit button if not already there
                 if (!document.getElementById('submit-drawing')) {
@@ -2132,7 +2171,24 @@
                     submitBtn.className = 'btn btn-secondary text-lg mt-4';
                     submitBtn.textContent = 'Submit Drawing';
                     submitBtn.addEventListener('click', () => this.submitDrawing());
-                    document.getElementById('drawing-screen').appendChild(submitBtn);
+                    
+                    // Insert the button after the status element
+                    statusElement.parentNode.insertBefore(submitBtn, statusElement.nextSibling);
+                    console.log('Submit drawing button added');
+                }
+                
+                // Update submit button state
+                const submitBtn = document.getElementById('submit-drawing');
+                if (submitBtn) {
+                    if (this.gameState.drawingsCompleted.has(this.playerId)) {
+                        submitBtn.disabled = true;
+                        submitBtn.textContent = 'Drawing Submitted!';
+                        submitBtn.classList.add('bg-green-600');
+                    } else {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Submit Drawing';
+                        submitBtn.classList.remove('bg-green-600');
+                    }
                 }
             }
             
@@ -2220,43 +2276,68 @@
                     ctx.stroke();
                 });
             }
-            
+
             setupCanvas() {
                 const canvas = document.getElementById('drawing-canvas');
                 const ctx = canvas.getContext('2d');
 
                 const resize = () => {
                     const container = canvas.parentElement;
-                    const dpr = window.devicePixelRatio || 1;
-                    canvas.width = container.clientWidth * dpr;
-                    canvas.height = container.clientHeight * dpr;
+                    const containerRect = container.getBoundingClientRect();
+                    
+                    // Set canvas display size
+                    canvas.style.width = containerRect.width + 'px';
+                    canvas.style.height = containerRect.height + 'px';
+                    
+                    // Set canvas actual size (for high DPI displays)
+                    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                    canvas.width = containerRect.width * dpr;
+                    canvas.height = containerRect.height * dpr;
+                    
+                    // Scale the drawing context
                     ctx.scale(dpr, dpr);
                     
                     // Fill with white background
                     ctx.fillStyle = 'white';
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.fillRect(0, 0, containerRect.width, containerRect.height);
+                    
+                    console.log('Canvas resized:', containerRect.width, 'x', containerRect.height);
                 };
-                window.addEventListener('resize', resize);
+                
+                // Debounced resize for performance
+                let resizeTimeout;
+                window.addEventListener('resize', () => {
+                    clearTimeout(resizeTimeout);
+                    resizeTimeout = setTimeout(resize, 100);
+                });
                 resize();
 
                 const getPos = (e) => {
                     const rect = canvas.getBoundingClientRect();
                     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
                     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-                    return { x: clientX - rect.left, y: clientY - rect.top };
+                    return { 
+                        x: clientX - rect.left, 
+                        y: clientY - rect.top 
+                    };
                 };
 
                 const start = (e) => {
-                    if (this.gameState.phase !== 'DRAWING') return;
-                    // All players can draw in new game mode
+                    if (this.gameState.phase !== 'DRAWING') {
+                        console.log('Not in drawing phase:', this.gameState.phase);
+                        return;
+                    }
+                    
                     e.preventDefault();
                     this.isDrawing = true;
                     this.lastPos = getPos(e);
+                    console.log('Drawing started at:', this.lastPos);
                 };
                 
                 const draw = (e) => {
                     if (!this.isDrawing) return;
                     if (this.gameState.phase !== 'DRAWING') return;
+                    
                     e.preventDefault();
                     const pos = getPos(e);
                     
@@ -2276,6 +2357,7 @@
                     if (!this.isDrawing) return;
                     this.isDrawing = false;
                     this.drawingHistory.saveState(canvas);
+                    console.log('Drawing stopped');
                 };
 
                 canvas.addEventListener('mousedown', start);
@@ -2285,6 +2367,8 @@
                 canvas.addEventListener('touchstart', start, { passive: false });
                 canvas.addEventListener('touchmove', draw, { passive: false });
                 canvas.addEventListener('touchend', stop);
+                
+                console.log('Canvas setup complete');
             }
         }
 
