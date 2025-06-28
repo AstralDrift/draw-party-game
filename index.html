@@ -344,6 +344,13 @@
     </div>
 
     <script>
+        const DEBUG_MODE = false; // Set to true for development logging
+        const debugLog = (...args) => {
+            if (DEBUG_MODE) {
+                console.log(...args);
+            }
+        };
+
         // Game Core - All functionality embedded
         class DrawPartyGame {
             constructor() {
@@ -605,7 +612,7 @@
         DrawPartyGame.prototype.nextRound = function() { this.showScreen('drawing-screen'); };
         DrawPartyGame.prototype.playAgain = function() { this.showScreen('lobby-screen'); };
         DrawPartyGame.prototype.newGame = function() { window.location.href = window.location.pathname; };
-        DrawPartyGame.prototype.broadcastMessage = function(msg) { console.log('Broadcasting:', msg); };
+        DrawPartyGame.prototype.broadcastMessage = function(msg) { debugLog('Broadcasting:', msg); };
         DrawPartyGame.prototype.showToast = function(message, type) {
             const toast = document.getElementById('toast');
             toast.textContent = message;
