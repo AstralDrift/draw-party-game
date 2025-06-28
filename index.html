@@ -181,8 +181,13 @@
                     </div>
                     
                     <div class="space-y-4">
-                        <input id="player-name" type="text" placeholder="Enter your name" 
-                               class="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3">
+                        <div class="flex gap-2">
+                            <input id="player-name" type="text" placeholder="Enter your name" 
+                                   class="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-4 py-3">
+                            <button id="submit-name" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg">
+                                ✓
+                            </button>
+                        </div>
                         <button id="start-game" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg disabled:bg-gray-600 disabled:cursor-not-allowed" disabled>
                             🎨 Start Drawing!
                         </button>
@@ -312,7 +317,7 @@
         // Game Core - All functionality embedded
         class DrawPartyGame {
             constructor() {
-                console.log('🎨 Draw Party Game v1.7.8 - START GAME & NAME SYNC FIX!', new Date().toISOString());
+                console.log('🎨 Draw Party Game v1.7.9 - NAME SUBMIT BUTTON FIX!', new Date().toISOString());
                 console.log('🔧 If you see old behavior, clear browser cache or hard refresh (Ctrl+Shift+R)');
                 
                 this.peer = null;
@@ -469,29 +474,47 @@
                 // Lobby screen
                 document.getElementById('share-game').addEventListener('click', () => this.shareGame());
                 document.getElementById('start-game').addEventListener('click', () => this.startGame());
+                // Name input - only update locally while typing
                 document.getElementById('player-name').addEventListener('input', (e) => {
                     this.playerName = e.target.value.trim();
+                    this.updateStartButton(); // Update button state locally
+                });
+                
+                // Submit name button and Enter key - send to other players
+                const submitName = () => {
+                    const nameInput = document.getElementById('player-name');
+                    this.playerName = nameInput.value.trim();
                     
-                    // Update player in game state
+                    if (!this.playerName) {
+                        alert('Please enter your name first!');
+                        nameInput.focus();
+                        return;
+                    }
+                    
+                    console.log('📝 Submitting name:', this.playerName);
+                    
+                    // Update local game state
                     if (this.gameState.players.has(this.playerId)) {
                         const player = this.gameState.players.get(this.playerId);
-                        player.name = this.playerName || (this.isHost ? 'Host' : 'Player');
+                        player.name = this.playerName;
                         this.gameState.players.set(this.playerId, player);
                     } else {
                         this.gameState.players.set(this.playerId, {
                             id: this.playerId,
-                            name: this.playerName || (this.isHost ? 'Host' : 'Player'),
+                            name: this.playerName,
                             score: 0,
                             connected: true
                         });
                     }
                     
-                    // Broadcast name change to other players
+                    // Broadcast name to other players
                     const updateMessage = {
                         type: 'PLAYER_UPDATE',
                         playerId: this.playerId,
-                        playerName: this.playerName || (this.isHost ? 'Host' : 'Player')
+                        playerName: this.playerName
                     };
+                    
+                    console.log('📤 Broadcasting name update:', updateMessage);
                     
                     if (this.broadcastLocal) {
                         this.broadcastLocal(updateMessage);
@@ -501,7 +524,12 @@
                     
                     this.updateStartButton();
                     this.updatePlayersDisplay();
-                });
+                    
+                    // Show confirmation
+                    this.showToast(`Name set to: ${this.playerName}`, 'success');
+                };
+                
+                document.getElementById('submit-name').addEventListener('click', submitName);
                 
                 // Drawing tools
                 document.querySelectorAll('.color-btn').forEach(btn => {
@@ -525,7 +553,7 @@
                     if (e.key === 'Enter') document.getElementById('join-room').click();
                 });
                 document.getElementById('player-name').addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') document.getElementById('start-game').click();
+                    if (e.key === 'Enter') submitName();
                 });
                 document.getElementById('guess-input').addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') document.getElementById('submit-guess').click();
