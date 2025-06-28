@@ -528,119 +528,705 @@
                 document.getElementById('new-game').addEventListener('click', () => this.newGame());
             }
             
-            setupCanvas() {
-                const canvas = document.getElementById('drawing-canvas');
-                const resize = () => {
-                    const container = canvas.parentElement;
-                    const dpr = window.devicePixelRatio || 1;
-                    canvas.width = container.clientWidth * dpr;
-                    canvas.height = container.clientHeight * dpr;
-                    canvas.getContext('2d').scale(dpr, dpr);
-                    this.clearCanvas(false);
-                };
-                window.addEventListener('resize', resize);
-                resize();
-
-                const getPos = (e) => {
-                    const rect = canvas.getBoundingClientRect();
-                    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-                    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-                    return { x: clientX - rect.left, y: clientY - rect.top };
-                };
-
-                const start = (e) => {
-                    if (this.gameState.phase !== 'DRAWING') return;
-                    e.preventDefault();
-                    this.isDrawing = true;
-                    this.lastPos = getPos(e);
-                };
-                const draw = (e) => {
-                    if (!this.isDrawing) return;
-                    e.preventDefault();
-                    const pos = getPos(e);
-                    const ctx = canvas.getContext('2d');
-                    ctx.beginPath();
-                    ctx.moveTo(this.lastPos.x, this.lastPos.y);
-                    ctx.lineTo(pos.x, pos.y);
-                    ctx.strokeStyle = this.currentTool === 'eraser' ? 'white' : this.currentColor;
-                    ctx.lineWidth = this.currentSize;
-                    ctx.lineCap = 'round';
-                    ctx.lineJoin = 'round';
-                    ctx.stroke();
-                    this.lastPos = pos;
-                };
-                const stop = () => {
-                    if (!this.isDrawing) return;
-                    this.isDrawing = false;
-                    this.drawingHistory.saveState(document.getElementById('drawing-canvas'));
+            generateId() {
+                return Math.random().toString(36).substr(2, 9);
+            }
+            
+            generateRoomCode() {
+                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+                let result = '';
+                for (let i = 0; i < 4; i++) {
+                    result += chars.charAt(Math.floor(Math.random() * chars.length));
                 }
-
-                canvas.addEventListener('mousedown', start);
-                canvas.addEventListener('mousemove', draw);
-                canvas.addEventListener('mouseup', stop);
-                canvas.addEventListener('mouseout', stop);
-                canvas.addEventListener('touchstart', start, { passive: false });
-                canvas.addEventListener('touchmove', draw, { passive: false });
-                canvas.addEventListener('touchend', stop);
+                return result;
             }
 
-            undo() {
-                const canvas = document.getElementById('drawing-canvas');
-                const ctx = canvas.getContext('2d');
-                this.drawingHistory.undo(canvas, ctx);
+            createRoom() {
+                debugLog('CREATE_ROOM', 'Starting room creation', 'out');
+                
+                this.roomCode = this.generateRoomCode();
+                this.isHost = true;
+                
+                debugLog('ROOM_CODE', `Generated: ${this.roomCode}`, 'out');
+                
+                const basePath = window.location.pathname.includes('/draw-party-game') ? '/draw-party-game' : '';
+                window.history.pushState({}, '', `${basePath}/${this.roomCode}`);
+                
+                debugLog('HOST_SETUP', 'Becoming host, creating peer', 'out');
+                
+                this.createHostPeer();
+                this.showLobby();
+                
+                debugLog('ROOM_READY', 'Room created successfully', 'out');
             }
-
-            redo() {
-                const canvas = document.getElementById('drawing-canvas');
-                const ctx = canvas.getContext('2d');
-                this.drawingHistory.redo(canvas, ctx);
-            }
-
-            selectColor(color) {
-                this.currentColor = color;
-                this.currentTool = 'brush';
-                document.querySelectorAll('.color-btn').forEach(btn => {
-                    btn.classList.toggle('ring-2', btn.dataset.color === color);
-                    btn.classList.toggle('ring-white', btn.dataset.color === color);
+            
+            createHostPeer() {
+                const hostId = `${this.roomCode}_HOST`;
+                debugLog('👑 Creating host peer with ID:', hostId);
+                
+                this.peer = new Peer(hostId, {
+                    secure: true,
+                    debug: 1,
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:global.stun.twilio.com:3478' }
+                        ]
+                    }
                 });
-                this.updateToolButtons();
+                
+                this.peer.on('open', (id) => {
+                    debugLog('🎯 Host peer opened with ID:', id);
+                    debugLog('🌐 Host peer object:', this.peer);
+                    this.updateConnectionStatus('Host ready - share room code!');
+                    
+                    debugLog('➕ Host adding themselves to players list');
+                    this.gameState.players.set(this.playerId, {
+                        id: this.playerId,
+                        name: this.playerName || 'Host',
+                        score: 0,
+                        connected: true,
+                        likes: 0
+                    });
+                    
+                    this.updatePlayersDisplay();
+                });
+                
+                this.peer.on('connection', (conn) => {
+                    debugLog('📞 Host received incoming connection from:', conn.peer);
+                    this.handleConnection(conn);
+                });
+                
+                this.peer.on('error', (err) => {
+                    console.error('❌ Host peer error:', err);
+                    debugLog('🔄 Attempting to recover host connection...');
+                    this.updateConnectionStatus('Connection error - recovering...');
+                    
+                    setTimeout(() => {
+                        if (this.peer && this.peer.destroyed) {
+                            debugLog('🔄 Recreating host peer after error');
+                            this.createHostPeer();
+                        } else if (this.peer && this.peer.disconnected) {
+                            debugLog('🔄 Reconnecting host peer');
+                            this.peer.reconnect();
+                        }
+                    }, 2000);
+                });
+                
+                this.peer.on('disconnected', () => {
+                    debugLog('🔌 Host peer disconnected from server');
+                    this.updateConnectionStatus('Disconnected - reconnecting...');
+                    
+                    setTimeout(() => {
+                        if (this.peer && !this.peer.destroyed) {
+                            debugLog('🔄 Attempting to reconnect host peer');
+                            this.peer.reconnect();
+                        }
+                    }, 1000);
+                });
+                
+                this.peer.on('close', () => {
+                    debugLog('🔌 Host peer connection closed');
+                });
             }
-
-            selectBrush(size) {
-                this.currentSize = size;
-                this.currentTool = 'brush';
-                this.updateToolButtons();
+            
+            joinRoom(code) {
+                debugLog('JOIN_ROOM', `Attempting to join: ${code}`, 'out');
+                
+                this.roomCode = code;
+                this.isHost = false;
+                
+                debugLog('PLAYER_SETUP', 'Set as player, looking for host', 'out');
+                
+                const basePath = window.location.pathname.includes('/draw-party-game') ? '/draw-party-game' : '';
+                window.history.pushState({}, '', `${basePath}/${this.roomCode}`);
+                
+                debugLog('PEER_INIT', 'Initializing peer connection', 'out');
+                this.initializePeer();
+                this.showLobby();
+                
+                debugLog('JOIN_COMPLETE', 'Join room setup complete', 'out');
             }
-
-            selectEraser() {
-                this.currentTool = 'eraser';
-                this.updateToolButtons();
-            }
-
-            clearCanvas(confirm = true) {
-                if (confirm && !window.confirm("Are you sure you want to clear the canvas?")) return;
-                const canvas = document.getElementById('drawing-canvas');
-                const ctx = canvas.getContext('2d');
-                ctx.fillStyle = 'white';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                this.drawingHistory.saveState(canvas);
-            }
-
-            updateToolButtons() {
-                document.querySelectorAll('#tool-palette .tool-btn').forEach(btn => btn.classList.remove('btn-primary'));
-                if (this.currentTool === 'brush') {
-                    if (this.currentSize === 2) document.getElementById('brush-small').classList.add('btn-primary');
-                    else if (this.currentSize === 5) document.getElementById('brush-medium').classList.add('btn-primary');
-                    else if (this.currentSize === 10) document.getElementById('brush-large').classList.add('btn-primary');
-                } else if (this.currentTool === 'eraser') {
-                    document.getElementById('eraser').classList.add('btn-primary');
+            
+            initializePeer() {
+                // Always attempt P2P connection
+                if (!this.isHost) {
+                    this.createPlayerPeer();
                 }
             }
+            
+            createPlayerPeer() {
+                debugLog('🎭 Creating player peer with ID:', this.playerId);
+                
+                this.peer = new Peer(this.playerId, {
+                    secure: true,
+                    debug: 1,
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:global.stun.twilio.com:3478' }
+                        ]
+                    }
+                });
+                
+                this.peer.on('open', (id) => {
+                    debugLog('🎯 Player peer opened with ID:', id);
+                    debugLog('🌐 Peer object:', this.peer);
+                    this.updateConnectionStatus('Peer ready, connecting to host...');
+                    
+                    setTimeout(() => {
+                        this.connectToHost();
+                    }, 500);
+                });
+                
+                this.peer.on('error', (err) => {
+                    console.error('❌ Player peer error:', err);
+                    this.updateConnectionStatus('Peer connection failed');
+                    // Fallback to becoming host if connection fails
+                    this.becomeHost();
+                });
+                
+                this.peer.on('connection', (conn) => {
+                    debugLog('📞 Player received incoming connection from:', conn.peer);
+                    this.handleConnection(conn);
+                });
+                
+                this.peer.on('disconnected', () => {
+                    debugLog('🔌 Player peer disconnected');
+                });
+            }
+            
+            connectToHost() {
+                const hostId = `${this.roomCode}_HOST`;
+                debugLog('🔌 Attempting to connect to host:', hostId);
+                
+                const connectionTimeout = setTimeout(() => {
+                    debugLog('⏰ Connection timeout - no host found, becoming host');
+                    this.becomeHost();
+                }, 8000);
+                
+                try {
+                    debugLog('📞 Creating connection to host...');
+                    const conn = this.peer.connect(hostId);
+                    
+                    conn.on('open', () => {
+                        debugLog('✅ Successfully connected to host!');
+                        clearTimeout(connectionTimeout);
+                        this.updateConnectionStatus('Connected to host');
+                        this.handleConnection(conn);
+                    });
+                    
+                    conn.on('error', (err) => {
+                        console.error('❌ Connection error:', err);
+                        clearTimeout(connectionTimeout);
+                        this.becomeHost();
+                    });
+                    
+                    conn.on('close', () => {
+                        debugLog('🔌 Connection to host closed');
+                    });
+                    
+                    conn.on('data', (data) => {
+                        debugLog('📥 Data from host:', data);
+                    });
+                    
+                } catch (error) {
+                    console.error('💥 Exception connecting to host:', error);
+                    clearTimeout(connectionTimeout);
+                    this.becomeHost();
+                }
+            }
+            
+            becomeHost() {
+                if (this.isHost) return;
+                
+                this.isHost = true;
+                this.updateConnectionStatus('Became host (no existing host found)');
+                
+                if (this.peer) {
+                    this.peer.destroy();
+                }
+                
+                this.peer = new Peer(`${this.roomCode}_HOST`, {
+                    secure: true,
+                    debug: 1,
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:global.stun.twilio.com:3478' }
+                        ]
+                    }
+                });
+                
+                this.peer.on('open', () => {
+                    debugLog('🎯 becomeHost peer opened');
+                    this.updateConnectionStatus('Host ready');
+                    
+                    debugLog('➕ becomeHost adding themselves to players list');
+                    this.gameState.players.set(this.playerId, {
+                        id: this.playerId,
+                        name: this.playerName || 'Host',
+                        score: 0,
+                        connected: true,
+                        likes: 0
+                    });
+                });
+                
+                this.peer.on('connection', (conn) => {
+                    this.handleConnection(conn);
+                });
+                
+                this.updatePlayersDisplay();
+            }
+            
+            handleConnection(conn) {
+                conn.on('open', () => {
+                    debugLog('🔗 Connection established with:', conn.peer);
+                    debugLog('🎭 I am:', this.playerId, 'Host?', this.isHost);
+                    this.connections.set(conn.peer, conn);
+                    
+                    if (this.isHost) {
+                        debugLog('📡 Host sending ROOM_JOINED to:', conn.peer);
+                        this.sendToPlayer(conn.peer, { type: 'ROOM_JOINED', roomCode: this.roomCode });
+                        setTimeout(() => {
+                            debugLog('📡 Host also sending current game state to new player');
+                            this.broadcastGameState();
+                        }, 100);
+                    } else {
+                        debugLog('📡 Player sending PLAYER_JOIN to host:', conn.peer);
+                        debugLog('🏷️ Player name at join time:', this.playerName, '(empty is normal)');
+                        this.sendToPlayer(conn.peer, { type: 'PLAYER_JOIN', playerId: this.playerId, playerName: this.playerName || 'Player' });
+                    }
+                });
+                
+                conn.on('data', (data) => {
+                    this.handleMessage(data, conn.peer, conn);
+                });
+                
+                conn.on('close', () => {
+                    debugLog('🔌 Connection closed with:', conn.peer);
+                    this.connections.delete(conn.peer);
+                    
+                    if (this.isHost && this.gameState.players.has(conn.peer)) {
+                        debugLog('➖ Removing disconnected player:', conn.peer);
+                        this.gameState.players.delete(conn.peer);
+                        this.broadcastGameState();
+                    }
+                    
+                    this.updatePlayersDisplay();
+                });
+                
+                conn.on('error', (err) => {
+                    console.error('❌ Connection error with', conn.peer, ':', err);
+                    this.connections.delete(conn.peer);
+                    this.updatePlayersDisplay();
+                });
+            }
+            
+            handleMessage(message, fromPeer, connection = null) {
+                debugLog('📨 Received message:', message.type, 'from:', fromPeer);
+                debugLog('📨 Message details:', message);
+                
+                switch (message.type) {
+                    case 'PLAYER_JOIN':
+                        debugLog('🎯 Handling PLAYER_JOIN. I am host?', this.isHost);
+                        debugLog('🎯 Player joining:', message.playerId, 'Name:', message.playerName);
+                        debugLog('🎯 Current players before adding:', this.gameState.players.size);
+                        if (this.isHost) {
+                            debugLog('➕ Host adding player to gameState:', message.playerId, message.playerName);
+                            this.gameState.players.set(message.playerId, {
+                                id: message.playerId,
+                                name: message.playerName || 'Player',
+                                score: 0,
+                                connected: true,
+                                likes: 0
+                            });
+                            debugLog('✅ Player added! New player count:', this.gameState.players.size);
+                            debugLog('📋 All players now:', Array.from(this.gameState.players.entries()));
+                            debugLog('📡 Host broadcasting game state after adding player');
+                            this.broadcastGameState();
+                        } else {
+                            debugLog('👤 Non-host received PLAYER_JOIN, ignoring');
+                        }
+                        this.updatePlayersDisplay();
+                        break;
+                        
+                    case 'PLAYER_UPDATE':
+                        if (this.gameState.players.has(message.playerId)) {
+                            const player = this.gameState.players.get(message.playerId);
+                            player.name = message.playerName || 'Player';
+                            this.gameState.players.set(message.playerId, player);
+                        }
+                        this.updatePlayersDisplay();
+                        if (this.isHost) {
+                            this.broadcastGameState();
+                        }
+                        break;
+                        
+                    case 'ROOM_JOINED':
+                        debugLog('🎯 Received ROOM_JOINED from host - sending PLAYER_JOIN back');
+                        if (!this.isHost) {
+                            const playerJoinMessage = {
+                                type: 'PLAYER_JOIN',
+                                playerId: this.playerId,
+                                playerName: this.playerName || 'Player'
+                            };
+                            debugLog('📡 Sending PLAYER_JOIN to host:', playerJoinMessage);
+                            if (connection && connection.open) {
+                                try {
+                                    connection.send(playerJoinMessage);
+                                    debugLog('✅ PLAYER_JOIN sent successfully via direct connection');
+                                } catch (error) {
+                                    console.error('❌ Failed to send PLAYER_JOIN:', error);
+                                    this.sendToPlayer(fromPeer, playerJoinMessage);
+                                }
+                            } else {
+                                debugLog('🔄 Using sendToPlayer fallback');
+                                this.sendToPlayer(fromPeer, playerJoinMessage);
+                            }
+                        }
+                        break;
+                        
+                    case 'GAME_STATE_UPDATE':
+                        debugLog('📥 Received GAME_STATE_UPDATE:', message.gameState);
+                        debugLog('🔍 Before update - players.size:', this.gameState.players.size);
+                        
+                        if (message.gameState.players && Array.isArray(message.gameState.players)) {
+                            debugLog('🔄 Converting players array to Map:', message.gameState.players);
+                            this.gameState.players.clear();
+                            message.gameState.players.forEach(([id, player]) => {
+                                debugLog('➕ Adding player from game state:', id, player);
+                                this.gameState.players.set(id, player);
+                            });
+                            debugLog('✅ Players Map rebuilt - size:', this.gameState.players.size);
+                        }
+                        
+                        if (message.gameState.guesses && Array.isArray(message.gameState.guesses)) {
+                            this.gameState.guesses.clear();
+                            message.gameState.guesses.forEach(([id, guess]) => this.gameState.guesses.set(id, guess));
+                        }
+                        
+                        if (message.gameState.votes && Array.isArray(message.gameState.votes)) {
+                            this.gameState.votes.clear();
+                            message.gameState.votes.forEach(([id, vote]) => this.gameState.votes.set(id, vote));
+                        }
+                        
+                        if (message.gameState.scores && Array.isArray(message.gameState.scores)) {
+                            this.gameState.scores.clear();
+                            message.gameState.scores.forEach(([id, score]) => this.gameState.scores.set(id, score));
+                        }
+                        
+                        if (message.gameState.playerPrompts && Array.isArray(message.gameState.playerPrompts)) {
+                            if (!this.gameState.playerPrompts) this.gameState.playerPrompts = new Map();
+                            this.gameState.playerPrompts.clear();
+                            message.gameState.playerPrompts.forEach(([id, prompt]) => this.gameState.playerPrompts.set(id, prompt));
+                        }
+                        
+                        const { players, guesses, votes, scores, playerPrompts, ...scalarState } = message.gameState;
+                        Object.assign(this.gameState, scalarState);
+                        
+                        debugLog('📊 Final gameState players.size:', this.gameState.players.size);
+                        this.updateUI();
+                        this.updatePlayersDisplay();
+                        break;
+                        
+                    case 'START_GAME':
+                        this.handleStartGame();
+                        break;
+                        
+                    case 'DRAWING_UPDATE':
+                        this.updateCanvas(message.canvasData);
+                        break;
+                        
+                    case 'GUESS_SUBMITTED':
+                        if (this.isHost) {
+                            this.gameState.guesses.set(message.playerId, message.guess);
+                            this.checkAllGuessesSubmitted();
+                        }
+                        break;
+                        
+                    case 'VOTE_SUBMITTED':
+                        if (this.isHost) {
+                            this.gameState.votes.set(message.playerId, message.vote);
+                            this.checkAllVotesSubmitted();
+                        }
+                        break;
+                        
+                    case 'LIKE_SUBMITTED':
+                        if (this.isHost) {
+                            this.gameState.likes.set(message.playerId, {
+                                targetPlayerId: message.targetPlayerId,
+                                guessText: message.guessText
+                            });
+                            this.checkAllVotesSubmitted();
+                        }
+                        break;
+                        
+                    case 'HEARTBEAT':
+                        debugLog(`💓 Heartbeat received from ${fromPeer}`);
+                        if (this.isHost) {
+                            this.sendToPlayer(fromPeer, {
+                                type: 'HEARTBEAT_ACK',
+                                timestamp: Date.now()
+                            }, { waitForReady: false, retries: 0 });
+                        }
+                        break;
+                        
+                    case 'HEARTBEAT_ACK':
+                        debugLog(`💓 Heartbeat ACK received from ${fromPeer}`);
+                        break;
+                }
+            }
+            
+            sendToPlayer(playerId, message, options = {}) {
+                const {
+                    timeout = 5000,
+                    retries = 2,
+                    retryDelay = 1000,
+                    waitForReady = true
+                } = options;
+                
+                const startTime = Date.now();
+                
+                const createStatus = (success, details = {}) => ({
+                    success,
+                    playerId,
+                    messageType: message.type,
+                    timestamp: Date.now(),
+                    duration: Date.now() - startTime,
+                    ...details
+                });
+                
+                const conn = this.connections.get(playerId);
+                if (!conn) {
+                    console.warn(`⚠️ No connection found for player: ${playerId}`);
+                    return createStatus(false, { 
+                        error: 'No connection found',
+                        connectionExists: false
+                    });
+                }
+                
+                const validateConnection = () => {
+                    if (!conn) return { valid: false, reason: 'Connection is null' };
+                    if (conn.destroyed) return { valid: false, reason: 'Connection destroyed' };
+                    if (!conn.open) return { valid: false, reason: 'Connection not open' };
+                    return { valid: true };
+                };
+                
+                const attemptSend = async (attempt = 0) => {
+                    const validation = validateConnection();
+                    
+                    if (!validation.valid) {
+                        console.warn(`⚠️ Connection to ${playerId} invalid: ${validation.reason}`);
+                        
+                        if (waitForReady && attempt < retries && validation.reason.includes('state')) {
+                            debugLog(`🔄 Waiting for connection to be ready (attempt ${attempt + 1}/${retries + 1})`);
+                            
+                            const readyPromise = new Promise((resolve) => {
+                                const checkReady = () => {
+                                    const newValidation = validateConnection();
+                                    if (newValidation.valid) {
+                                        resolve(true);
+                                    } else if (Date.now() - startTime > timeout) {
+                                        resolve(false);
+                                    } else {
+                                        setTimeout(checkReady, 100);
+                                    }
+                                };
+                                setTimeout(checkReady, retryDelay);
+                            });
+                            
+                            const isReady = await readyPromise;
+                            if (isReady) {
+                                return attemptSend(attempt + 1);
+                            }
+                        }
+                        
+                        this.connections.delete(playerId);
+                        
+                        if (message.type === 'GAME_STATE_UPDATE' || message.type === 'START_GAME') {
+                            this.attemptReconnection(playerId, conn);
+                        }
+                        
+                        return createStatus(false, {
+                            error: validation.reason,
+                            connectionState: conn?.readyState || 'unknown',
+                            attemptsUsed: attempt + 1,
+                            cleanedUp: true
+                        });
+                    }
+                    
+                    try {
+                        conn.send(message);
+                        debugLog(`📤 Message sent to ${playerId}:`, message.type);
+                        
+                        return createStatus(true, {
+                            connectionState: conn.readyState,
+                            attemptsUsed: attempt + 1,
+                            method: 'peerjs'
+                        });
+                        
+                    } catch (error) {
+                        console.error(`❌ Send attempt ${attempt + 1} failed to ${playerId}:`, error);
+                        
+                        if (attempt < retries) {
+                            debugLog(`🔄 Retrying send to ${playerId} in ${retryDelay}ms`);
+                            await new Promise(resolve => setTimeout(resolve, retryDelay));
+                            return attemptSend(attempt + 1);
+                        }
+                        
+                        this.connections.delete(playerId);
+                        
+                        if (error.name === 'DataCloneError' || error.message.includes('connection')) {
+                            this.attemptReconnection(playerId, conn);
+                        }
+                        
+                        return createStatus(false, {
+                            error: error.message,
+                            errorType: error.name,
+                            connectionState: conn?.readyState || 'unknown',
+                            attemptsUsed: attempt + 1,
+                            cleanedUp: true
+                        });
+                    }
+                };
+                
+                if (waitForReady || retries > 0) {
+                    return attemptSend();
+                } else {
+                    const validation = validateConnection();
+                    if (!validation.valid) {
+                        this.connections.delete(playerId);
+                        if (message.type === 'GAME_STATE_UPDATE' || message.type === 'START_GAME') {
+                            this.attemptReconnection(playerId, conn);
+                        }
+                        return createStatus(false, {
+                            error: validation.reason,
+                            connectionState: conn?.readyState || 'unknown'
+                        });
+                    }
+                    
+                    try {
+                        conn.send(message);
+                        debugLog(`📤 Message sent to ${playerId}:`, message.type);
+                        return createStatus(true, {
+                            connectionState: conn.readyState,
+                            method: 'peerjs'
+                        });
+                    } catch (error) {
+                        console.error(`❌ Failed to send message to ${playerId}:`, error);
+                        this.connections.delete(playerId);
+                        if (error.name === 'DataCloneError' || error.message.includes('connection')) {
+                            this.attemptReconnection(playerId, conn);
+                        }
+                        return createStatus(false, {
+                            error: error.message,
+                            errorType: error.name,
+                            connectionState: conn?.readyState || 'unknown'
+                        });
+                    }
+                }
+            }
+            
+            async sendReliably(playerId, message, options = {}) {
+                const defaultOptions = {
+                    waitForReady: true,
+                    retries: 2,
+                    retryDelay: 500,
+                    ...options
+                };
+                
+                try {
+                    const result = await this.sendToPlayer(playerId, message, defaultOptions);
+                    
+                    if (result.success) {
+                        debugLog(`✅ Reliable send success to ${playerId}:`, result);
+                        return result;
+                    } else {
+                        console.warn(`⚠️ Reliable send failed to ${playerId}:`, result);
+                        if (message.type === 'GUESS_SUBMITTED' || message.type === 'VOTE_SUBMITTED') {
+                            this.showToast(`Failed to send ${message.type.toLowerCase()} - connection issue`, 'warning');
+                        }
+                        return result;
+                    }
+                } catch (error) {
+                    console.error(`❌ Reliable send error to ${playerId}:`, error);
+                    const errorResult = {
+                        success: false,
+                        error: error.message,
+                        playerId,
+                        messageType: message.type,
+                        timestamp: Date.now()
+                    };
+                    
+                    if (message.type === 'GUESS_SUBMITTED' || message.type === 'VOTE_SUBMITTED') {
+                        this.showToast(`Network error sending ${message.type.toLowerCase()}`, 'error');
+                    }
+                    return errorResult;
+                }
+            }
+            
+            attemptReconnection(playerId, oldConn) {
+                console.warn(`Attempting to reconnect to ${playerId}...`);
+                if (oldConn) {
+                    try { oldConn.close(); } catch (e) { console.error("Error closing old connection:", e); }
+                    try { oldConn.destroy(); } catch (e) { console.error("Error destroying old connection:", e); }
+                }
+                
+                if (this.isHost) {
+                    // Host doesn't actively reconnect to players, players reconnect to host
+                    // Just remove the player from the game state
+                    if (this.gameState.players.has(playerId)) {
+                        this.gameState.players.delete(playerId);
+                        this.broadcastGameState();
+                        this.updatePlayersDisplay();
+                    }
+                } else {
+                    // Player tries to reconnect to host
+                    this.updateConnectionStatus('Reconnecting to host...');
+                    setTimeout(() => this.connectToHost(), 3000);
+                }
+            }
+            
+            broadcastMessage(message) {
+                if (this.isHost) {
+                    this.connections.forEach((conn, peerId) => {
+                        if (peerId !== this.playerId) { // Don't send to self
+                            this.sendToPlayer(peerId, message);
+                        }
+                    });
+                } else {
+                    // Players send messages to the host
+                    const hostConn = this.connections.get(`${this.roomCode}_HOST`);
+                    if (hostConn) {
+                        this.sendToPlayer(`${this.roomCode}_HOST`, message);
+                    } else {
+                        console.warn('No host connection found to broadcast message.');
+                    }
+                }
+            }
+            
+            broadcastGameState() {
+                if (!this.isHost) return;
+                
+                const stateToBroadcast = {
+                    ...this.gameState,
+                    players: Array.from(this.gameState.players.entries()),
+                    guesses: Array.from(this.gameState.guesses.entries()),
+                    votes: Array.from(this.gameState.votes.entries()),
+                    scores: Array.from(this.gameState.scores.entries()),
+                };
+                
+                this.connections.forEach((conn, peerId) => {
+                    if (peerId !== this.playerId) { // Don't send to self
+                        this.sendToPlayer(peerId, { type: 'GAME_STATE_UPDATE', gameState: stateToBroadcast });
+                    }
+                });
+            }
 
-            // ... (rest of the logic remains largely the same, but needs UI updates)
-            // ... I will omit the networking and game logic for brevity as it's unchanged.
-            // ... The key changes are in the HTML structure and CSS.
-            // ... The following methods would need to be updated to match new structure.
+            updateConnectionStatus(status) {
+                document.getElementById('connection-status').textContent = status;
+            }
 
             showScreen(screenId) {
                 ['welcome-screen', 'lobby-screen', 'drawing-screen', 'guessing-screen', 'voting-screen', 'results-screen', 'final-scores-screen'].forEach(id => {
@@ -667,30 +1253,68 @@
                 document.getElementById('start-game').disabled = this.gameState.players.size < this.gameConfig.gameplay.minPlayers;
             }
             
-            // ... and so on for all other UI-manipulating methods.
-            // The full implementation would require updating every method that touches the DOM.
-        }
+            shareGame() {
+                const shareUrl = window.location.href;
+                if (navigator.share) {
+                    navigator.share({
+                        title: 'Draw Party!',
+                        text: 'Join my Draw Party game!',
+                        url: shareUrl,
+                    }).then(() => debugLog('Successful share')).catch((error) => console.error('Error sharing', error));
+                } else {
+                    navigator.clipboard.writeText(shareUrl).then(() => {
+                        this.showToast('Game link copied to clipboard!', 'success');
+                    }).catch(err => {
+                        console.error('Could not copy text: ', err);
+                        this.showToast('Failed to copy link.', 'error');
+                    });
+                }
+            }
 
-        // Simplified networking and game logic for demonstration
-        // In a real scenario, the full logic from the original file would be here.
-        DrawPartyGame.prototype.generateId = () => Math.random().toString(36).substr(2, 9);
-        DrawPartyGame.prototype.generateRoomCode = () => 'ABCD';
-        DrawPartyGame.prototype.createRoom = function() { this.isHost = true; this.roomCode = this.generateRoomCode(); this.showLobby(); };
-        DrawPartyGame.prototype.joinRoom = function(code) { this.roomCode = code; this.showLobby(); };
-        DrawPartyGame.prototype.shareGame = function() { this.showToast('Link copied to clipboard!', 'success'); };
-        DrawPartyGame.prototype.startGame = function() { this.showScreen('drawing-screen'); };
-        DrawPartyGame.prototype.submitGuess = function() { this.showScreen('voting-screen'); };
-        DrawPartyGame.prototype.nextRound = function() { this.showScreen('drawing-screen'); };
-        DrawPartyGame.prototype.playAgain = function() { this.showScreen('lobby-screen'); };
-        DrawPartyGame.prototype.newGame = function() { window.location.href = window.location.pathname; };
-        DrawPartyGame.prototype.broadcastMessage = function(msg) { debugLog('Broadcasting:', msg); };
-        DrawPartyGame.prototype.showToast = function(message, type) {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.className = `toast shadow-lg px-6 py-3 ${type === 'success' ? 'bg-green-500' : 'bg-red-500'} text-white`;
-            toast.classList.remove('hidden');
-            setTimeout(() => toast.classList.add('hidden'), 3000);
-        };
+            startGame() {
+                if (!this.isHost) return;
+                if (this.gameState.players.size < this.gameConfig.gameplay.minPlayers) {
+                    this.showToast(`Need at least ${this.gameConfig.gameplay.minPlayers} players to start!`, 'warning');
+                    return;
+                }
+                this.gameState.phase = 'DRAWING';
+                this.gameState.currentRound = 1;
+                this.broadcastMessage({ type: 'START_GAME' });
+                this.startDrawingPhase();
+            }
+
+            startDrawingPhase() {
+                this.showScreen('drawing-screen');
+                this.drawingHistory.clear();
+                this.clearCanvas(false);
+                // Assign prompts and artist (host logic)
+                // Start timer
+            }
+
+            submitGuess() {
+                // Logic for submitting guess
+            }
+
+            nextRound() {
+                // Logic for next round
+            }
+
+            playAgain() {
+                // Logic for playing again
+            }
+
+            newGame() {
+                window.location.href = window.location.pathname;
+            }
+
+            showToast(message, type) {
+                const toast = document.getElementById('toast');
+                toast.textContent = message;
+                toast.className = `toast shadow-lg px-6 py-3 ${type === 'success' ? 'bg-green-500' : 'bg-red-500'} text-white`;
+                toast.classList.remove('hidden');
+                setTimeout(() => toast.classList.add('hidden'), 3000);
+            }
+        }
 
         window.game = new DrawPartyGame();
     </script>
