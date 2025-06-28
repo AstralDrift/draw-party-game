@@ -584,14 +584,24 @@
             // Optimized canvas clearing
             clearCanvas(broadcast = true) {
                 const canvas = document.getElementById('drawing-canvas');
+                if (!canvas) {
+                    console.warn('Canvas not found for clearing');
+                    return;
+                }
+                
                 const ctx = canvas.getContext('2d');
                 
-                // Use clearRect for performance
+                // Get the actual display dimensions
+                const rect = canvas.getBoundingClientRect();
+                
+                // Clear the entire canvas
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 
-                // Fill with white background
+                // Fill with white background - use display dimensions
                 ctx.fillStyle = 'white';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillRect(0, 0, rect.width, rect.height);
+                
+                console.log('Canvas cleared and filled white:', rect.width, 'x', rect.height);
                 
                 // Clear drawing buffer
                 this.drawingBuffer = [];
@@ -645,8 +655,23 @@
                 const submitName = () => {
                     this.playerName = document.getElementById('player-name').value.trim();
                     if (!this.playerName) return;
-                    this.gameState.players.set(this.playerId, { id: this.playerId, name: this.playerName, score: 0 });
-                    this.broadcastMessage({ type: 'PLAYER_UPDATE', playerId: this.playerId, playerName: this.playerName });
+                    
+                    console.log('Setting player name:', this.playerName, 'for player:', this.playerId);
+                    
+                    // Update local player data
+                    this.gameState.players.set(this.playerId, { 
+                        id: this.playerId, 
+                        name: this.playerName, 
+                        score: 0 
+                    });
+                    
+                    // Send update to all players (including host)
+                    this.broadcastMessage({ 
+                        type: 'PLAYER_UPDATE', 
+                        playerId: this.playerId, 
+                        playerName: this.playerName 
+                    });
+                    
                     this.updatePlayersDisplay();
                     this.showToast(`Name set to: ${this.playerName}`, 'success');
                 };
@@ -991,13 +1016,27 @@
                         break;
                         
                     case 'PLAYER_UPDATE':
+                        console.log('Received PLAYER_UPDATE:', message.playerId, message.playerName);
+                        
                         if (this.gameState.players.has(message.playerId)) {
                             const player = this.gameState.players.get(message.playerId);
                             player.name = message.playerName || 'Player';
                             this.gameState.players.set(message.playerId, player);
+                            console.log('Updated player:', player);
+                        } else {
+                            // Player doesn't exist yet, create them
+                            this.gameState.players.set(message.playerId, {
+                                id: message.playerId,
+                                name: message.playerName || 'Player',
+                                score: 0
+                            });
+                            console.log('Created new player:', message.playerId, message.playerName);
                         }
+                        
                         this.updatePlayersDisplay();
+                        
                         if (this.isHost) {
+                            console.log('Host broadcasting updated game state');
                             this.broadcastGameState();
                         }
                         break;
@@ -1589,11 +1628,29 @@
             }
 
             startDrawingPhase() {
-                debugLog('🎨 Starting drawing phase');
+                console.log('🎨 Starting drawing phase');
                 this.gameState.phase = 'DRAWING';
                 this.showScreen('drawing-screen');
-                this.drawingHistory.clear();
-                this.clearCanvas(false);
+                
+                // Wait for screen to be visible, then setup canvas
+                setTimeout(() => {
+                    console.log('Initializing canvas for drawing phase...');
+                    this.drawingHistory.clear();
+                    this.clearCanvas(false);
+                    
+                    // Force canvas refresh
+                    const canvas = document.getElementById('drawing-canvas');
+                    if (canvas) {
+                        const ctx = canvas.getContext('2d');
+                        const rect = canvas.getBoundingClientRect();
+                        
+                        // Ensure white background
+                        ctx.fillStyle = 'white';
+                        ctx.fillRect(0, 0, rect.width, rect.height);
+                        
+                        console.log('Canvas ready for drawing:', rect.width, 'x', rect.height);
+                    }
+                }, 200);
                 
                 if (this.isHost) {
                     // Clear previous round data
@@ -2137,18 +2194,28 @@
             
                         // Drawing UI Updates
             updateDrawingUI() {
+                console.log('Updating drawing UI...');
+                console.log('Current game phase:', this.gameState.phase);
+                console.log('Player prompts:', this.gameState.playerPrompts);
+                console.log('My player ID:', this.playerId);
+                
                 const promptElement = document.getElementById('drawing-prompt');
                 const toolsElement = document.getElementById('drawing-tools');
                 const statusElement = document.getElementById('other-players-status');
                 
                 if (!promptElement || !toolsElement || !statusElement) {
-                    console.warn('Missing drawing UI elements');
+                    console.warn('Missing drawing UI elements:', {
+                        prompt: !!promptElement,
+                        tools: !!toolsElement, 
+                        status: !!statusElement
+                    });
                     return;
                 }
                 
                 // All players can draw their own prompt
                 const myPrompt = this.gameState.playerPrompts?.get(this.playerId) || 'Loading...';
                 promptElement.textContent = `Draw: ${myPrompt}`;
+                console.log('My prompt:', myPrompt);
                 
                 // Show drawing tools if not submitted
                 if (this.gameState.drawingsCompleted.has(this.playerId)) {
@@ -2279,11 +2346,29 @@
 
             setupCanvas() {
                 const canvas = document.getElementById('drawing-canvas');
+                if (!canvas) {
+                    console.error('Drawing canvas not found!');
+                    return;
+                }
+                
                 const ctx = canvas.getContext('2d');
+                console.log('Setting up canvas...');
 
                 const resize = () => {
                     const container = canvas.parentElement;
+                    if (!container) {
+                        console.warn('Canvas container not found');
+                        return;
+                    }
+                    
                     const containerRect = container.getBoundingClientRect();
+                    
+                    // Ensure container has dimensions
+                    if (containerRect.width === 0 || containerRect.height === 0) {
+                        console.warn('Container has zero dimensions, using defaults');
+                        containerRect.width = 400;
+                        containerRect.height = 300;
+                    }
                     
                     // Set canvas display size
                     canvas.style.width = containerRect.width + 'px';
@@ -2294,14 +2379,18 @@
                     canvas.width = containerRect.width * dpr;
                     canvas.height = containerRect.height * dpr;
                     
-                    // Scale the drawing context
+                    // Reset context after size change
                     ctx.scale(dpr, dpr);
                     
-                    // Fill with white background
+                    // Always fill with white background
                     ctx.fillStyle = 'white';
                     ctx.fillRect(0, 0, containerRect.width, containerRect.height);
                     
-                    console.log('Canvas resized:', containerRect.width, 'x', containerRect.height);
+                    // Set default drawing styles
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    
+                    console.log('Canvas resized and initialized:', containerRect.width, 'x', containerRect.height, 'DPR:', dpr);
                 };
                 
                 // Debounced resize for performance
@@ -2310,7 +2399,9 @@
                     clearTimeout(resizeTimeout);
                     resizeTimeout = setTimeout(resize, 100);
                 });
-                resize();
+                
+                // Force initial resize
+                setTimeout(resize, 100);
 
                 const getPos = (e) => {
                     const rect = canvas.getBoundingClientRect();
