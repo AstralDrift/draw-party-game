@@ -312,7 +312,7 @@
         // Game Core - All functionality embedded
         class DrawPartyGame {
             constructor() {
-                console.log('🎨 Draw Party Game v1.7.2 - ENHANCED DEBUG LOGGING!', new Date().toISOString());
+                console.log('🎨 Draw Party Game v1.7.3 - CONNECTION VALIDATION FIX!', new Date().toISOString());
                 console.log('🔧 If you see old behavior, clear browser cache or hard refresh (Ctrl+Shift+R)');
                 
                 this.peer = null;
@@ -1341,10 +1341,8 @@
                     if (!conn) return { valid: false, reason: 'Connection is null' };
                     if (conn.destroyed) return { valid: false, reason: 'Connection destroyed' };
                     if (!conn.open) return { valid: false, reason: 'Connection not open' };
-                    if (conn.readyState !== 'open') return { 
-                        valid: false, 
-                        reason: `Connection state: ${conn.readyState}` 
-                    };
+                    // FIXED: Don't check readyState as PeerJS may not set it consistently
+                    // The conn.open property is the reliable indicator
                     return { valid: true };
                 };
                 
