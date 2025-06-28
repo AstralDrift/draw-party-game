@@ -312,7 +312,7 @@
         // Game Core - All functionality embedded
         class DrawPartyGame {
             constructor() {
-                console.log('🎨 Draw Party Game v1.7.6 - CONNECTION ROUTING FIX!', new Date().toISOString());
+                console.log('🎨 Draw Party Game v1.7.7 - CONNECTION STABILITY TUNING!', new Date().toISOString());
                 console.log('🔧 If you see old behavior, clear browser cache or hard refresh (Ctrl+Shift+R)');
                 
                 this.peer = null;
@@ -1603,9 +1603,9 @@
                             console.log(`🔄 First failure for ${playerId} - starting recovery timer`);
                             this.connectionFailures.set(playerId, now);
                         } 
-                        // If connection has been failing for more than 10 seconds, remove it
-                        else if (now - lastFailure > 10000) {
-                            console.log(`🧹 Connection to ${playerId} failed for >10s - removing`);
+                        // If connection has been failing for more than 60 seconds, remove it
+                        else if (now - lastFailure > 60000) {
+                            console.log(`🧹 Connection to ${playerId} failed for >60s - removing`);
                             connectionsToRemove.push(playerId);
                         } else {
                             console.log(`⏱️ Connection to ${playerId} failing for ${Math.round((now - lastFailure)/1000)}s - waiting`);
@@ -1712,7 +1712,7 @@
                 this.heartbeatInterval = setInterval(() => {
                     this.sendHeartbeat();
                     this.checkConnectionHealth();
-                }, 15000); // Check every 15 seconds
+                }, 30000); // Check every 30 seconds (less aggressive)
                 
                 console.log('💓 Connection monitoring started');
             }
@@ -1748,14 +1748,15 @@
                     const lastSeen = this.connectionHealth.get(playerId) || now;
                     const timeSinceLastSeen = now - lastSeen;
                     
-                    // If we haven't heard from a connection in 45 seconds, consider it stale
-                    if (timeSinceLastSeen > 45000) {
+                    // If we haven't heard from a connection in 90 seconds, consider it stale
+                    if (timeSinceLastSeen > 90000) {
                         console.warn(`⚠️ Connection to ${playerId} appears stale (${Math.round(timeSinceLastSeen/1000)}s)`);
                         staleConnections.push(playerId);
                     }
                     
-                    // If connection is not open, mark for cleanup
-                    if (!conn.open || conn.readyState !== 'open') {
+                    // If connection is not open, mark for cleanup (only check conn.open, not readyState)
+                    if (!conn.open) {
+                        console.log(`🔌 Connection to ${playerId} is closed - marking for cleanup`);
                         staleConnections.push(playerId);
                     }
                 });
