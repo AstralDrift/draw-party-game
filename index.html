@@ -1317,22 +1317,44 @@
                         
                     case 'DRAWING_SUBMITTED':
                         if (this.isHost) {
-                            console.log('Host received drawing from:', message.playerId);
+                            console.log('📝 Host received drawing from:', message.playerId, 'by', message.playerName);
                             this.gameState.playerDrawings.set(message.playerId, message.drawing);
                             this.gameState.drawingsCompleted.add(message.playerId);
                             
-                            console.log('Drawings completed:', this.gameState.drawingsCompleted.size, '/', this.gameState.players.size);
-                            console.log('Completed by:', Array.from(this.gameState.drawingsCompleted));
+                            const completedCount = this.gameState.drawingsCompleted.size;
+                            const totalPlayers = this.gameState.players.size;
+                            
+                            console.log('📊 Drawings completed:', completedCount, '/', totalPlayers);
+                            console.log('✅ Completed by:', Array.from(this.gameState.drawingsCompleted));
+                            
+                            // Broadcast progress to all players
+                            this.broadcastMessage({
+                                type: 'DRAWING_PROGRESS',
+                                completedCount,
+                                totalPlayers,
+                                completedBy: message.playerName
+                            });
                             
                             // Update UI for all players
                             this.broadcastGameState();
                             
-                            // Check if all drawings are submitted
-                            if (this.gameState.drawingsCompleted.size >= this.gameState.players.size) {
-                                console.log('All drawings submitted! Moving to guessing phase...');
-                                this.endDrawingPhase();
+                            // Check if all drawings are submitted (enhanced)
+                            if (completedCount >= totalPlayers) {
+                                console.log('🎯 All drawings submitted! Moving to guessing phase...');
+                                this.createManagedTimeout(() => this.endDrawingPhase(), 1000);
                             }
                         }
+                        break;
+                        
+                    case 'DRAWING_PROGRESS':
+                        // Update progress display for all players
+                        this.showToast(`${message.completedBy} finished drawing! (${message.completedCount}/${message.totalPlayers})`, 'success');
+                        this.updateDrawingUI();
+                        break;
+                        
+                    case 'DRAWING_PHASE_COMPLETE':
+                        // Notify players that drawing phase is ending
+                        this.showToast(`Drawing phase complete! ${message.completedCount}/${message.totalPlayers} drawings submitted.`, 'success');
                         break;
                         
                     case 'GUESS_SUBMITTED':
@@ -1769,15 +1791,27 @@
                 }
                 
                 try {
+                    // Enhanced drawing validation
                     const drawingData = canvas.toDataURL('image/webp', 0.8);
-                    console.log('Submitting drawing for player:', this.playerId);
+                    const drawingSize = drawingData.length;
                     
-                    // Send drawing to host with error handling
+                    console.log('📝 Submitting drawing for player:', this.playerId, 'Size:', Math.round(drawingSize / 1024), 'KB');
+                    
+                    // Validate drawing isn't just blank canvas
+                    if (drawingSize < 5000) { // Very small = likely blank
+                        console.warn('⚠️ Potentially blank drawing detected');
+                        if (!confirm('Your drawing appears to be blank. Submit anyway?')) {
+                            return;
+                        }
+                    }
+                    
+                    // Send drawing to host with enhanced error handling
                     const message = {
                         type: 'DRAWING_SUBMITTED',
                         playerId: this.playerId,
                         drawing: drawingData,
-                        timestamp: Date.now()
+                        timestamp: Date.now(),
+                        playerName: this.gameState.players.get(this.playerId)?.name || 'Unknown'
                     };
                     
                     if (this.isHost) {
@@ -1817,27 +1851,54 @@
             endDrawingPhase() {
                 console.log('🎨 Drawing phase ended');
                 
+                // Clear drawing timer
+                this.clearTimer();
+                
                 // Auto-submit drawing if not already submitted
                 if (!this.gameState.drawingsCompleted.has(this.playerId)) {
-                    console.log('Auto-submitting drawing for player:', this.playerId);
+                    console.log('⏰ Auto-submitting drawing for player:', this.playerId);
                     this.submitDrawing();
                 }
                 
                 if (this.isHost) {
+                    // Enhanced completion validation
+                    const totalPlayers = this.gameState.players.size;
+                    const completedDrawings = this.gameState.drawingsCompleted.size;
+                    
+                    console.log('📊 Drawing phase completion stats:', {
+                        totalPlayers,
+                        completedDrawings,
+                        completionRate: Math.round((completedDrawings / totalPlayers) * 100) + '%'
+                    });
+                    
                     // Check if we have enough drawings to continue
-                    if (this.gameState.drawingsCompleted.size === 0) {
-                        console.warn('No drawings submitted! Cannot continue.');
+                    if (completedDrawings === 0) {
+                        console.error('❌ No drawings submitted! Cannot continue.');
                         this.showToast('No drawings were submitted. Game cannot continue.', 'error');
                         return;
                     }
                     
-                    // Wait a bit for final submissions, then start guessing rounds
+                    // Allow game to continue even if not all players submitted (50% threshold)
+                    const minRequiredDrawings = Math.max(1, Math.floor(totalPlayers * 0.5));
+                    if (completedDrawings < minRequiredDrawings) {
+                        console.warn(`⚠️ Only ${completedDrawings}/${totalPlayers} drawings submitted. Need at least ${minRequiredDrawings}.`);
+                        this.showToast(`Not enough drawings to continue. Need at least ${minRequiredDrawings} players to submit.`, 'warning');
+                        return;
+                    }
+                    
+                    // Broadcast final completion status
+                    this.broadcastMessage({
+                        type: 'DRAWING_PHASE_COMPLETE',
+                        completedCount: completedDrawings,
+                        totalPlayers: totalPlayers
+                    });
+                    
+                    // Wait briefly for final UI updates, then start guessing rounds
                     this.createManagedTimeout(() => {
-                        console.log('Host starting guessing rounds...');
-                        console.log('Total drawings completed:', this.gameState.drawingsCompleted.size);
-                        console.log('Total players:', this.gameState.players.size);
+                        console.log('🎯 Host starting guessing rounds...');
+                        console.log('📊 Final stats - Drawings completed:', completedDrawings, '/', totalPlayers);
                         this.startGuessingRounds();
-                    }, 3000);
+                    }, 2000);
                 }
             }
             
@@ -1903,17 +1964,38 @@
                     this.gameState.guesses.clear();
                     this.gameState.votes.clear();
                     
-                    // Assign unique prompts to each player
+                    // Enhanced prompt assignment with validation
                     const players = Array.from(this.gameState.players.keys());
                     const shuffledPrompts = [...this.prompts].sort(() => Math.random() - 0.5);
                     
-                    console.log('🎯 Assigning prompts to players:', players);
+                    console.log('🎯 Assigning unique prompts to', players.length, 'players');
                     
+                    // Ensure we have enough unique prompts
+                    if (players.length > this.prompts.length) {
+                        console.warn('⚠️ More players than unique prompts! Some prompts will be reused.');
+                    }
+                    
+                    // Assign prompts with uniqueness validation
+                    const assignedPrompts = new Set();
                     players.forEach((playerId, index) => {
-                        const prompt = shuffledPrompts[index % shuffledPrompts.length];
+                        let prompt = shuffledPrompts[index % shuffledPrompts.length];
+                        
+                        // For groups smaller than prompt pool, ensure no duplicates
+                        if (players.length <= this.prompts.length) {
+                            while (assignedPrompts.has(prompt) && assignedPrompts.size < this.prompts.length) {
+                                const nextIndex = (index + assignedPrompts.size + 1) % this.prompts.length;
+                                prompt = shuffledPrompts[nextIndex];
+                            }
+                        }
+                        
+                        assignedPrompts.add(prompt);
                         this.gameState.playerPrompts.set(playerId, prompt);
-                        console.log(`Player ${playerId} gets prompt: ${prompt}`);
+                        
+                        const playerName = this.gameState.players.get(playerId)?.name || 'Unknown';
+                        console.log(`📝 Player ${playerName} (${playerId}) → "${prompt}"`);
                     });
+                    
+                    console.log('✅ Prompt assignment complete:', assignedPrompts.size, 'unique prompts used');
                     
                     // Create random order for showing drawings
                     this.gameState.roundOrder = [...players].sort(() => Math.random() - 0.5);
@@ -2649,12 +2731,24 @@
                     toolsElement.style.display = 'flex';
                 }
                 
-                // Show how many players have finished
+                // Enhanced progress display
                 const completedCount = this.gameState.drawingsCompleted?.size || 0;
                 const totalPlayers = this.gameState.players.size;
-                statusElement.textContent = `${completedCount}/${totalPlayers} players have finished drawing`;
+                const progressPercent = totalPlayers > 0 ? Math.round((completedCount / totalPlayers) * 100) : 0;
                 
-                console.log('Updated drawing UI:', myPrompt, `${completedCount}/${totalPlayers} completed`);
+                // Create rich status display
+                const statusHtml = `
+                    <div class="flex items-center justify-between">
+                        <span>${completedCount}/${totalPlayers} players finished</span>
+                        <span class="text-sm">${progressPercent}%</span>
+                    </div>
+                    <div class="w-full bg-gray-700 rounded-full h-2 mt-2">
+                        <div class="bg-green-500 h-2 rounded-full transition-all duration-500" style="width: ${progressPercent}%"></div>
+                    </div>
+                `;
+                statusElement.innerHTML = statusHtml;
+                
+                console.log('✅ Updated drawing UI:', myPrompt, `${completedCount}/${totalPlayers} completed (${progressPercent}%)`);
                 
                 // Add submit button if not already there
                 let submitBtn = document.getElementById('submit-drawing');
