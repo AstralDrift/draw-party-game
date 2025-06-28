@@ -312,7 +312,7 @@
         // Game Core - All functionality embedded
         class DrawPartyGame {
             constructor() {
-                console.log('🎨 Draw Party Game v1.7.3 - CONNECTION VALIDATION FIX!', new Date().toISOString());
+                console.log('🎨 Draw Party Game v1.7.4 - CONNECTION STABILITY FIX!', new Date().toISOString());
                 console.log('🔧 If you see old behavior, clear browser cache or hard refresh (Ctrl+Shift+R)');
                 
                 this.peer = null;
@@ -1535,13 +1535,13 @@
                 
                 this.connections.forEach((conn, playerId) => {
                     try {
-                        // Check if connection is still valid
-                        if (conn && conn.open && conn.readyState === 'open') {
+                        // Check if connection is still valid (simplified check - only use conn.open)
+                        if (conn && conn.open) {
                             conn.send(message);
                             successfulSends++;
                             console.log(`📤 Message sent to ${playerId}:`, message.type);
                         } else {
-                            console.warn(`⚠️ Connection to ${playerId} is not open:`, conn ? conn.readyState : 'null');
+                            console.warn(`⚠️ Connection to ${playerId} is not open:`, conn ? `destroyed=${conn.destroyed} open=${conn.open}` : 'null');
                             failedConnections.push(playerId);
                         }
                     } catch (error) {
@@ -1555,25 +1555,63 @@
                     }
                 });
                 
-                // Clean up failed connections
+                // Give failed connections time to recover before cleanup
                 if (failedConnections.length > 0) {
-                    console.log(`🧹 Cleaning up ${failedConnections.length} failed connections`);
+                    console.log(`⏳ ${failedConnections.length} connections temporarily failed - giving recovery time`);
+                    
+                    // Initialize connection failure tracking if not exists
+                    if (!this.connectionFailures) this.connectionFailures = new Map();
+                    
+                    const connectionsToRemove = [];
+                    
                     failedConnections.forEach(playerId => {
-                        this.connections.delete(playerId);
+                        const now = Date.now();
+                        const lastFailure = this.connectionFailures.get(playerId) || now;
                         
-                        // Remove from game state if host
-                        if (this.isHost && this.gameState.players.has(playerId)) {
-                            console.log(`➖ Removing disconnected player from game state: ${playerId}`);
-                            this.gameState.players.delete(playerId);
+                        // If this is the first failure, just mark it
+                        if (!this.connectionFailures.has(playerId)) {
+                            console.log(`🔄 First failure for ${playerId} - starting recovery timer`);
+                            this.connectionFailures.set(playerId, now);
+                        } 
+                        // If connection has been failing for more than 10 seconds, remove it
+                        else if (now - lastFailure > 10000) {
+                            console.log(`🧹 Connection to ${playerId} failed for >10s - removing`);
+                            connectionsToRemove.push(playerId);
+                        } else {
+                            console.log(`⏱️ Connection to ${playerId} failing for ${Math.round((now - lastFailure)/1000)}s - waiting`);
                         }
                     });
                     
-                    // Update UI after cleanup
-                    this.updatePlayersDisplay();
-                    
-                    // Show notification if significant connection loss
-                    if (failedConnections.length > 1) {
-                        this.showToast(`Lost connection to ${failedConnections.length} player(s)`, 'warning');
+                    // Only remove connections that have been failing for a while
+                    if (connectionsToRemove.length > 0) {
+                        connectionsToRemove.forEach(playerId => {
+                            this.connections.delete(playerId);
+                            this.connectionFailures.delete(playerId);
+                            
+                            // Remove from game state if host
+                            if (this.isHost && this.gameState.players.has(playerId)) {
+                                console.log(`➖ Removing permanently disconnected player: ${playerId}`);
+                                this.gameState.players.delete(playerId);
+                            }
+                        });
+                        
+                        // Update UI after cleanup
+                        this.updatePlayersDisplay();
+                        
+                        // Show notification if significant connection loss
+                        if (connectionsToRemove.length > 1) {
+                            this.showToast(`Lost connection to ${connectionsToRemove.length} player(s)`, 'warning');
+                        }
+                    }
+                } else {
+                    // Clear any failure tracking for successful connections
+                    if (this.connectionFailures) {
+                        this.connections.forEach((conn, playerId) => {
+                            if (this.connectionFailures.has(playerId)) {
+                                console.log(`✅ Connection to ${playerId} recovered`);
+                                this.connectionFailures.delete(playerId);
+                            }
+                        });
                     }
                 }
                 
