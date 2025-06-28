@@ -353,11 +353,6 @@
 
     <script>
         const DEBUG_MODE = false; // Set to true for development logging
-        const debugLog = (...args) => {
-            if (DEBUG_MODE) {
-                console.log(...args);
-            }
-        };
 
         class DrawingHistory {
             constructor(maxSteps = 20) {
@@ -397,7 +392,13 @@
                 const img = new Image();
                 img.onload = () => {
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    ctx.drawImage(img, 0, 0, canvas.width / (window.devicePixelRatio || 1), canvas.height / (window.devicePixelRatio || 1));
+                    const dpr = window.devicePixelRatio || 1;
+                    ctx.drawImage(img, 0, 0, canvas.width / dpr, canvas.height / dpr);
+                    // Restore white background
+                    ctx.globalCompositeOperation = 'destination-over';
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+                    ctx.globalCompositeOperation = 'source-over';
                 };
                 img.src = this.history[this.currentStep];
             }
@@ -437,12 +438,12 @@
                 };
                 
                 this.isDrawing = false;
-                this.currentColor = '#FFFFFF'; // Start with white
+                this.currentColor = '#ff595e'; // Start with red (visible color)
                 this.currentSize = 5;
                 this.currentTool = 'brush';
                 this.drawingHistory = new DrawingHistory();
 
-                // Performance optimizations
+                // Performance optimizations - ACTUALLY IMPLEMENT THESE
                 this.drawingBuffer = [];
                 this.lastNetworkUpdate = 0;
                 this.networkUpdateInterval = 50; // Update network every 50ms max
@@ -543,26 +544,48 @@
 
             populateColorPalette() {
                 const palette = document.getElementById('color-palette');
+                if (!palette) {
+                    console.warn('Color palette element not found');
+                    return;
+                }
+                
                 palette.innerHTML = '';
                 this.playerColors.forEach((color, index) => {
                     const btn = document.createElement('button');
-                    btn.className = 'color-btn w-10 h-10 rounded-full transition-transform transform hover:scale-110';
+                    btn.className = 'color-btn w-10 h-10 rounded-full border-2 border-transparent transition-all transform hover:scale-110';
                     btn.style.backgroundColor = color;
                     btn.dataset.color = color;
+                    btn.title = `Color ${index + 1}`;
+                    
+                    // Select the first color (red) by default
                     if (index === 0) {
-                        btn.classList.add('ring-2', 'ring-white');
+                        btn.classList.add('ring-2', 'ring-white', 'border-white');
                         this.currentColor = color;
+                        console.log('Selected default color:', color);
                     }
+                    
                     btn.addEventListener('click', () => this.selectColor(color));
                     palette.appendChild(btn);
                 });
+                
+                console.log('Color palette populated with', this.playerColors.length, 'colors');
             }
             
             selectColor(color) {
                 this.currentColor = color;
                 this.currentTool = 'brush';
-                document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('ring-2', 'ring-white'));
-                document.querySelector(`[data-color="${color}"]`).classList.add('ring-2', 'ring-white');
+                
+                // Update UI to show selected color
+                document.querySelectorAll('.color-btn').forEach(btn => {
+                    btn.classList.remove('ring-2', 'ring-white', 'border-white');
+                });
+                
+                const selectedBtn = document.querySelector(`[data-color="${color}"]`);
+                if (selectedBtn) {
+                    selectedBtn.classList.add('ring-2', 'ring-white', 'border-white');
+                }
+                
+                console.log('Selected color:', color);
             }
             
             selectBrush(size) {
@@ -1572,41 +1595,69 @@
                 // Check if already submitted
                 if (this.gameState.drawingsCompleted.has(this.playerId)) {
                     console.log('Drawing already submitted');
+                    this.showToast('Drawing already submitted!', 'warning');
+                    return;
+                }
+                
+                // Check if we're in the right phase
+                if (this.gameState.phase !== 'DRAWING') {
+                    console.warn('Not in drawing phase, cannot submit');
+                    this.showToast('Can only submit during drawing phase', 'warning');
                     return;
                 }
                 
                 // Save the drawing
                 const canvas = document.getElementById('drawing-canvas');
-                const drawingData = canvas.toDataURL('image/webp', 0.8);
-                
-                console.log('Submitting drawing for player:', this.playerId);
-                console.log('Current completed drawings:', this.gameState.drawingsCompleted);
-                
-                // Send drawing to host
-                this.broadcastMessage({
-                    type: 'DRAWING_SUBMITTED',
-                    playerId: this.playerId,
-                    drawing: drawingData
-                });
-                
-                // Mark as completed locally (will be synced by host)
-                this.gameState.drawingsCompleted.add(this.playerId);
-                
-                // Update UI
-                this.updateDrawingUI();
-                
-                // Disable drawing tools
-                const toolsElement = document.getElementById('drawing-tools');
-                const submitButton = document.getElementById('submit-drawing');
-                
-                if (toolsElement) toolsElement.style.display = 'none';
-                if (submitButton) {
-                    submitButton.disabled = true;
-                    submitButton.textContent = 'Drawing Submitted!';
-                    submitButton.classList.add('bg-green-600');
+                if (!canvas) {
+                    console.error('Canvas not found for drawing submission');
+                    this.showToast('Error: Canvas not found', 'error');
+                    return;
                 }
                 
-                this.showToast('Drawing submitted!', 'success');
+                try {
+                    const drawingData = canvas.toDataURL('image/webp', 0.8);
+                    console.log('Submitting drawing for player:', this.playerId);
+                    
+                    // Send drawing to host with error handling
+                    const message = {
+                        type: 'DRAWING_SUBMITTED',
+                        playerId: this.playerId,
+                        drawing: drawingData,
+                        timestamp: Date.now()
+                    };
+                    
+                    if (this.isHost) {
+                        // Host handles their own submission
+                        this.handleMessage(message, this.playerId);
+                    } else {
+                        // Send to host
+                        this.broadcastMessage(message);
+                    }
+                    
+                    // Mark as completed locally (will be synced by host)
+                    this.gameState.drawingsCompleted.add(this.playerId);
+                    
+                    // Update UI immediately
+                    this.updateDrawingUI();
+                    
+                    // Disable drawing tools
+                    const toolsElement = document.getElementById('drawing-tools');
+                    const submitButton = document.getElementById('submit-drawing');
+                    
+                    if (toolsElement) toolsElement.style.display = 'none';
+                    if (submitButton) {
+                        submitButton.disabled = true;
+                        submitButton.textContent = 'Drawing Submitted! ✓';
+                        submitButton.classList.remove('btn-secondary');
+                        submitButton.classList.add('bg-green-600', 'hover:bg-green-700');
+                    }
+                    
+                    this.showToast('Drawing submitted successfully!', 'success');
+                    
+                } catch (error) {
+                    console.error('Error submitting drawing:', error);
+                    this.showToast('Failed to submit drawing. Please try again.', 'error');
+                }
             }
             
             endDrawingPhase() {
@@ -1830,20 +1881,39 @@
             prepareVotingOptions() {
                 // Get all submitted guesses
                 const guesses = Array.from(this.gameState.guesses.entries());
+                console.log('Preparing voting options from guesses:', guesses);
                 
                 // Add the correct answer
                 const correctAnswer = this.gameState.currentViewingPrompt;
+                if (!correctAnswer) {
+                    console.error('No correct answer available for voting!');
+                    this.gameState.votingOptions = [];
+                    return;
+                }
                 
                 // Create voting options - include all unique guesses plus the correct answer
                 const allGuesses = guesses.map(([playerId, guess]) => ({
-                    text: guess,
+                    text: guess?.trim() || 'Empty Guess',
                     playerId: playerId,
                     playerName: this.gameState.players.get(playerId)?.name || 'Unknown'
-                }));
+                })).filter(option => option.text && option.text !== 'Empty Guess');
                 
                 // Add correct answer if no one guessed it exactly
-                const hasCorrectAnswer = allGuesses.some(g => g.text.toLowerCase() === correctAnswer.toLowerCase());
+                const hasCorrectAnswer = allGuesses.some(g => 
+                    g.text.toLowerCase().trim() === correctAnswer.toLowerCase().trim()
+                );
+                
                 if (!hasCorrectAnswer) {
+                    allGuesses.push({
+                        text: correctAnswer,
+                        playerId: 'CORRECT',
+                        playerName: 'The Truth'
+                    });
+                }
+                
+                // Handle case where there are no guesses
+                if (allGuesses.length === 0) {
+                    console.warn('No guesses submitted, only showing correct answer');
                     allGuesses.push({
                         text: correctAnswer,
                         playerId: 'CORRECT',
@@ -1857,7 +1927,7 @@
                 
                 for (const option of allGuesses) {
                     const normalizedText = option.text.toLowerCase().trim();
-                    if (!seenTexts.has(normalizedText)) {
+                    if (!seenTexts.has(normalizedText) && normalizedText.length > 0) {
                         seenTexts.add(normalizedText);
                         uniqueOptions.push(option);
                     }
@@ -1865,6 +1935,8 @@
                 
                 this.gameState.votingOptions = uniqueOptions.sort(() => Math.random() - 0.5);
                 this.gameState.correctAnswer = correctAnswer;
+                
+                console.log('Voting options prepared:', this.gameState.votingOptions);
             }
             
             startVotingPhase() {
@@ -2073,46 +2145,44 @@
                     </div>
                 `;
                 
-                // Check if we have more drawings to show
-                setTimeout(() => {
-                    if (this.isHost) {
-                        if (this.gameState.roundOrder.length > 0) {
-                            // More drawings to show
+                // Handle progression - only auto-advance if there are more drawings in the current round
+                if (this.isHost) {
+                    if (this.gameState.roundOrder.length > 0) {
+                        // More drawings to show in this round - auto advance after short delay
+                        setTimeout(() => {
+                            console.log('Auto-advancing to next drawing in round');
                             this.startGuessingRounds();
+                        }, 3000);
+                    } else {
+                        // All drawings shown for this round
+                        console.log('Round complete - waiting for user input');
+                        
+                        // Add appropriate button
+                        const buttonContainer = document.createElement('div');
+                        buttonContainer.className = 'text-center mt-6';
+                        
+                        if (this.gameState.currentRound >= this.gameState.totalRounds) {
+                            // Game over
+                            const finalBtn = document.createElement('button');
+                            finalBtn.className = 'btn btn-primary text-xl';
+                            finalBtn.textContent = '🏆 View Final Results';
+                            finalBtn.addEventListener('click', () => this.showFinalResults());
+                            buttonContainer.appendChild(finalBtn);
                         } else {
-                            // Round complete, check if game over
-                            if (this.gameState.currentRound >= this.gameState.totalRounds) {
-                                this.showFinalResults();
-                            } else {
-                                // Show next round button
-                                const nextBtn = document.createElement('button');
-                                nextBtn.className = 'btn btn-primary text-xl mt-4';
-                                nextBtn.textContent = 'Next Round';
-                                nextBtn.addEventListener('click', () => this.nextRound());
-                                container.appendChild(nextBtn);
-                            }
+                            // More rounds to play
+                            const nextBtn = document.createElement('button');
+                            nextBtn.className = 'btn btn-primary text-xl';
+                            nextBtn.textContent = `Round ${this.gameState.currentRound + 1} 🎨`;
+                            nextBtn.addEventListener('click', () => this.nextRound());
+                            buttonContainer.appendChild(nextBtn);
                         }
+                        
+                        container.appendChild(buttonContainer);
                     }
-                }, 5000);
+                }
             }
             
-            updateScoresDisplay() {
-                const container = document.getElementById('current-scores');
-                const scores = Array.from(this.gameState.scores.entries())
-                    .map(([playerId, score]) => ({
-                        playerId,
-                        name: this.gameState.players.get(playerId)?.name || 'Unknown',
-                        score
-                    }))
-                    .sort((a, b) => b.score - a.score);
-                
-                container.innerHTML = scores.map(player => 
-                    `<div class="flex justify-between items-center p-2 bg-gray-700 rounded mb-2">
-                        <span class="font-bold">${player.name}</span>
-                        <span class="text-xl">${player.score}</span>
-                    </div>`
-                ).join('');
-            }
+            // Removed unused updateScoresDisplay method - scores are shown in results/final screens
 
             nextRound() {
                 if (!this.isHost) return;
@@ -2207,6 +2277,15 @@
                 const submittedGuesses = Array.from(this.gameState.guesses.keys());
                 
                 console.log(`📝 Guesses: ${submittedGuesses.length}/${nonArtistPlayers.length}`);
+                console.log('📝 Non-artist players:', nonArtistPlayers);
+                console.log('📝 Submitted guesses:', submittedGuesses);
+                
+                // Handle edge case where there are no non-artist players
+                if (nonArtistPlayers.length === 0) {
+                    console.log('📝 No players to guess (only artist), advancing to voting');
+                    setTimeout(() => this.endGuessingPhase(), 1000);
+                    return;
+                }
                 
                 if (submittedGuesses.length >= nonArtistPlayers.length) {
                     console.log('📝 All guesses submitted, advancing to voting');
@@ -2222,6 +2301,15 @@
                 const submittedVotes = Array.from(this.gameState.votes.keys());
                 
                 console.log(`🗳️ Votes: ${submittedVotes.length}/${nonArtistPlayers.length}`);
+                console.log('🗳️ Non-artist players:', nonArtistPlayers);
+                console.log('🗳️ Submitted votes:', submittedVotes);
+                
+                // Handle edge case where there are no non-artist players
+                if (nonArtistPlayers.length === 0) {
+                    console.log('🗳️ No players to vote (only artist), showing results');
+                    setTimeout(() => this.endVotingPhase(), 1000);
+                    return;
+                }
                 
                 if (submittedVotes.length >= nonArtistPlayers.length) {
                     console.log('🗳️ All votes submitted, showing results');
@@ -2333,16 +2421,21 @@
                 console.log('Updated drawing UI:', myPrompt, `${completedCount}/${totalPlayers} completed`);
                 
                 // Add submit button if not already there
-                if (!document.getElementById('submit-drawing')) {
-                    const submitBtn = document.createElement('button');
+                let submitBtn = document.getElementById('submit-drawing');
+                if (!submitBtn) {
+                    submitBtn = document.createElement('button');
                     submitBtn.id = 'submit-drawing';
                     submitBtn.className = 'btn btn-secondary text-lg mt-4';
                     submitBtn.textContent = 'Submit Drawing';
                     submitBtn.addEventListener('click', () => this.submitDrawing());
                     
                     // Insert the button after the status element
-                    statusElement.parentNode.insertBefore(submitBtn, statusElement.nextSibling);
-                    console.log('Submit drawing button added');
+                    if (statusElement.parentNode) {
+                        statusElement.parentNode.insertBefore(submitBtn, statusElement.nextSibling);
+                        console.log('Submit drawing button added');
+                    } else {
+                        console.warn('Could not add submit button - no parent element');
+                    }
                 }
                 
                 // Update submit button state
@@ -2360,33 +2453,44 @@
                 }
             }
             
-            // Performance-optimized drawing loop using requestAnimationFrame
+            // Performance-optimized drawing loop using requestAnimationFrame for 60fps
             startDrawingLoop(canvas, ctx) {
                 const processDrawingBuffer = () => {
+                    const currentTime = performance.now();
+                    
+                    // Calculate FPS for monitoring
+                    const deltaTime = currentTime - this.performanceMetrics.lastFrameTime;
+                    this.performanceMetrics.fps = Math.round(1000 / deltaTime);
+                    this.performanceMetrics.lastFrameTime = currentTime;
+                    
                     if (this.drawingBuffer.length === 0) {
                         if (!this.isDrawing) {
                             this.animationFrameId = null;
+                            console.log('Drawing loop stopped - FPS:', this.performanceMetrics.fps);
                             return;
                         }
                         this.animationFrameId = requestAnimationFrame(processDrawingBuffer);
                         return;
                     }
                     
-                    // Process all pending drawing operations in batch
+                    // Process drawing operations in optimized batches
                     ctx.save();
                     ctx.lineCap = 'round';
                     ctx.lineJoin = 'round';
                     
-                    // Batch similar operations together
+                    // Batch similar operations together for performance
                     let currentColor = null;
                     let currentSize = null;
+                    let strokeCount = 0;
+                    const maxStrokesPerFrame = 10; // Limit strokes per frame for consistent 60fps
                     
                     ctx.beginPath();
                     
-                    while (this.drawingBuffer.length > 0) {
+                    while (this.drawingBuffer.length > 0 && strokeCount < maxStrokesPerFrame) {
                         const stroke = this.drawingBuffer.shift();
+                        strokeCount++;
                         
-                        // Only update context properties if they changed
+                        // Only update context properties when they change
                         if (stroke.color !== currentColor) {
                             if (currentColor !== null) {
                                 ctx.stroke();
@@ -2411,38 +2515,36 @@
                     
                     ctx.stroke();
                     ctx.restore();
+                    
+                    // Continue processing if there's more to do or still drawing
+                    if (this.drawingBuffer.length > 0 || this.isDrawing) {
+                        this.animationFrameId = requestAnimationFrame(processDrawingBuffer);
+                    } else {
+                        this.animationFrameId = null;
+                        console.log('Drawing loop completed - Final FPS:', this.performanceMetrics.fps);
+                    }
                 };
                 
                 this.animationFrameId = requestAnimationFrame(processDrawingBuffer);
+                console.log('Started optimized 60fps drawing loop');
             }
             
-            // Update canvas from received drawing data
+            // Canvas utility methods for handling drawing data
             updateCanvas(imageData) {
                 const canvas = document.getElementById('drawing-canvas');
+                if (!canvas) return;
+                
                 const ctx = canvas.getContext('2d');
                 const img = new Image();
                 img.onload = () => {
+                    const dpr = window.devicePixelRatio || 1;
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    ctx.drawImage(img, 0, 0, canvas.width / (window.devicePixelRatio || 1), canvas.height / (window.devicePixelRatio || 1));
+                    ctx.drawImage(img, 0, 0, canvas.width / dpr, canvas.height / dpr);
+                };
+                img.onerror = () => {
+                    console.error('Failed to load canvas image data');
                 };
                 img.src = imageData;
-            }
-            
-            // Update canvas from compressed drawing data (e.g., individual strokes)
-            updateCanvasFromData(drawingData) {
-                const canvas = document.getElementById('drawing-canvas');
-                const ctx = canvas.getContext('2d');
-                
-                drawingData.forEach(stroke => {
-                    ctx.strokeStyle = stroke.color;
-                    ctx.lineWidth = stroke.size;
-                    ctx.lineCap = 'round';
-                    ctx.lineJoin = 'round';
-                    ctx.beginPath();
-                    ctx.moveTo(stroke.from.x, stroke.from.y);
-                    ctx.lineTo(stroke.to.x, stroke.to.y);
-                    ctx.stroke();
-                });
             }
 
             setupCanvas() {
@@ -2452,8 +2554,12 @@
                     return;
                 }
                 
-                const ctx = canvas.getContext('2d');
-                console.log('Setting up canvas...');
+                const ctx = canvas.getContext('2d', {
+                    alpha: false,           // Disable alpha for performance
+                    desynchronized: true,   // Optimize for frequent redraws
+                    willReadFrequently: false
+                });
+                console.log('Setting up optimized canvas...');
 
                 const resize = () => {
                     const container = canvas.parentElement;
@@ -2523,6 +2629,12 @@
                     e.preventDefault();
                     this.isDrawing = true;
                     this.lastPos = getPos(e);
+                    
+                    // Start the optimized drawing loop
+                    if (!this.animationFrameId) {
+                        this.startDrawingLoop(canvas, ctx);
+                    }
+                    
                     console.log('Drawing started at:', this.lastPos);
                 };
                 
@@ -2533,22 +2645,35 @@
                     e.preventDefault();
                     const pos = getPos(e);
                     
-                    ctx.beginPath();
-                    ctx.moveTo(this.lastPos.x, this.lastPos.y);
-                    ctx.lineTo(pos.x, pos.y);
-                    ctx.strokeStyle = this.currentTool === 'eraser' ? 'white' : this.currentColor;
-                    ctx.lineWidth = this.currentSize;
-                    ctx.lineCap = 'round';
-                    ctx.lineJoin = 'round';
-                    ctx.stroke();
+                    // Add to drawing buffer instead of immediate drawing
+                    this.drawingBuffer.push({
+                        from: { ...this.lastPos },
+                        to: { ...pos },
+                        color: this.currentTool === 'eraser' ? 'white' : this.currentColor,
+                        size: this.currentSize,
+                        timestamp: performance.now()
+                    });
                     
                     this.lastPos = pos;
+                    
+                    // Track performance
+                    this.performanceMetrics.drawLatency = performance.now() - this.performanceMetrics.lastFrameTime;
                 };
                 
                 const stop = () => {
                     if (!this.isDrawing) return;
                     this.isDrawing = false;
-                    this.drawingHistory.saveState(canvas);
+                    
+                    // Process any remaining drawing buffer
+                    if (this.drawingBuffer.length > 0) {
+                        // Let the drawing loop finish processing
+                        setTimeout(() => {
+                            this.drawingHistory.saveState(canvas);
+                        }, 50);
+                    } else {
+                        this.drawingHistory.saveState(canvas);
+                    }
+                    
                     console.log('Drawing stopped');
                 };
 
@@ -2560,7 +2685,7 @@
                 canvas.addEventListener('touchmove', draw, { passive: false });
                 canvas.addEventListener('touchend', stop);
                 
-                console.log('Canvas setup complete');
+                console.log('Canvas setup complete with performance optimizations');
             }
         }
 
