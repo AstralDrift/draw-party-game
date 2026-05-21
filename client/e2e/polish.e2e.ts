@@ -39,6 +39,43 @@ test('TV lobby gives room code and QR the showcase hierarchy', async ({ baseURL,
   expect(roomPanel.height).toBeGreaterThan(settingsPanel.height * 0.65);
 });
 
+test('large-phone lobby presents player-ready hierarchy without clipping', async ({ baseURL, browser }) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const [ava, bo] = await createPlayers(browser, contexts, appUrl, roomCode, ['Ava', 'Bo'], [
+      { width: 430, height: 932, isMobile: true },
+      { width: 430, height: 932, isMobile: true }
+    ]);
+
+    await expect(ava.locator('.player-lobby-card')).toBeVisible();
+    await expect(ava.locator('.mini-room-code')).toHaveText(roomCode);
+    await expect(ava.getByText('Party is ready')).toBeVisible();
+    await expect(ava.locator('.players-panel')).toBeVisible();
+    await expect(bo.locator('.player-lobby-card')).toBeVisible();
+    await expect(tv.getByRole('button', { name: 'Start Game' })).toBeEnabled();
+    await expectNoHorizontalOverflow(ava);
+
+    const lobbyBox = await ava.locator('.player-lobby-card').boundingBox();
+    const playersBox = await ava.locator('.players-panel').boundingBox();
+    if (!lobbyBox || !playersBox) {
+      throw new Error('Large-phone lobby panels must have layout boxes.');
+    }
+    expect(lobbyBox.y + lobbyBox.height).toBeLessThan(playersBox.y);
+    expect(playersBox.width).toBeLessThanOrEqual(430);
+  } finally {
+    await Promise.all(contexts.map((context) => context.close()));
+  }
+});
+
 test('phone drawing screen prioritizes canvas before controls on mobile', async ({ baseURL, browser }) => {
   const contexts: BrowserContext[] = [];
   const appUrl = makeAppUrl(baseURL);
@@ -56,6 +93,7 @@ test('phone drawing screen prioritizes canvas before controls on mobile', async 
 
     await expect(ava.locator('canvas.draw-canvas')).toBeVisible();
     await expect(ava.getByRole('button', { name: 'Submit Drawing' })).toBeVisible();
+    await expect(ava.getByRole('button', { name: 'Submit Drawing' })).toBeDisabled();
     await expect(ava.locator('#prompt-text')).toContainText(/^Draw:/);
     await expect(ava.locator('#deadline-text')).toHaveText(/\d+:\d{2}/);
     await expect(ava.locator('.tools-summary')).toContainText('Tools');
@@ -72,8 +110,87 @@ test('phone drawing screen prioritizes canvas before controls on mobile', async 
     expect(canvasBox.width).toBeGreaterThan(320);
     expect(submitBox.y + submitBox.height).toBeLessThanOrEqual(844);
 
+    await drawStroke(ava);
+    await expect(ava.getByRole('button', { name: 'Submit Drawing' })).toBeEnabled();
+    await expect(ava.locator('.submit-help')).toHaveText('Ready when you are.');
     await ava.locator('.tools-summary').click();
     await expect(ava.locator('.draw-toolbar')).toBeVisible();
+  } finally {
+    await Promise.all(contexts.map((context) => context.close()));
+  }
+});
+
+test('iPad portrait and landscape drawing use expanded tools without overflow', async ({ baseURL, browser }) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const [portrait, landscape] = await createPlayers(browser, contexts, appUrl, roomCode, ['Ava', 'Bo'], [
+      { width: 768, height: 1024 },
+      { width: 1024, height: 768 }
+    ]);
+    await tv.getByRole('button', { name: 'Start Game' }).click();
+
+    for (const page of [portrait, landscape]) {
+      await expect(page.locator('canvas.draw-canvas')).toBeVisible();
+      await expect(page.locator('.draw-toolbar')).toBeVisible();
+      await expect(page.locator('.tools-drawer')).toHaveAttribute('open', '');
+      await expect(page.locator('#prompt-text')).toContainText(/^Draw:/);
+      await expectNoHorizontalOverflow(page);
+    }
+
+    const portraitSubmit = await portrait.getByRole('button', { name: 'Submit Drawing' }).boundingBox();
+    const landscapeSubmit = await landscape.getByRole('button', { name: 'Submit Drawing' }).boundingBox();
+    if (!portraitSubmit || !landscapeSubmit) {
+      throw new Error('iPad submit buttons must have layout boxes.');
+    }
+    expect(portraitSubmit.y + portraitSubmit.height).toBeLessThanOrEqual(1024);
+    expect(landscapeSubmit.y + landscapeSubmit.height).toBeLessThanOrEqual(768);
+  } finally {
+    await Promise.all(contexts.map((context) => context.close()));
+  }
+});
+
+test('phone vote selection stays confirmed while the table is still voting', async ({ baseURL, browser }) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const players = await createPlayers(browser, contexts, appUrl, roomCode, ['Ava', 'Bo', 'Cy']);
+    await tv.getByRole('button', { name: 'Start Game' }).click();
+    for (const player of players) {
+      await drawStroke(player);
+      await player.getByRole('button', { name: 'Submit Drawing' }).click();
+    }
+
+    await expect(tv.getByText('What is this?')).toBeVisible();
+    const guessers = await waitForPagesWithVisibleLocatorCount(players, 'input[placeholder="Fake answer"]', 2);
+    for (const [index, guesser] of guessers.entries()) {
+      await guesser.getByPlaceholder('Fake answer').fill(`fake vote ${index}`);
+      await guesser.getByRole('button', { name: 'Submit Guess' }).click();
+    }
+
+    await expect(tv.getByText('Vote for the real prompt')).toBeVisible();
+    const voters = await waitForPagesWithVisibleLocatorCount(players, 'button.vote-option:not([disabled])', 2);
+    const voter = voters[0];
+    await voter.locator('button.vote-option:not([disabled])').first().click();
+    await expect(voter.locator('.vote-option.is-selected')).toBeVisible();
+    await expect(voter.locator('.vote-option.is-selected .vote-reason')).toHaveText('Your vote');
+    await expectNoHorizontalOverflow(voter);
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }
@@ -128,10 +245,28 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
       throw new Error('Scores panel must have a layout box.');
     }
     expect(scoresPanel.y + scoresPanel.height).toBeLessThanOrEqual(720);
+
+    for (const player of players) {
+      await expect(player.locator('.scores-panel')).toBeVisible();
+      await expect(player.locator('.winner-callout')).toBeVisible();
+      await expect(player.locator('.podium-place')).toHaveCount(2);
+      await expectNoHorizontalOverflow(player);
+      const playerScoresPanel = await player.locator('.scores-panel').boundingBox();
+      if (!playerScoresPanel) {
+        throw new Error('Player scores panel must have a layout box.');
+      }
+      expect(playerScoresPanel.y + playerScoresPanel.height).toBeLessThanOrEqual(844);
+    }
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }
 });
+
+type PlayerViewport = {
+  width: number;
+  height: number;
+  isMobile?: boolean;
+};
 
 function makeAppUrl(baseURL: string | undefined): (path: string) => string {
   if (!baseURL) {
@@ -145,14 +280,16 @@ async function createPlayers(
   contexts: BrowserContext[],
   appUrl: (path: string) => string,
   roomCode: string,
-  names: string[]
+  names: string[],
+  viewports: PlayerViewport[] = names.map(() => ({ width: 390, height: 844, isMobile: true }))
 ): Promise<Page[]> {
   const pages: Page[] = [];
-  for (const name of names) {
+  for (const [index, name] of names.entries()) {
+    const viewport = viewports[index] ?? viewports[0];
     const context = await browser.newContext({
       hasTouch: true,
-      isMobile: true,
-      viewport: { width: 390, height: 844 }
+      isMobile: viewport.isMobile ?? viewport.width < 700,
+      viewport: { width: viewport.width, height: viewport.height }
     });
     contexts.push(context);
 
@@ -165,6 +302,17 @@ async function createPlayers(
     pages.push(page);
   }
   return pages;
+}
+
+async function expectNoHorizontalOverflow(page: Page): Promise<void> {
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const root = document.documentElement;
+        return Math.ceil(root.scrollWidth) <= Math.ceil(window.innerWidth) + 1;
+      })
+    )
+    .toBe(true);
 }
 
 async function drawStroke(page: Page): Promise<void> {
@@ -190,6 +338,17 @@ async function waitForPagesWithVisibleLocator(pages: Page[], selector: string): 
       return matches.length;
     })
     .toBeGreaterThan(0);
+  return matches;
+}
+
+async function waitForPagesWithVisibleLocatorCount(pages: Page[], selector: string, count: number): Promise<Page[]> {
+  let matches: Page[] = [];
+  await expect
+    .poll(async () => {
+      matches = await pagesWithVisibleLocator(pages, selector);
+      return matches.length;
+    })
+    .toBe(count);
   return matches;
 }
 

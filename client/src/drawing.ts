@@ -136,6 +136,9 @@ export class DrawingPad {
 
     const toolsDrawer = document.createElement('details');
     toolsDrawer.className = 'tools-drawer';
+    if (window.matchMedia('(min-width: 700px)').matches) {
+      toolsDrawer.open = true;
+    }
     toolsDrawer.append(this.toolsSummary, toolbar);
 
     this.root = document.createElement('section');

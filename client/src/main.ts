@@ -41,6 +41,8 @@ let drawingPad: DrawingPad | null = null;
 let reconnectTimer = 0;
 let lastPhase = '';
 let lastPlayerCount = 0;
+let selectedVoteId = '';
+let selectedVoteTurnToken = 0;
 
 function connect(roomCode?: string): void {
   socket?.close();
@@ -170,7 +172,13 @@ function handleServerMessage(message: ServerMessage): void {
 
 function applySnapshot(nextSnapshot: RoomSnapshot): void {
   syncServerClock(nextSnapshot);
-  if (lastPhase && lastPhase !== nextSnapshot.phase) {
+  const phaseChanged = Boolean(lastPhase && lastPhase !== nextSnapshot.phase);
+  const turnChanged = Boolean(snapshot && snapshot.turnToken !== nextSnapshot.turnToken);
+  if (phaseChanged || turnChanged || nextSnapshot.phase !== 'voting') {
+    selectedVoteId = '';
+    selectedVoteTurnToken = 0;
+  }
+  if (phaseChanged) {
     playCue(nextSnapshot.phase === 'results' ? 'results' : 'phase');
   }
   if (nextSnapshot.players.length > lastPlayerCount) {
@@ -191,7 +199,9 @@ function render(): void {
       pendingRoomCode: pendingJoin?.roomCode,
       snapshot
     }),
-    errorMessage
+    errorMessage,
+    selectedVoteId,
+    selectedVoteTurnToken
   ].join(';error:');
   if (key === viewKey) {
     updateDynamicText();
@@ -238,7 +248,7 @@ function renderPlayer(): HTMLElement {
   }
 
   if (snapshot.phase === 'lobby') {
-    return shell('Lobby', el('div', { class: 'player-stack' }, renderPlayersPanel(false)));
+    return shell('Lobby', renderPlayerLobby());
   }
   if (snapshot.phase === 'drawing') {
     return shell('Draw', renderDrawingTurn());
@@ -252,7 +262,7 @@ function renderPlayer(): HTMLElement {
   if (snapshot.phase === 'results') {
     return shell('Results', renderResults(snapshot.roundResult, false));
   }
-  return shell('Final Scores', renderScores(snapshot.finalScores, false));
+  return shell('Final Scores', renderScores(snapshot.finalScores, true));
 }
 
 function renderJoin(): HTMLElement {
@@ -312,6 +322,7 @@ function renderJoin(): HTMLElement {
     localStorage.setItem('draw-party-name', playerName);
     pendingJoin = { roomCode, name };
     connect(roomCode);
+    hapticPulse(8);
     render();
   };
   roomInput.addEventListener('keydown', (event) => {
@@ -329,15 +340,53 @@ function renderJoin(): HTMLElement {
     'Join Game',
     el(
       'section',
-      { class: 'panel narrow join-card' },
+      { class: 'panel narrow join-card player-join-card' },
       el('p', { class: 'eyebrow' }, initialRoomCode ? 'Room found' : 'Phone controller'),
+      el('h2', {}, 'Join the party'),
+      el('p', { class: 'muted join-note' }, initialRoomCode ? 'The code is loaded. Add your name and jump in.' : 'Use the room code on the TV.'),
       el('label', { class: 'label' }, 'Room code'),
       roomInput,
       el('label', { class: 'label' }, 'Name'),
       nameInput,
       button('Join', 'primary wide', join),
-      el('p', { class: 'muted join-note' }, initialRoomCode ? 'Enter your name, then join from this phone.' : 'Enter the room code from the TV.')
+      errorMessage ? null : el('p', { class: 'muted join-note fine-print' }, 'Phones, tablets, and iPads all work as controllers.')
     )
+  );
+}
+
+function renderPlayerLobby(): HTMLElement {
+  if (!snapshot) {
+    return el('div', { class: 'player-stack' });
+  }
+
+  const connectedPlayers = snapshot.players.filter((player) => player.connected);
+  const neededPlayers = Math.max(0, snapshot.minPlayers - connectedPlayers.length);
+  const self = snapshot.players.find((player) => player.id === clientId);
+  const ready = neededPlayers === 0;
+
+  return el(
+    'div',
+    { class: 'player-stack lobby-player-stack' },
+    el(
+      'section',
+      { class: `panel player-lobby-card ${ready ? 'is-ready' : ''}` },
+      el('p', { class: 'eyebrow' }, self ? `Ready, ${self.name}` : 'You are in'),
+      el('h2', {}, ready ? 'Party is ready' : 'Waiting for players'),
+      el(
+        'div',
+        { class: 'player-room-chip' },
+        el('span', {}, 'Room'),
+        el('strong', { class: 'mini-room-code' }, snapshot.roomCode)
+      ),
+      el(
+        'div',
+        { class: 'player-ready-meter' },
+        el('span', { class: 'ready-count' }, `${connectedPlayers.length}/${snapshot.maxPlayers}`),
+        el('span', {}, ready ? 'The TV can start the game.' : `Need ${neededPlayers} more ${neededPlayers === 1 ? 'player' : 'players'}.`)
+      ),
+      el('p', { class: 'muted' }, 'Keep this screen open. Your device becomes the controller when each round starts.')
+    ),
+    renderPlayersPanel(false)
   );
 }
 
@@ -485,6 +534,28 @@ function renderDrawingTurn(): HTMLElement {
 
   const submitted = snapshot.drawingSubmittedIds.includes(clientId);
   const turnToken = snapshot.turnToken;
+  const heading = el(
+    'div',
+    { class: 'turn-header' },
+    el(
+      'div',
+      { class: 'turn-copy' },
+      el('p', { class: 'eyebrow' }, `Round ${snapshot.currentRound} of ${snapshot.totalRounds}`),
+      el('div', { class: 'prompt', id: 'prompt-text' }, prompt ? `Draw: ${prompt}` : 'Waiting for prompt...')
+    ),
+    el('div', { class: 'deadline', id: 'deadline-text' })
+  );
+
+  if (submitted) {
+    return el(
+      'section',
+      { class: 'panel play-panel player-turn-panel drawing-turn' },
+      heading,
+      renderReconnectHint('Your drawing is already submitted.'),
+      el('div', { class: 'success-box' }, 'Drawing submitted. Watch the TV.')
+    );
+  }
+
   const submitButton = button('Submit Drawing', 'primary wide', () => {
     if (!drawingPad?.hasInk()) {
       errorMessage = 'Draw at least one stroke before submitting.';
@@ -493,22 +564,26 @@ function renderDrawingTurn(): HTMLElement {
     }
     send({ type: 'submitDrawing', turnToken, drawing: drawingPad.getDrawing() });
     playCue('submit');
+    hapticPulse(12);
   }, submitted);
 
-  const submitDock = el('div', { class: 'submit-dock' }, submitButton);
-  drawingPad = new DrawingPad(() => {
-    submitButton.disabled = !drawingPad?.hasInk();
-  }, submitDock);
-  submitButton.disabled = submitted || !drawingPad.hasInk();
+  const submitHelp = el('p', { class: 'submit-help' }, 'Draw one stroke to unlock submit.');
+  const submitDock = el('div', { class: 'submit-dock' }, submitButton, submitHelp);
+  const updateSubmitState = () => {
+    const ready = Boolean(drawingPad?.hasInk());
+    submitButton.disabled = !ready;
+    submitDock.classList.toggle('is-ready', ready);
+    submitHelp.textContent = ready ? 'Ready when you are.' : 'Draw one stroke to unlock submit.';
+  };
+  drawingPad = new DrawingPad(updateSubmitState, submitDock);
+  updateSubmitState();
 
   return el(
     'section',
-    { class: 'panel play-panel' },
-    el('p', { class: 'eyebrow' }, `Round ${snapshot.currentRound} of ${snapshot.totalRounds}`),
-    el('div', { class: 'prompt', id: 'prompt-text' }, prompt ? `Draw: ${prompt}` : 'Waiting for prompt...'),
-    el('div', { class: 'deadline', id: 'deadline-text' }),
+    { class: 'panel play-panel player-turn-panel drawing-turn' },
+    heading,
     renderReconnectHint(submitted ? 'Your drawing is already submitted.' : 'Keep drawing. If your phone reconnects, this screen will return.'),
-    submitted ? el('div', { class: 'success-box' }, 'Drawing submitted. Watch the TV.') : drawingPad.root
+    drawingPad.root
   );
 }
 
@@ -526,9 +601,13 @@ function renderGuessingTurn(): HTMLElement {
   if (isArtist) {
     return el(
       'section',
-      { class: 'panel play-panel' },
-      el('p', { class: 'eyebrow' }, 'Your drawing'),
-      el('div', { class: 'deadline', id: 'deadline-text' }),
+      { class: 'panel play-panel player-turn-panel guessing-turn' },
+      el(
+        'div',
+        { class: 'turn-header compact' },
+        el('div', { class: 'turn-copy' }, el('p', { class: 'eyebrow' }, 'Your drawing'), el('div', { class: 'prompt small' }, 'Players are guessing')),
+        el('div', { class: 'deadline', id: 'deadline-text' })
+      ),
       canvas,
       renderReconnectHint('You are the artist for this reveal. Other players are writing fake answers.'),
       el('div', { class: 'success-box' }, 'This is your drawing. Wait for guesses.')
@@ -544,8 +623,13 @@ function renderGuessingTurn(): HTMLElement {
   input.addEventListener('input', clearErrorMessage);
   return el(
     'section',
-    { class: 'panel play-panel' },
-    el('div', { class: 'deadline', id: 'deadline-text' }),
+    { class: 'panel play-panel player-turn-panel guessing-turn' },
+    el(
+      'div',
+      { class: 'turn-header compact' },
+      el('div', { class: 'turn-copy' }, el('p', { class: 'eyebrow' }, 'Write a fake'), el('div', { class: 'prompt small' }, 'Make it believable')),
+      el('div', { class: 'deadline', id: 'deadline-text' })
+    ),
     canvas,
     input,
     button('Submit Guess', 'primary wide', () => {
@@ -557,6 +641,7 @@ function renderGuessingTurn(): HTMLElement {
       }
       send({ type: 'submitGuess', turnToken, guess });
       playCue('submit');
+      hapticPulse(10);
       input.disabled = true;
     }, submitted),
     renderReconnectHint(submitted ? 'Your guess is in.' : 'Make a convincing fake answer.'),
@@ -575,14 +660,18 @@ function renderVotingTurn(): HTMLElement {
   renderDrawing(canvas, snapshot.currentDrawing);
   return el(
     'section',
-    { class: 'panel play-panel' },
-    el('p', { class: 'eyebrow' }, isArtist ? 'Your drawing' : 'Pick an answer'),
-    el('div', { class: 'deadline', id: 'deadline-text' }),
+    { class: 'panel play-panel player-turn-panel voting-turn' },
+    el(
+      'div',
+      { class: 'turn-header compact' },
+      el('div', { class: 'turn-copy' }, el('p', { class: 'eyebrow' }, isArtist ? 'Your drawing' : 'Pick an answer'), el('div', { class: 'prompt small' }, isArtist ? 'Watch the vote' : 'Find the real prompt')),
+      el('div', { class: 'deadline', id: 'deadline-text' })
+    ),
     canvas,
-    renderReconnectHint(submitted ? 'Your vote is in.' : isArtist ? 'You drew this one. Watch the votes come in.' : 'Choose the real prompt. You cannot vote for your own fake answer.'),
     isArtist
       ? el('div', { class: 'success-box' }, 'This is your drawing. Watch the vote.')
-      : renderVotingOptions(snapshot.votingOptions, true, submitted)
+      : renderVotingOptions(snapshot.votingOptions, true, submitted),
+    renderReconnectHint(submitted ? 'Your vote is in.' : isArtist ? 'You drew this one. Watch the votes come in.' : 'Choose the real prompt. You cannot vote for your own fake answer.')
   );
 }
 
@@ -611,24 +700,34 @@ function renderRevealPanel(title: string, showAnswer: boolean): HTMLElement {
 }
 
 function renderVotingOptions(options: VotingOption[], interactive: boolean, submitted = false): HTMLElement {
-  const container = el('section', { class: interactive ? 'vote-list compact' : 'panel vote-list' });
+  const container = el('section', { class: interactive ? 'vote-list compact player-vote-list' : 'panel vote-list' });
   if (!interactive) {
     container.appendChild(el('div', { class: 'panel-title' }, 'Options'));
   }
   for (const [index, option] of options.entries()) {
     const ownGuess = option.authorPlayerId === clientId;
-    const disabled = submitted || ownGuess;
+    const locallySubmitted = interactive && selectedVoteTurnToken === snapshot?.turnToken && selectedVoteId.length > 0;
+    const selected = interactive && selectedVoteTurnToken === snapshot?.turnToken && selectedVoteId === option.id;
+    const disabled = submitted || locallySubmitted || ownGuess;
     const voteButton = el(
       'button',
-      { class: disabled ? 'vote-option disabled' : 'vote-option', disabled: !interactive || disabled, style: `--row-index:${index}` },
+      {
+        class: `${disabled ? 'vote-option disabled' : 'vote-option'} ${selected ? 'is-selected' : ''}`,
+        disabled: !interactive || disabled,
+        style: `--row-index:${index}`
+      },
       el('span', { class: 'vote-answer' }, option.text),
       interactive && ownGuess ? el('span', { class: 'vote-reason' }, 'Your fake answer') : null,
-      interactive && submitted && !ownGuess ? el('span', { class: 'vote-reason' }, 'Vote submitted') : null
+      interactive && selected ? el('span', { class: 'vote-reason' }, 'Your vote') : null
     );
     if (interactive && !disabled) {
       voteButton.addEventListener('click', () => {
+        selectedVoteId = option.id;
+        selectedVoteTurnToken = snapshot?.turnToken ?? 0;
         send({ type: 'submitVote', turnToken: snapshot?.turnToken ?? 0, optionId: option.id });
         playCue('submit');
+        hapticPulse(10);
+        render();
       });
     }
     container.appendChild(voteButton);
@@ -688,12 +787,13 @@ function renderResults(result: RoundResult | null | undefined, includeDrawing: b
 
   return el(
     'section',
-    { class: 'panel results-panel' },
+    { class: `panel results-panel ${includeDrawing ? 'display-results' : 'player-results'}` },
     includeDrawing ? renderConfetti('result') : null,
     el('p', { class: 'eyebrow' }, `Drawing by ${result.artistName}`),
     el('h2', {}, 'The real prompt was'),
     el('div', { class: 'prompt' }, result.correctAnswer),
     includeDrawing ? canvas : null,
+    el('p', { class: 'result-kicker' }, roundOutcomeText(result)),
     deltas,
     breakdown
   );
@@ -720,13 +820,17 @@ function renderScoreDeltas(deltas: RoundResult['scoreDeltas']): HTMLElement | nu
 
 function renderScores(scores: ScoreEntry[], podium: boolean): HTMLElement {
   const topScores = podium ? scores.slice(0, 3) : [];
+  const winner = scores[0];
+  const showWinnerCallout = podium && Boolean(winner) && role === 'player';
+  const listedScores = podium && role === 'player' ? scores.slice(3) : scores;
+  const rankOffset = podium && role === 'player' ? 3 : 0;
   const list = el('div', { class: 'score-list' });
-  for (const [index, score] of scores.entries()) {
+  for (const [index, score] of listedScores.entries()) {
     list.appendChild(
       el(
         'div',
-        { class: `score-row ${index === 0 ? 'winner' : ''}` },
-        el('span', {}, `${index + 1}. ${score.name}`),
+        { class: `score-row ${rankOffset + index === 0 ? 'winner' : ''}` },
+        el('span', {}, `${rankOffset + index + 1}. ${score.name}`),
         el('span', { class: 'pill' }, `${score.score} pts`)
       )
     );
@@ -735,6 +839,15 @@ function renderScores(scores: ScoreEntry[], podium: boolean): HTMLElement {
     'section',
     { class: 'panel scores-panel' },
     podium ? renderConfetti('final') : null,
+    showWinnerCallout
+      ? el(
+          'div',
+          { class: 'winner-callout' },
+          el('p', { class: 'eyebrow' }, 'Champion'),
+          el('h2', {}, `${winner?.name ?? 'Winner'} wins`),
+          el('span', { class: 'pill' }, `${winner?.score ?? 0} pts`)
+        )
+      : null,
     el('div', { class: 'panel-title' }, podium ? 'Final Podium' : 'Scores'),
     podium
       ? el(
@@ -751,7 +864,7 @@ function renderScores(scores: ScoreEntry[], podium: boolean): HTMLElement {
           )
         )
       : null,
-    list
+    listedScores.length > 0 ? list : null
   );
 }
 
@@ -843,6 +956,28 @@ function displayStatusText(): string {
     return 'Ready to join';
   }
   return status;
+}
+
+function roundOutcomeText(result: RoundResult): string {
+  const topDelta = result.scoreDeltas.reduce<RoundResult['scoreDeltas'][number] | null>(
+    (best, delta) => (delta.delta > (best?.delta ?? 0) ? delta : best),
+    null
+  );
+  if (!topDelta || topDelta.delta <= 0) {
+    return 'No points this reveal. The room stayed tricky.';
+  }
+  return `${topDelta.name} scored +${topDelta.delta} this reveal.`;
+}
+
+function hapticPulse(pattern: number | number[] = 10): void {
+  try {
+    if (!('vibrate' in navigator)) {
+      return;
+    }
+    navigator.vibrate(pattern);
+  } catch {
+    // Haptics are optional feedback; gameplay must never depend on them.
+  }
 }
 
 function updateDynamicText(): void {
