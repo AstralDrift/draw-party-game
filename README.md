@@ -56,7 +56,7 @@ The Rust server serves the built client from `client/dist`.
 npm --prefix client ci
 npm --prefix client run build
 cargo build --manifest-path server/Cargo.toml --release
-DRAW_PARTY_STATIC_DIR=client/dist ./server/target/release/draw-party-server
+DRAW_PARTY_STATIC_DIR=client/dist ./target/release/draw-party-server
 ```
 
 `GET /api/health` returns server status. `GET /` opens the TV display. `GET /join/:roomCode` opens the phone join flow.

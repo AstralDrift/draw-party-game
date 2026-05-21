@@ -86,6 +86,8 @@ pub struct RoundState {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Room {
     pub code: String,
+    #[serde(skip)]
+    pub host_token: String,
     pub phase: GamePhase,
     pub players: BTreeMap<String, Player>,
     pub displays: BTreeSet<String>,
@@ -124,12 +126,13 @@ impl EngineError {
 pub type EngineResult<T> = Result<T, EngineError>;
 
 impl Room {
-    pub fn new(code: String, display_id: String, now_ms: u64) -> Self {
+    pub fn new(code: String, display_id: String, host_token: String, now_ms: u64) -> Self {
         let mut displays = BTreeSet::new();
         displays.insert(display_id);
 
         Self {
             code,
+            host_token,
             phase: GamePhase::Lobby,
             players: BTreeMap::new(),
             displays,
@@ -458,7 +461,8 @@ impl Room {
     }
 
     fn start_drawing_round(&mut self, now_ms: u64) -> EngineResult<()> {
-        if self.players.len() < MIN_PLAYERS {
+        self.prune_disconnected_players();
+        if self.connected_player_count() < MIN_PLAYERS {
             return Err(EngineError::new(
                 "not_enough_players",
                 format!("Need at least {MIN_PLAYERS} players to start."),
@@ -749,6 +753,17 @@ impl Room {
             .count()
     }
 
+    fn connected_player_count(&self) -> usize {
+        self.players
+            .values()
+            .filter(|player| player.connected)
+            .count()
+    }
+
+    fn prune_disconnected_players(&mut self) {
+        self.players.retain(|_, player| player.connected);
+    }
+
     fn public_players(&self) -> Vec<PlayerPublic> {
         self.players
             .values()
@@ -979,7 +994,12 @@ mod tests {
     }
 
     fn room_with_players() -> Room {
-        let mut room = Room::new("ABCD".to_string(), "display".to_string(), 0);
+        let mut room = Room::new(
+            "ABCD".to_string(),
+            "display".to_string(),
+            "host-token".to_string(),
+            0,
+        );
         room.upsert_player("p1".to_string(), "Ada".to_string(), 1)
             .unwrap();
         room.upsert_player("p2".to_string(), "Grace".to_string(), 1)
@@ -1277,6 +1297,33 @@ mod tests {
         assert!(player.connected);
         assert_eq!(player.name, "Ada Again");
         assert_eq!(room.players.len(), 3);
+    }
+
+    #[test]
+    fn start_requires_two_connected_players() {
+        let mut room = room_with_players();
+        room.mark_disconnected("p2", 10);
+        room.mark_disconnected("p3", 11);
+
+        let err = room.handle_start_or_advance(100).unwrap_err();
+
+        assert_eq!(err.code, "not_enough_players");
+        assert_eq!(room.phase, GamePhase::Lobby);
+        assert_eq!(room.players.len(), 1);
+        assert!(room.players.contains_key("p1"));
+    }
+
+    #[test]
+    fn start_prunes_disconnected_lobby_players() {
+        let mut room = room_with_players();
+        room.mark_disconnected("p3", 10);
+
+        room.handle_start_or_advance(100).unwrap();
+
+        assert_eq!(room.phase, GamePhase::Drawing);
+        assert_eq!(room.players.len(), 2);
+        assert!(!room.players.contains_key("p3"));
+        assert_eq!(room.round.order.len(), 2);
     }
 
     #[test]

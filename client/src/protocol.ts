@@ -110,6 +110,7 @@ export type ClientMessage =
   | { type: 'leaveRoom' };
 
 export type ServerMessage =
+  | { type: 'roomCreated'; snapshot: RoomSnapshot; hostToken: string }
   | { type: 'roomSnapshot'; snapshot: RoomSnapshot }
   | { type: 'phaseChanged'; snapshot: RoomSnapshot }
   | { type: 'promptAssigned'; prompt: string }
@@ -127,6 +128,11 @@ export function isServerMessage(value: unknown): value is ServerMessage {
   }
   const maybe = value as { type?: unknown };
   switch (maybe.type) {
+    case 'roomCreated':
+      return (
+        isRoomSnapshot((value as { snapshot?: unknown }).snapshot) &&
+        typeof (value as { hostToken?: unknown }).hostToken === 'string'
+      );
     case 'roomSnapshot':
     case 'phaseChanged':
       return isRoomSnapshot((value as { snapshot?: unknown }).snapshot);

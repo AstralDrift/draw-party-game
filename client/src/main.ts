@@ -47,6 +47,7 @@ function connect(roomCode?: string): void {
     role,
     clientId,
     roomCode,
+    hostToken: role === 'display' && roomCode ? getStoredHostToken(roomCode) ?? undefined : undefined,
     onOpen: () => {
       if (reconnectTimer) {
         window.clearTimeout(reconnectTimer);
@@ -92,19 +93,13 @@ function send(message: Parameters<GameSocket['send']>[0]): void {
 function handleServerMessage(message: ServerMessage): void {
   errorMessage = '';
   switch (message.type) {
+    case 'roomCreated':
+      storeHostToken(message.snapshot.roomCode, message.hostToken);
+      applySnapshot(message.snapshot);
+      break;
     case 'roomSnapshot':
     case 'phaseChanged':
-      syncServerClock(message.snapshot);
-      if (lastPhase && lastPhase !== message.snapshot.phase) {
-        playCue(message.snapshot.phase === 'results' ? 'results' : 'phase');
-      }
-      if (message.snapshot.players.length > lastPlayerCount) {
-        playCue('join');
-      }
-      lastPhase = message.snapshot.phase;
-      lastPlayerCount = message.snapshot.players.length;
-      snapshot = message.snapshot;
-      render();
+      applySnapshot(message.snapshot);
       break;
     case 'promptAssigned':
       prompt = message.prompt;
@@ -162,14 +157,31 @@ function handleServerMessage(message: ServerMessage): void {
   }
 }
 
+function applySnapshot(nextSnapshot: RoomSnapshot): void {
+  syncServerClock(nextSnapshot);
+  if (lastPhase && lastPhase !== nextSnapshot.phase) {
+    playCue(nextSnapshot.phase === 'results' ? 'results' : 'phase');
+  }
+  if (nextSnapshot.players.length > lastPlayerCount) {
+    playCue('join');
+  }
+  lastPhase = nextSnapshot.phase;
+  lastPlayerCount = nextSnapshot.players.length;
+  snapshot = nextSnapshot;
+  render();
+}
+
 function render(): void {
-  const key = viewKeyFor({
-    role,
-    clientId,
-    initialRoomCode,
-    pendingRoomCode: pendingJoin?.roomCode,
-    snapshot
-  });
+  const key = [
+    viewKeyFor({
+      role,
+      clientId,
+      initialRoomCode,
+      pendingRoomCode: pendingJoin?.roomCode,
+      snapshot
+    }),
+    errorMessage
+  ].join(';error:');
   if (key === viewKey) {
     updateDynamicText();
     return;
@@ -325,7 +337,8 @@ function renderRoomPanel(): HTMLElement {
     qrCanvas.replaceWith(el('p', { class: 'muted' }, joinUrl));
   });
 
-  const canStart = snapshot.players.length >= snapshot.minPlayers;
+  const connectedPlayers = snapshot.players.filter((player) => player.connected);
+  const canStart = connectedPlayers.length >= snapshot.minPlayers;
   return el(
     'section',
     { class: 'panel room-panel' },
@@ -334,7 +347,7 @@ function renderRoomPanel(): HTMLElement {
     qrCanvas,
     el('p', { class: 'join-url' }, joinUrl),
     button('Start Game', 'primary wide', () => send({ type: 'startGame' }), !canStart),
-    el('p', { class: 'muted' }, canStart ? 'Ready to start.' : `Need ${snapshot.minPlayers} players.`)
+    el('p', { class: 'muted' }, canStart ? 'Ready to start.' : `Need ${snapshot.minPlayers} connected players.`)
   );
 }
 
@@ -761,6 +774,18 @@ function getStoredValue(key: string, fallback: () => string): string {
   const value = fallback();
   localStorage.setItem(key, value);
   return value;
+}
+
+function hostTokenKey(roomCode: string): string {
+  return `draw-party-host-token-${roomCode}`;
+}
+
+function getStoredHostToken(roomCode: string): string | null {
+  return localStorage.getItem(hostTokenKey(roomCode));
+}
+
+function storeHostToken(roomCode: string, hostToken: string): void {
+  localStorage.setItem(hostTokenKey(roomCode), hostToken);
 }
 
 window.setInterval(updateDeadlineText, 250);

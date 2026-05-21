@@ -212,6 +212,10 @@ pub enum ClientMessage {
     rename_all_fields = "camelCase"
 )]
 pub enum ServerMessage {
+    RoomCreated {
+        snapshot: RoomSnapshot,
+        host_token: String,
+    },
     RoomSnapshot {
         snapshot: RoomSnapshot,
     },

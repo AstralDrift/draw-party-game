@@ -5,6 +5,7 @@ interface SocketOptions {
   role: Role;
   clientId: string;
   roomCode?: string;
+  hostToken?: string;
   onOpen: () => void;
   onClose: () => void;
   onMessage: (message: ServerMessage) => void;
@@ -26,6 +27,9 @@ export class GameSocket {
     url.searchParams.set('client_id', this.options.clientId);
     if (this.options.roomCode) {
       url.searchParams.set('room', this.options.roomCode);
+    }
+    if (this.options.hostToken) {
+      url.searchParams.set('hostToken', this.options.hostToken);
     }
 
     this.options.onStatus('Connecting');

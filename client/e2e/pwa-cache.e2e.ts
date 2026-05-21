@@ -28,4 +28,7 @@ test('keeps app routes on the browser shell and API routes on JSON', async ({ pa
   await page.goto('/join/ABCD');
   await expect(page.getByText('Join Game')).toBeVisible();
   await expect(page.locator('input.code-input')).toHaveValue('ABCD');
+  await page.locator('input.code-input').fill('A');
+  await page.getByRole('button', { name: 'Join' }).click();
+  await expect(page.getByText('Enter the four-letter room code from the TV.')).toBeVisible();
 });
