@@ -606,9 +606,21 @@ function getStoredValue(key: string, fallback: () => string): string {
 }
 
 window.setInterval(updateDeadlineText, 250);
+registerServiceWorker();
 
 if (role === 'display') {
   connect();
 } else {
   render();
+}
+
+function registerServiceWorker(): void {
+  if (!('serviceWorker' in navigator)) {
+    return;
+  }
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      // The game still works online if PWA caching is unavailable.
+    });
+  });
 }
