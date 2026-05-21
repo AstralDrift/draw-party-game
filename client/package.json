@@ -12,6 +12,7 @@
     "test": "vitest"
   },
   "dependencies": {
+    "lucide": "^1.16.0",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {

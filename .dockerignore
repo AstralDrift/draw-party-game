@@ -1,0 +1,13 @@
+.git
+.github
+.DS_Store
+
+target
+client/node_modules
+client/dist
+client/test-results
+client/playwright-report
+client/.vite
+
+*.log
+*.tmp

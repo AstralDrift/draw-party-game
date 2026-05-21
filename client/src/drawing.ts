@@ -1,3 +1,4 @@
+import { Trash2, Undo2, createElement as createIconElement, type IconNode } from 'lucide';
 import { CANVAS_HEIGHT, CANVAS_WIDTH, type DrawingDoc, type Point, type Stroke } from './protocol';
 
 const COLORS = ['#111111', '#ff595e', '#ffca3a', '#34d399', '#1982c4', '#6a4c93', '#f957a8', '#ffffff'];
@@ -51,8 +52,10 @@ export class DrawingPad {
   private readonly onChange: () => void;
   private readonly colorButtons = new Map<string, HTMLButtonElement>();
   private readonly sizeButtons = new Map<number, HTMLButtonElement>();
+  private readonly undoButton: HTMLButtonElement;
+  private readonly clearButton: HTMLButtonElement;
 
-  constructor(onChange: () => void) {
+  constructor(onChange: () => void, submitSlot?: HTMLElement) {
     this.onChange = onChange;
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'draw-canvas';
@@ -63,6 +66,16 @@ export class DrawingPad {
 
     const toolbar = document.createElement('div');
     toolbar.className = 'draw-toolbar';
+    const colorTools = document.createElement('div');
+    colorTools.className = 'draw-tools color-tools';
+    colorTools.setAttribute('aria-label', 'Ink colors');
+    const sizeTools = document.createElement('div');
+    sizeTools.className = 'draw-tools size-tools';
+    sizeTools.setAttribute('aria-label', 'Brush size');
+    const actionTools = document.createElement('div');
+    actionTools.className = 'draw-tools action-tools';
+    actionTools.setAttribute('aria-label', 'Drawing actions');
+
     for (const color of COLORS) {
       const swatch = document.createElement('button');
       swatch.type = 'button';
@@ -75,7 +88,7 @@ export class DrawingPad {
         this.updateStatus();
       });
       this.colorButtons.set(color, swatch);
-      toolbar.appendChild(swatch);
+      colorTools.appendChild(swatch);
     }
     for (const size of SIZES) {
       const sizeButton = document.createElement('button');
@@ -88,28 +101,20 @@ export class DrawingPad {
         this.updateStatus();
       });
       this.sizeButtons.set(size, sizeButton);
-      toolbar.appendChild(sizeButton);
+      sizeTools.appendChild(sizeButton);
     }
 
-    const undo = document.createElement('button');
-    undo.type = 'button';
-    undo.className = 'tool-button';
-    undo.textContent = 'Undo';
-    undo.title = 'Undo last stroke';
-    undo.addEventListener('click', () => {
+    this.undoButton = iconButton(Undo2, 'Undo last stroke', 'tool-button icon-button');
+    this.undoButton.addEventListener('click', () => {
       this.drawing.strokes.pop();
       this.redraw();
       this.onChange();
       this.updateStatus();
     });
-    toolbar.appendChild(undo);
+    actionTools.appendChild(this.undoButton);
 
-    const clear = document.createElement('button');
-    clear.type = 'button';
-    clear.className = 'tool-button danger';
-    clear.textContent = 'Clear';
-    clear.title = 'Clear drawing';
-    clear.addEventListener('click', () => {
+    this.clearButton = iconButton(Trash2, 'Clear drawing', 'tool-button icon-button danger');
+    this.clearButton.addEventListener('click', () => {
       if (!this.hasInk() || !window.confirm('Clear your drawing?')) {
         return;
       }
@@ -118,11 +123,16 @@ export class DrawingPad {
       this.onChange();
       this.updateStatus();
     });
-    toolbar.appendChild(clear);
+    actionTools.appendChild(this.clearButton);
+    toolbar.append(colorTools, sizeTools, actionTools);
 
     this.root = document.createElement('section');
     this.root.className = 'drawing-pad';
-    this.root.append(toolbar, this.canvas, this.status);
+    this.root.append(this.canvas);
+    if (submitSlot) {
+      this.root.appendChild(submitSlot);
+    }
+    this.root.append(toolbar, this.status);
     this.bindPointerEvents();
     this.redraw();
     this.updateStatus();
@@ -204,6 +214,8 @@ export class DrawingPad {
   private updateStatus(): void {
     const colorLabel = COLOR_LABELS[this.color] ?? this.color;
     this.status.textContent = `${this.drawing.strokes.length} strokes · ${colorLabel} · ${this.size}px`;
+    this.undoButton.disabled = !this.hasInk();
+    this.clearButton.disabled = !this.hasInk();
     this.updateToolState();
   }
 
@@ -221,6 +233,22 @@ export class DrawingPad {
       button.title = `${selected ? 'Selected' : 'Use'} ${size}px brush`;
     }
   }
+}
+
+function iconButton(icon: IconNode, label: string, className: string): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = className;
+  button.title = label;
+  button.setAttribute('aria-label', label);
+  const svg = createIconElement(icon, {
+    class: 'button-icon',
+    'aria-hidden': 'true',
+    width: 22,
+    height: 22
+  });
+  button.appendChild(svg);
+  return button;
 }
 
 function setupCanvas(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
