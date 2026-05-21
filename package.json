@@ -1,0 +1,16 @@
+{
+  "name": "draw-party",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lightweight TV + phone drawing party game",
+  "scripts": {
+    "build": "npm --prefix client run build",
+    "client:dev": "npm --prefix client run dev",
+    "client:test": "npm --prefix client test -- --run",
+    "client:typecheck": "npm --prefix client run typecheck",
+    "e2e": "npm --prefix client run e2e --",
+    "server:dev": "cargo run --manifest-path server/Cargo.toml",
+    "server:test": "cargo test --manifest-path server/Cargo.toml",
+    "test": "npm --prefix client test -- --run && npm --prefix client run typecheck && cargo test --manifest-path server/Cargo.toml"
+  }
+}
