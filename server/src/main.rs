@@ -522,16 +522,29 @@ async fn disconnect_client(state: &AppState, client_id: &str) {
             .remove(client_id)
             .and_then(|conn| conn.room_code);
         if let Some(room_code) = room_code {
-            let mut changed = false;
-            if let Some(room) = inner.rooms.get_mut(&room_code) {
-                room.mark_disconnected(client_id, now_ms());
-                changed = true;
-            }
-            if changed {
-                room_messages(&inner, &room_code, EngineEvent::PlayerListChanged)
+            let event = if let Some(room) = inner.rooms.get_mut(&room_code) {
+                let now = now_ms();
+                room.mark_disconnected(client_id, now);
+                match room.advance_if_ready(now) {
+                    Ok(Some(event)) => Some(event),
+                    Ok(None) => Some(EngineEvent::PlayerListChanged),
+                    Err(err) => {
+                        warn!(
+                            room_code,
+                            client_id,
+                            code = err.code,
+                            message = err.message,
+                            "disconnect readiness advance failed"
+                        );
+                        Some(EngineEvent::PlayerListChanged)
+                    }
+                }
             } else {
-                Vec::new()
-            }
+                None
+            };
+            event
+                .map(|event| room_messages(&inner, &room_code, event))
+                .unwrap_or_default()
         } else {
             Vec::new()
         }
@@ -1152,5 +1165,58 @@ mod tests {
         .unwrap();
 
         expect_no_message(&mut late).await;
+    }
+
+    #[tokio::test]
+    async fn websocket_player_dropout_during_drawing_does_not_stall_room() {
+        let url = spawn_ws_server().await;
+        let (mut display, _) = connect_async(format!("{url}?role=display&clientId=display"))
+            .await
+            .unwrap();
+        let (room_code, _, _) = create_test_room(&mut display).await;
+
+        let mut p1 = join_player(&url, &room_code, "p1", "Ada").await;
+        let mut p2 = join_player(&url, &room_code, "p2", "Grace").await;
+        let mut p3 = join_player(&url, &room_code, "p3", "Linus").await;
+
+        display
+            .send(text_message(json!({ "type": "startGame" })))
+            .await
+            .unwrap();
+        let phase = read_until_type(&mut display, "phaseChanged").await;
+        assert_eq!(
+            phase
+                .get("snapshot")
+                .and_then(|snapshot| snapshot.get("phase"))
+                .and_then(Value::as_str),
+            Some("drawing")
+        );
+        let turn_token = phase
+            .get("snapshot")
+            .and_then(|snapshot| snapshot.get("turnToken"))
+            .and_then(Value::as_u64)
+            .unwrap();
+
+        p3.send(WsMessage::Close(None)).await.unwrap();
+
+        for player in [&mut p1, &mut p2] {
+            player
+                .send(text_message(json!({
+                    "type": "submitDrawing",
+                    "turnToken": turn_token,
+                    "drawing": drawing_value()
+                })))
+                .await
+                .unwrap();
+        }
+
+        let phase = read_until_type(&mut display, "phaseChanged").await;
+        assert_eq!(
+            phase
+                .get("snapshot")
+                .and_then(|snapshot| snapshot.get("phase"))
+                .and_then(Value::as_str),
+            Some("guessing")
+        );
     }
 }

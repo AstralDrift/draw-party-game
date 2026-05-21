@@ -304,12 +304,7 @@ impl Room {
             ));
         }
         self.ensure_turn_token(turn_token)?;
-        if !self.players.contains_key(player_id) {
-            return Err(EngineError::new(
-                "not_joined",
-                "Only joined players can submit drawings.",
-            ));
-        }
+        self.ensure_connected_player(player_id, "Only connected players can submit drawings.")?;
         validate_drawing(&drawing)?;
         if self.round.drawings.contains_key(player_id) {
             return Err(EngineError::new(
@@ -319,12 +314,9 @@ impl Room {
         }
 
         self.round.drawings.insert(player_id.to_string(), drawing);
-        if self.round.drawings.len() >= self.players.len() {
-            self.begin_guessing(now_ms)?;
-            Ok(EngineEvent::PhaseChanged)
-        } else {
-            Ok(EngineEvent::Snapshot)
-        }
+        Ok(self
+            .advance_if_ready(now_ms)?
+            .unwrap_or(EngineEvent::Snapshot))
     }
 
     pub fn submit_guess(
@@ -353,12 +345,9 @@ impl Room {
         self.round
             .guesses
             .insert(player_id.to_string(), sanitize_guess(&guess)?);
-        if self.round.guesses.len() >= self.eligible_voter_count() {
-            self.begin_voting(now_ms)?;
-            Ok(EngineEvent::PhaseChanged)
-        } else {
-            Ok(EngineEvent::Snapshot)
-        }
+        Ok(self
+            .advance_if_ready(now_ms)?
+            .unwrap_or(EngineEvent::Snapshot))
     }
 
     pub fn submit_vote(
@@ -401,12 +390,35 @@ impl Room {
         }
 
         self.round.votes.insert(player_id.to_string(), option_id);
-        if self.round.votes.len() >= self.eligible_voter_count() {
-            self.finish_voting(now_ms)?;
-            Ok(EngineEvent::PhaseChanged)
-        } else {
-            Ok(EngineEvent::Snapshot)
+        Ok(self
+            .advance_if_ready(now_ms)?
+            .unwrap_or(EngineEvent::Snapshot))
+    }
+
+    pub fn advance_if_ready(&mut self, now_ms: u64) -> EngineResult<Option<EngineEvent>> {
+        let mut advanced = false;
+        loop {
+            match self.phase {
+                GamePhase::Drawing if self.connected_drawers_done() => {
+                    self.touch(now_ms);
+                    self.begin_guessing(now_ms)?;
+                    advanced = true;
+                }
+                GamePhase::Guessing if self.connected_guessers_done() => {
+                    self.touch(now_ms);
+                    self.begin_voting(now_ms)?;
+                    advanced = true;
+                }
+                GamePhase::Voting if self.connected_voters_done() => {
+                    self.touch(now_ms);
+                    self.finish_voting(now_ms)?;
+                    advanced = true;
+                }
+                _ => break,
+            }
         }
+
+        Ok(advanced.then_some(EngineEvent::PhaseChanged))
     }
 
     pub fn advance_if_expired(&mut self, now_ms: u64) -> EngineResult<Option<EngineEvent>> {
@@ -761,17 +773,29 @@ impl Room {
     }
 
     fn ensure_active_non_artist(&self, player_id: &str) -> EngineResult<()> {
-        if !self.players.contains_key(player_id) {
-            return Err(EngineError::new(
-                "not_joined",
-                "Only joined players can submit.",
-            ));
-        }
+        self.ensure_connected_player(player_id, "Only connected players can submit.")?;
         if self.round.current_artist_id.as_deref() == Some(player_id) {
             return Err(EngineError::new(
                 "artist_action",
                 "The artist skips this step.",
             ));
+        }
+        Ok(())
+    }
+
+    fn ensure_connected_player(
+        &self,
+        player_id: &str,
+        disconnected_message: &str,
+    ) -> EngineResult<()> {
+        let Some(player) = self.players.get(player_id) else {
+            return Err(EngineError::new(
+                "not_joined",
+                "Only joined players can submit.",
+            ));
+        };
+        if !player.connected {
+            return Err(EngineError::new("not_connected", disconnected_message));
         }
         Ok(())
     }
@@ -788,9 +812,44 @@ impl Room {
 
     fn eligible_voter_count(&self) -> usize {
         self.players
-            .keys()
-            .filter(|player_id| self.round.current_artist_id.as_deref() != Some(player_id.as_str()))
+            .values()
+            .filter(|player| {
+                player.connected
+                    && self.round.current_artist_id.as_deref() != Some(player.id.as_str())
+            })
             .count()
+    }
+
+    fn connected_drawers_done(&self) -> bool {
+        let connected_players: Vec<&Player> = self
+            .players
+            .values()
+            .filter(|player| player.connected)
+            .collect();
+        !connected_players.is_empty()
+            && connected_players
+                .iter()
+                .all(|player| self.round.drawings.contains_key(&player.id))
+    }
+
+    fn connected_guessers_done(&self) -> bool {
+        let eligible_count = self.eligible_voter_count();
+        eligible_count == 0 || self.connected_submissions_done(&self.round.guesses)
+    }
+
+    fn connected_voters_done(&self) -> bool {
+        let eligible_count = self.eligible_voter_count();
+        eligible_count == 0 || self.connected_submissions_done(&self.round.votes)
+    }
+
+    fn connected_submissions_done(&self, submissions: &BTreeMap<String, String>) -> bool {
+        self.players
+            .values()
+            .filter(|player| {
+                player.connected
+                    && self.round.current_artist_id.as_deref() != Some(player.id.as_str())
+            })
+            .all(|player| submissions.contains_key(&player.id))
     }
 
     fn connected_player_count(&self) -> usize {
@@ -1059,6 +1118,24 @@ mod tests {
         }
     }
 
+    fn submit_all_drawings(room: &mut Room, now_ms: u64) {
+        let token = room.turn_token;
+        let player_ids: Vec<String> = room.players.keys().cloned().collect();
+        for player_id in player_ids {
+            room.submit_drawing(&player_id, token, drawing(), now_ms)
+                .unwrap();
+        }
+    }
+
+    fn non_artist_ids(room: &Room) -> Vec<String> {
+        let artist = room.round.current_artist_id.as_deref();
+        room.players
+            .keys()
+            .filter(|player_id| artist != Some(player_id.as_str()))
+            .cloned()
+            .collect()
+    }
+
     #[test]
     fn starts_drawing_with_unique_prompts() {
         let mut room = room_with_players();
@@ -1145,6 +1222,111 @@ mod tests {
             .submit_drawing("p1", token, drawing(), 201)
             .unwrap_err();
         assert_eq!(err.code, "duplicate_submission");
+    }
+
+    #[test]
+    fn drawing_disconnect_advances_when_connected_players_are_done() {
+        let mut room = room_with_players();
+        room.handle_start_or_advance(100).unwrap();
+        let token = room.turn_token;
+        room.submit_drawing("p1", token, drawing(), 200).unwrap();
+        room.submit_drawing("p2", token, drawing(), 201).unwrap();
+
+        room.mark_disconnected("p3", 202);
+        let event = room.advance_if_ready(202).unwrap();
+
+        assert_eq!(event, Some(EngineEvent::PhaseChanged));
+        assert_eq!(room.phase, GamePhase::Guessing);
+        assert_eq!(room.round.drawings.len(), 2);
+    }
+
+    #[test]
+    fn guessing_counts_only_connected_non_artists() {
+        let mut room = room_with_players();
+        room.handle_start_or_advance(100).unwrap();
+        submit_all_drawings(&mut room, 200);
+        assert_eq!(room.phase, GamePhase::Guessing);
+
+        let voters = non_artist_ids(&room);
+        room.mark_disconnected(&voters[1], 250);
+        let token = room.turn_token;
+        let event = room
+            .submit_guess(&voters[0], token, "only connected fake".to_string(), 300)
+            .unwrap();
+
+        assert_eq!(event, EngineEvent::PhaseChanged);
+        assert_eq!(room.phase, GamePhase::Voting);
+        assert_eq!(room.round.guesses.len(), 1);
+    }
+
+    #[test]
+    fn voting_counts_only_connected_non_artists() {
+        let mut room = room_with_players();
+        room.handle_start_or_advance(100).unwrap();
+        submit_all_drawings(&mut room, 200);
+        let voters = non_artist_ids(&room);
+        let guess_token = room.turn_token;
+        room.submit_guess(&voters[0], guess_token, "first fake".to_string(), 300)
+            .unwrap();
+        room.submit_guess(&voters[1], guess_token, "second fake".to_string(), 301)
+            .unwrap();
+        assert_eq!(room.phase, GamePhase::Voting);
+
+        room.mark_disconnected(&voters[1], 350);
+        let vote_token = room.turn_token;
+        let truth = room
+            .round
+            .voting_options
+            .iter()
+            .find(|option| option.is_correct)
+            .unwrap()
+            .id
+            .clone();
+        let event = room
+            .submit_vote(&voters[0], vote_token, truth, 400)
+            .unwrap();
+
+        assert_eq!(event, EngineEvent::PhaseChanged);
+        assert_eq!(room.phase, GamePhase::Results);
+        assert_eq!(room.round.votes.len(), 1);
+    }
+
+    #[test]
+    fn disconnected_players_cannot_submit_current_turn_actions() {
+        let mut room = room_with_players();
+        room.handle_start_or_advance(100).unwrap();
+        room.mark_disconnected("p3", 150);
+        let drawing_err = room
+            .submit_drawing("p3", room.turn_token, drawing(), 151)
+            .unwrap_err();
+        assert_eq!(drawing_err.code, "not_connected");
+
+        room.upsert_player("p3".to_string(), "Linus".to_string(), 160)
+            .unwrap();
+        submit_all_drawings(&mut room, 200);
+        let voters = non_artist_ids(&room);
+        room.mark_disconnected(&voters[0], 250);
+        let guess_err = room
+            .submit_guess(&voters[0], room.turn_token, "late fake".to_string(), 251)
+            .unwrap_err();
+        assert_eq!(guess_err.code, "not_connected");
+
+        let guess_token = room.turn_token;
+        room.submit_guess(&voters[1], guess_token, "connected fake".to_string(), 252)
+            .unwrap();
+        assert_eq!(room.phase, GamePhase::Voting);
+        let truth = room
+            .round
+            .voting_options
+            .iter()
+            .find(|option| option.is_correct)
+            .unwrap()
+            .id
+            .clone();
+        let vote_err = room
+            .submit_vote(&voters[0], room.turn_token, truth, 253)
+            .unwrap_err();
+        assert_eq!(vote_err.code, "not_connected");
     }
 
     #[test]
