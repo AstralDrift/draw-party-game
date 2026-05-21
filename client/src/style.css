@@ -397,10 +397,42 @@ input:focus-visible,
   gap: 12px;
 }
 
+.tools-drawer {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.045);
+  overflow: hidden;
+}
+
+.tools-summary {
+  min-height: var(--touch-target);
+  padding: 14px 16px;
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-weight: 900;
+  list-style: none;
+  touch-action: manipulation;
+}
+
+.tools-summary::-webkit-details-marker {
+  display: none;
+}
+
+.tools-summary::after {
+  content: "Open";
+  float: right;
+  color: var(--yellow);
+}
+
+.tools-drawer[open] .tools-summary::after {
+  content: "Close";
+}
+
 .draw-toolbar {
   display: grid;
   gap: 10px;
   align-items: center;
+  padding: 0 8px 8px;
 }
 
 .draw-tools {
@@ -513,7 +545,7 @@ input:focus-visible,
 }
 
 .player .draw-canvas {
-  width: min(100%, 54svh, 620px);
+  width: min(100%, 620px);
   justify-self: center;
 }
 
@@ -825,7 +857,7 @@ input:focus-visible,
   }
 
   .player .draw-canvas {
-    width: min(100%, 36svh, 620px);
+    width: min(100%, 620px);
   }
 
   .player .reconnect-hint {

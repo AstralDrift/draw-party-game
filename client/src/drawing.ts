@@ -45,6 +45,7 @@ export class DrawingPad {
   readonly root: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
   private readonly status: HTMLElement;
+  private readonly toolsSummary: HTMLElement;
   private readonly drawing: DrawingDoc = createEmptyDrawing();
   private color = COLORS[0];
   private size = SIZES[1];
@@ -63,6 +64,8 @@ export class DrawingPad {
     this.canvas.height = CANVAS_HEIGHT;
     this.status = document.createElement('div');
     this.status.className = 'draw-status';
+    this.toolsSummary = document.createElement('summary');
+    this.toolsSummary.className = 'tools-summary';
 
     const toolbar = document.createElement('div');
     toolbar.className = 'draw-toolbar';
@@ -126,13 +129,17 @@ export class DrawingPad {
     actionTools.appendChild(this.clearButton);
     toolbar.append(colorTools, sizeTools, actionTools);
 
+    const toolsDrawer = document.createElement('details');
+    toolsDrawer.className = 'tools-drawer';
+    toolsDrawer.append(this.toolsSummary, toolbar);
+
     this.root = document.createElement('section');
     this.root.className = 'drawing-pad';
     this.root.append(this.canvas);
     if (submitSlot) {
       this.root.appendChild(submitSlot);
     }
-    this.root.append(toolbar, this.status);
+    this.root.append(toolsDrawer, this.status);
     this.bindPointerEvents();
     this.redraw();
     this.updateStatus();
@@ -213,7 +220,8 @@ export class DrawingPad {
 
   private updateStatus(): void {
     const colorLabel = COLOR_LABELS[this.color] ?? this.color;
-    this.status.textContent = `${this.drawing.strokes.length} strokes · ${colorLabel} · ${this.size}px`;
+    this.toolsSummary.textContent = `Tools · ${colorLabel} · ${this.size}px`;
+    this.status.textContent = `${this.drawing.strokes.length} ${this.drawing.strokes.length === 1 ? 'stroke' : 'strokes'}`;
     this.undoButton.disabled = !this.hasInk();
     this.clearButton.disabled = !this.hasInk();
     this.updateToolState();

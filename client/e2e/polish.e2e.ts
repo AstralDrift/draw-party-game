@@ -34,17 +34,21 @@ test('phone drawing screen prioritizes canvas before controls on mobile', async 
     await tv.getByRole('button', { name: 'Start Game' }).click();
 
     await expect(ava.locator('canvas.draw-canvas')).toBeVisible();
-    await expect(ava.locator('.draw-toolbar')).toBeVisible();
     await expect(ava.getByRole('button', { name: 'Submit Drawing' })).toBeVisible();
+    await expect(ava.locator('.tools-summary')).toContainText('Tools');
+    await expect(ava.locator('.draw-toolbar')).toBeHidden();
     await expect(bo.locator('canvas.draw-canvas')).toBeVisible();
 
     const canvasBox = await ava.locator('canvas.draw-canvas').boundingBox();
-    const toolbarBox = await ava.locator('.draw-toolbar').boundingBox();
-    if (!canvasBox || !toolbarBox) {
-      throw new Error('Drawing canvas and toolbar must have layout boxes.');
+    const drawerBox = await ava.locator('.tools-drawer').boundingBox();
+    if (!canvasBox || !drawerBox) {
+      throw new Error('Drawing canvas and tools drawer must have layout boxes.');
     }
-    expect(canvasBox.y).toBeLessThan(toolbarBox.y);
-    expect(canvasBox.width).toBeGreaterThan(300);
+    expect(canvasBox.y).toBeLessThan(drawerBox.y);
+    expect(canvasBox.width).toBeGreaterThan(320);
+
+    await ava.locator('.tools-summary').click();
+    await expect(ava.locator('.draw-toolbar')).toBeVisible();
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }
