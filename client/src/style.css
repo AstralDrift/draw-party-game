@@ -41,7 +41,7 @@
 body {
   margin: 0;
   min-width: 320px;
-  min-height: 100vh;
+  min-height: 100svh;
   background:
     linear-gradient(120deg, rgba(52, 211, 153, 0.12), transparent 34%),
     linear-gradient(240deg, rgba(255, 89, 94, 0.14), transparent 35%),
@@ -171,6 +171,7 @@ input:focus-visible,
 
 .room-panel {
   display: grid;
+  gap: 12px;
   justify-items: center;
   text-align: center;
   background:
@@ -200,6 +201,10 @@ input:focus-visible,
 
 .join-url {
   overflow-wrap: anywhere;
+}
+
+.join-note {
+  margin-bottom: 0;
 }
 
 .input {
@@ -259,8 +264,24 @@ input:focus-visible,
 .primary:disabled,
 .vote-option:disabled,
 .disabled {
-  opacity: 0.5;
+  opacity: 0.58;
   cursor: not-allowed;
+}
+
+.primary:disabled {
+  background: rgba(255, 255, 255, 0.18);
+  color: var(--muted-strong);
+  box-shadow: none;
+}
+
+.start-note {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.start-note.ready {
+  color: #d9fff0;
 }
 
 .player-list,
@@ -299,6 +320,14 @@ input:focus-visible,
 
 .player-row.offline {
   opacity: 0.55;
+}
+
+.empty-state {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  padding: 18px;
+  color: var(--muted);
+  text-align: center;
 }
 
 .pill {
@@ -365,22 +394,54 @@ input:focus-visible,
 
 .drawing-pad {
   display: grid;
-  gap: 14px;
-  grid-template-rows: auto minmax(0, auto) auto;
+  gap: 12px;
 }
 
 .draw-toolbar {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(var(--touch-target), 1fr));
-  gap: 8px;
+  gap: 10px;
   align-items: center;
 }
 
+.draw-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.color-tools {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.color-tools::-webkit-scrollbar {
+  display: none;
+}
+
+.size-tools,
+.action-tools {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(var(--touch-target), 1fr));
+}
+
+.action-tools {
+  grid-template-columns: repeat(2, minmax(var(--touch-target), 1fr));
+}
+
 .swatch {
-  inline-size: var(--touch-target);
-  block-size: var(--touch-target);
-  min-width: var(--touch-target);
-  min-height: var(--touch-target);
+  flex: 0 0 auto;
+  inline-size: 46px;
+  block-size: 46px;
+  min-width: 46px;
+  min-height: 46px;
   border: 2px solid rgba(255, 255, 255, 0.72);
   border-radius: 999px;
   cursor: pointer;
@@ -399,6 +460,17 @@ input:focus-visible,
   border: 1px solid rgba(255, 255, 255, 0.08);
   white-space: nowrap;
   touch-action: manipulation;
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.button-icon {
+  display: block;
+  pointer-events: none;
 }
 
 .swatch.is-selected,
@@ -441,7 +513,7 @@ input:focus-visible,
 }
 
 .player .draw-canvas {
-  width: min(100%, 61svh, 620px);
+  width: min(100%, 54svh, 620px);
   justify-self: center;
 }
 
@@ -460,6 +532,7 @@ input:focus-visible,
   color: var(--muted);
   font-size: 14px;
   font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 .connection-banner,
@@ -482,6 +555,8 @@ input:focus-visible,
 }
 
 .vote-option {
+  display: grid;
+  gap: 4px;
   width: 100%;
   min-height: 64px;
   background: var(--text);
@@ -490,6 +565,16 @@ input:focus-visible,
   border: 1px solid rgba(255, 255, 255, 0.12);
   line-height: 1.15;
   overflow-wrap: anywhere;
+}
+
+.vote-answer {
+  font-weight: 900;
+}
+
+.vote-reason {
+  color: rgba(16, 19, 31, 0.68);
+  font-size: 14px;
+  font-weight: 800;
 }
 
 .vote-list.compact {
@@ -634,8 +719,8 @@ input:focus-visible,
   gap: 16px;
 }
 
-.play-panel > .muted[id="drawing-bytes"] {
-  min-height: 20px;
+.submit-dock {
+  padding-top: 2px;
 }
 
 @keyframes panel-in {
@@ -700,8 +785,13 @@ input:focus-visible,
 }
 
 @media (max-width: 520px) {
+  .app-shell.player {
+    padding: 14px 16px 20px;
+  }
+
   .topbar {
     display: grid;
+    margin-bottom: 18px;
   }
 
   .connection {
@@ -709,15 +799,57 @@ input:focus-visible,
   }
 
   .panel {
-    padding: 16px;
+    padding: 14px;
   }
 
-  .draw-toolbar {
-    grid-template-columns: repeat(auto-fit, minmax(50px, 1fr));
+  .player .brand {
+    font-size: 30px;
+  }
+
+  .player .phase {
+    margin-top: 2px;
+  }
+
+  .player .prompt {
+    margin-bottom: 0;
+    font-size: clamp(24px, 8vw, 34px);
+  }
+
+  .player .deadline {
+    min-height: 42px;
+    font-size: clamp(36px, 13vw, 58px);
+  }
+
+  .player .play-panel {
+    gap: 12px;
+  }
+
+  .player .draw-canvas {
+    width: min(100%, 36svh, 620px);
+  }
+
+  .player .reconnect-hint {
+    margin-bottom: 0;
+    padding: 10px 12px;
+  }
+
+  .size-tools {
+    grid-template-columns: repeat(4, minmax(48px, 1fr));
+  }
+
+  .action-tools {
+    grid-template-columns: repeat(2, minmax(48px, 1fr));
   }
 
   .tool-button {
-    padding-inline: 10px;
+    padding-inline: 8px;
+  }
+
+  .swatch {
+    inline-size: 44px;
+    block-size: 44px;
+    min-width: 44px;
+    min-height: 44px;
   }
 
   .podium {

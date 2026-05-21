@@ -64,12 +64,20 @@ struct WsQuery {
     host_token: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct HealthResponse {
     ok: bool,
     service: &'static str,
     version: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    git_sha: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    git_branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    deployment_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    environment_name: Option<String>,
 }
 
 #[tokio::main]
@@ -141,11 +149,38 @@ async fn shutdown_signal() {
 }
 
 async fn health() -> Json<HealthResponse> {
-    Json(HealthResponse {
+    Json(build_health_response(env_value))
+}
+
+fn build_health_response(get_env: impl Fn(&str) -> Option<String>) -> HealthResponse {
+    HealthResponse {
         ok: true,
         service: "draw-party-server",
         version: env!("CARGO_PKG_VERSION"),
-    })
+        git_sha: first_env(&get_env, &["RAILWAY_GIT_COMMIT_SHA", "GIT_SHA"]),
+        git_branch: first_env(&get_env, &["RAILWAY_GIT_BRANCH", "GIT_BRANCH"]),
+        deployment_id: first_env(&get_env, &["RAILWAY_DEPLOYMENT_ID", "DEPLOYMENT_ID"]),
+        environment_name: first_env(&get_env, &["RAILWAY_ENVIRONMENT_NAME", "ENVIRONMENT_NAME"]),
+    }
+}
+
+fn first_env(get_env: &impl Fn(&str) -> Option<String>, names: &[&str]) -> Option<String> {
+    names
+        .iter()
+        .find_map(|name| get_env(name).and_then(clean_env_value))
+}
+
+fn env_value(name: &str) -> Option<String> {
+    std::env::var(name).ok().and_then(clean_env_value)
+}
+
+fn clean_env_value(value: String) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 async fn cache_headers(request: Request, next: Next) -> Response {
@@ -898,6 +933,39 @@ mod tests {
             cache_control_for(&Uri::from_static("/assets/index.js")).unwrap(),
             HeaderValue::from_static("public, max-age=31536000, immutable")
         );
+    }
+
+    #[test]
+    fn health_response_prefers_railway_metadata_and_trims_values() {
+        let values = HashMap::from([
+            ("RAILWAY_GIT_COMMIT_SHA", "  railway-sha  "),
+            ("GIT_SHA", "fallback-sha"),
+            ("RAILWAY_GIT_BRANCH", "main"),
+            ("RAILWAY_DEPLOYMENT_ID", "deployment-123"),
+            ("RAILWAY_ENVIRONMENT_NAME", "production"),
+        ]);
+
+        let response =
+            build_health_response(|name| values.get(name).map(|value| value.to_string()));
+
+        assert_eq!(response.git_sha.as_deref(), Some("railway-sha"));
+        assert_eq!(response.git_branch.as_deref(), Some("main"));
+        assert_eq!(response.deployment_id.as_deref(), Some("deployment-123"));
+        assert_eq!(response.environment_name.as_deref(), Some("production"));
+    }
+
+    #[test]
+    fn health_response_omits_missing_metadata_fields() {
+        let response = build_health_response(|_| None);
+        let value = serde_json::to_value(response).unwrap();
+
+        assert_eq!(value.get("ok").and_then(Value::as_bool), Some(true));
+        assert_eq!(
+            value.get("service").and_then(Value::as_str),
+            Some("draw-party-server")
+        );
+        assert!(value.get("gitSha").is_none());
+        assert!(value.get("deploymentId").is_none());
     }
 
     #[tokio::test]

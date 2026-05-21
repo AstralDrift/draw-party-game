@@ -59,11 +59,18 @@ cargo build --manifest-path server/Cargo.toml --release
 DRAW_PARTY_STATIC_DIR=client/dist ./target/release/draw-party-server
 ```
 
-`GET /api/health` returns server status. `GET /` opens the TV display. `GET /join/:roomCode` opens the phone join flow.
+`GET /api/health` returns server status plus deploy metadata when the host provides it. Railway GitHub deploys expose values such as `RAILWAY_GIT_COMMIT_SHA`, `RAILWAY_GIT_BRANCH`, `RAILWAY_DEPLOYMENT_ID`, and `RAILWAY_ENVIRONMENT_NAME`; local runs can set `GIT_SHA` and `GIT_BRANCH` for the same smoke-proof flow. `GET /` opens the TV display. `GET /join/:roomCode` opens the phone join flow.
 
 The production server should serve `client/dist` as its static directory so the copied `sw.js`, `manifest.webmanifest`, and hashed assets are all available from the same origin. The service worker caches the app shell and built assets for browser/PWA resilience, but intentionally bypasses `/api/*` and `/ws` so live game state and WebSocket traffic stay network-first.
 
 GitHub Actions runs Rust formatting, clippy, Rust tests, client typecheck, Vitest, client build, and Playwright on pull requests and pushes to `main`.
+
+For Railway release verification, confirm the deployed health response reports the expected merged commit and then run the browser flow against the public service:
+
+```bash
+curl https://drawparty.up.railway.app/api/health
+E2E_BASE_URL=https://drawparty.up.railway.app npm run e2e
+```
 
 ## License
 
