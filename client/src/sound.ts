@@ -1,10 +1,32 @@
 type CueName = 'join' | 'phase' | 'submit' | 'results';
 
-const CUE_FREQUENCIES: Record<CueName, [number, number]> = {
-  join: [523, 659],
-  phase: [392, 784],
-  submit: [659, 880],
-  results: [587, 988]
+interface CueStep {
+  frequency: number;
+  offset: number;
+  duration: number;
+  gain: number;
+  type: OscillatorType;
+}
+
+const CUE_PATTERNS: Record<CueName, CueStep[]> = {
+  join: [
+    { frequency: 523, offset: 0, duration: 0.13, gain: 0.045, type: 'sine' },
+    { frequency: 659, offset: 0.07, duration: 0.16, gain: 0.05, type: 'triangle' },
+    { frequency: 784, offset: 0.15, duration: 0.18, gain: 0.04, type: 'sine' }
+  ],
+  phase: [
+    { frequency: 392, offset: 0, duration: 0.15, gain: 0.04, type: 'triangle' },
+    { frequency: 784, offset: 0.08, duration: 0.18, gain: 0.05, type: 'triangle' }
+  ],
+  submit: [
+    { frequency: 659, offset: 0, duration: 0.1, gain: 0.04, type: 'sine' },
+    { frequency: 880, offset: 0.05, duration: 0.14, gain: 0.045, type: 'sine' }
+  ],
+  results: [
+    { frequency: 587, offset: 0, duration: 0.16, gain: 0.045, type: 'triangle' },
+    { frequency: 740, offset: 0.08, duration: 0.18, gain: 0.05, type: 'triangle' },
+    { frequency: 988, offset: 0.18, duration: 0.28, gain: 0.045, type: 'sine' }
+  ]
 };
 
 let audioContext: AudioContext | null = null;
@@ -31,16 +53,17 @@ export function playCue(name: CueName): void {
   const context = audioContext;
   void context.resume();
   const start = context.currentTime;
-  CUE_FREQUENCIES[name].forEach((frequency, index) => {
+  CUE_PATTERNS[name].forEach((step) => {
     const oscillator = context.createOscillator();
     const gain = context.createGain();
-    oscillator.type = 'sine';
-    oscillator.frequency.value = frequency;
-    gain.gain.setValueAtTime(0, start + index * 0.06);
-    gain.gain.linearRampToValueAtTime(0.05, start + index * 0.06 + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.001, start + index * 0.06 + 0.15);
+    const noteStart = start + step.offset;
+    oscillator.type = step.type;
+    oscillator.frequency.value = step.frequency;
+    gain.gain.setValueAtTime(0, noteStart);
+    gain.gain.linearRampToValueAtTime(step.gain, noteStart + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.001, noteStart + step.duration);
     oscillator.connect(gain).connect(context.destination);
-    oscillator.start(start + index * 0.06);
-    oscillator.stop(start + index * 0.06 + 0.16);
+    oscillator.start(noteStart);
+    oscillator.stop(noteStart + step.duration + 0.02);
   });
 }

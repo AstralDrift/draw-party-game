@@ -15,7 +15,7 @@ import {
 } from './protocol';
 import { playCue, setSoundEnabled, soundEnabled } from './sound';
 import { viewKeyFor } from './store';
-import { formatDeadline, syncServerClock } from './time';
+import { formatDeadline, nowMs, syncServerClock } from './time';
 
 const appRoot = document.querySelector<HTMLDivElement>('#app');
 if (!appRoot) {
@@ -210,7 +210,7 @@ function renderDisplay(): HTMLElement {
   }
 
   const content = document.createElement('div');
-  content.className = 'display-grid';
+  content.className = `display-grid display-grid-${snapshot.phase}`;
 
   if (snapshot.phase === 'lobby') {
     content.append(renderRoomPanel(), renderLobbySidePanel());
@@ -238,7 +238,7 @@ function renderPlayer(): HTMLElement {
   }
 
   if (snapshot.phase === 'lobby') {
-    return shell('Lobby', renderPlayersPanel(false));
+    return shell('Lobby', el('div', { class: 'player-stack' }, renderPlayersPanel(false)));
   }
   if (snapshot.phase === 'drawing') {
     return shell('Draw', renderDrawingTurn());
@@ -261,7 +261,7 @@ function renderJoin(): HTMLElement {
       'Join Game',
       el(
         'section',
-        { class: 'panel narrow waiting-panel' },
+        { class: 'panel narrow waiting-panel join-card' },
         el('p', { class: 'eyebrow' }, pendingJoin.roomCode),
         el('h2', {}, 'Joining room'),
         el('p', { class: 'muted' }, status === 'Connected' ? 'Waiting for the TV to confirm your spot.' : 'Reconnecting to the room.'),
@@ -329,7 +329,8 @@ function renderJoin(): HTMLElement {
     'Join Game',
     el(
       'section',
-      { class: 'panel narrow' },
+      { class: 'panel narrow join-card' },
+      el('p', { class: 'eyebrow' }, initialRoomCode ? 'Room found' : 'Phone controller'),
       el('label', { class: 'label' }, 'Room code'),
       roomInput,
       el('label', { class: 'label' }, 'Name'),
@@ -362,11 +363,11 @@ function renderRoomPanel(): HTMLElement {
   return el(
     'section',
     { class: 'panel room-panel' },
-    el('p', { class: 'eyebrow' }, 'Room Code'),
-    el('div', { class: 'room-code' }, snapshot.roomCode),
-    qrCanvas,
+    el('div', { class: 'room-hero-copy' }, el('p', { class: 'eyebrow' }, 'Scan to play'), el('h2', {}, 'Everybody draws. Everybody guesses.')),
+    el('div', { class: 'room-code-wrap' }, el('span', { class: 'room-code-label' }, 'Room Code'), el('div', { class: 'room-code' }, snapshot.roomCode)),
+    el('div', { class: 'qr-stage' }, qrCanvas),
     el('p', { class: 'join-url' }, joinUrl),
-    button('Start Game', 'primary wide start-button', () => send({ type: 'startGame' }), !canStart),
+    button('Start Game', 'primary wide start-button spotlight-button', () => send({ type: 'startGame' }), !canStart),
     el(
       'p',
       { class: canStart ? 'start-note ready' : 'start-note' },
@@ -393,12 +394,12 @@ function renderPlayersPanel(showScores: boolean): HTMLElement {
 
 function renderPlayerList(showScores: boolean): HTMLElement {
   const list = el('div', { class: 'player-list' });
-  for (const player of snapshot?.players ?? []) {
+  for (const [index, player] of (snapshot?.players ?? []).entries()) {
     list.appendChild(
       el(
         'div',
-        { class: `player-row ${player.connected ? '' : 'offline'}` },
-        el('span', {}, player.name),
+        { class: `player-row ${player.connected ? 'online' : 'offline'}`, style: `--row-index:${index}` },
+        el('span', { class: 'player-name' }, player.name),
         el('span', { class: 'pill' }, showScores ? `${player.score} pts` : player.connected ? 'online' : 'offline')
       )
     );
@@ -441,6 +442,7 @@ function renderSettingsPanel(): HTMLElement {
     'section',
     { class: 'panel settings-panel' },
     el('div', { class: 'panel-title' }, 'Room Settings'),
+    el('p', { class: 'muted panel-subtitle' }, 'Keep it quick for a loud room.'),
     el('label', { class: 'label' }, 'Rounds'),
     rounds,
     el('label', { class: 'label' }, 'Drawing seconds'),
@@ -502,6 +504,7 @@ function renderDrawingTurn(): HTMLElement {
   return el(
     'section',
     { class: 'panel play-panel' },
+    el('p', { class: 'eyebrow' }, `Round ${snapshot.currentRound} of ${snapshot.totalRounds}`),
     el('div', { class: 'prompt', id: 'prompt-text' }, prompt ? `Draw: ${prompt}` : 'Waiting for prompt...'),
     el('div', { class: 'deadline', id: 'deadline-text' }),
     renderReconnectHint(submitted ? 'Your drawing is already submitted.' : 'Keep drawing. If your phone reconnects, this screen will return.'),
@@ -612,12 +615,12 @@ function renderVotingOptions(options: VotingOption[], interactive: boolean, subm
   if (!interactive) {
     container.appendChild(el('div', { class: 'panel-title' }, 'Options'));
   }
-  for (const option of options) {
+  for (const [index, option] of options.entries()) {
     const ownGuess = option.authorPlayerId === clientId;
     const disabled = submitted || ownGuess;
     const voteButton = el(
       'button',
-      { class: disabled ? 'vote-option disabled' : 'vote-option', disabled: !interactive || disabled },
+      { class: disabled ? 'vote-option disabled' : 'vote-option', disabled: !interactive || disabled, style: `--row-index:${index}` },
       el('span', { class: 'vote-answer' }, option.text),
       interactive && ownGuess ? el('span', { class: 'vote-reason' }, 'Your fake answer') : null,
       interactive && submitted && !ownGuess ? el('span', { class: 'vote-reason' }, 'Vote submitted') : null
@@ -636,6 +639,8 @@ function renderVotingOptions(options: VotingOption[], interactive: boolean, subm
 function renderProgressPanel(label: string, submittedIds: string[]): HTMLElement {
   const activePlayers = snapshot?.players.filter((player) => player.connected) ?? [];
   const activeSubmittedIds = submittedIds.filter((playerId) => activePlayers.some((player) => player.id === playerId));
+  const total = Math.max(1, activePlayers.length);
+  const progress = Math.round((activeSubmittedIds.length / total) * 100);
   const waitingNames = activePlayers
     .filter((player) => !submittedIds.includes(player.id))
     .map((player) => player.name);
@@ -643,7 +648,12 @@ function renderProgressPanel(label: string, submittedIds: string[]): HTMLElement
     'section',
     { class: 'panel progress-panel' },
     el('div', { class: 'panel-title' }, label),
-    el('div', { class: 'big-count' }, `${activeSubmittedIds.length}/${activePlayers.length}`),
+    el(
+      'div',
+      { class: 'progress-hero' },
+      el('div', { class: 'big-count' }, `${activeSubmittedIds.length}/${activePlayers.length}`),
+      el('div', { class: 'progress-ring', style: `--progress:${progress}%` }, el('span', {}, `${progress}%`))
+    ),
     el(
       'p',
       { class: 'muted' },
@@ -679,6 +689,7 @@ function renderResults(result: RoundResult | null | undefined, includeDrawing: b
   return el(
     'section',
     { class: 'panel results-panel' },
+    includeDrawing ? renderConfetti('result') : null,
     el('p', { class: 'eyebrow' }, `Drawing by ${result.artistName}`),
     el('h2', {}, 'The real prompt was'),
     el('div', { class: 'prompt' }, result.correctAnswer),
@@ -723,6 +734,7 @@ function renderScores(scores: ScoreEntry[], podium: boolean): HTMLElement {
   return el(
     'section',
     { class: 'panel scores-panel' },
+    podium ? renderConfetti('final') : null,
     el('div', { class: 'panel-title' }, podium ? 'Final Podium' : 'Scores'),
     podium
       ? el(
@@ -754,8 +766,9 @@ function renderAdvancePanel(): HTMLElement {
   const final = snapshot?.phase === 'finalScores';
   return el(
     'section',
-    { class: 'panel' },
-    button(final ? 'Play Again' : 'Continue', 'primary wide', () => send({ type: 'startGame' }))
+    { class: 'panel advance-panel' },
+    el('p', { class: 'eyebrow' }, final ? 'Encore?' : 'Next reveal'),
+    button(final ? 'Play Again' : 'Continue', 'primary wide spotlight-button', () => send({ type: 'startGame' }))
   );
 }
 
@@ -765,7 +778,8 @@ function heroPanel(title: string, subtitle: string): HTMLElement {
     { class: 'panel hero-panel' },
     el('p', { class: 'eyebrow' }, subtitle),
     el('h2', {}, title),
-    el('div', { class: 'deadline', id: 'deadline-text' })
+    el('div', { class: 'deadline', id: 'deadline-text' }),
+    el('p', { class: 'muted hero-hint' }, phaseHint(snapshot?.phase))
   );
 }
 
@@ -773,9 +787,11 @@ function shell(title: string, child: HTMLElement): HTMLElement {
   const waitingToJoin = role === 'player' && !pendingJoin && !snapshot;
   const reconnecting = !waitingToJoin && status !== 'Connected' && status !== 'Disconnected';
   const connectionText = displayStatusText();
+  const phaseClass = snapshot ? `phase-${snapshot.phase}` : role === 'player' ? 'phase-join' : 'phase-loading';
   return el(
     'main',
-    { class: `app-shell ${role}` },
+    { class: `app-shell ${role} ${phaseClass}` },
+    renderBackdrop(),
     el(
       'header',
       { class: 'topbar' },
@@ -785,6 +801,40 @@ function shell(title: string, child: HTMLElement): HTMLElement {
     reconnecting ? el('div', { class: 'connection-banner' }, status) : null,
     errorMessage ? el('div', { class: 'error', role: 'alert' }, errorMessage) : null,
     child
+  );
+}
+
+function phaseHint(phase: RoomSnapshot['phase'] | undefined): string {
+  switch (phase) {
+    case 'drawing':
+      return 'Phones are the controllers. The TV keeps the room moving.';
+    case 'guessing':
+      return 'Write the best fake answer on your phone.';
+    case 'voting':
+      return 'Find the real prompt before everyone else does.';
+    default:
+      return '';
+  }
+}
+
+function renderBackdrop(): HTMLElement {
+  return el(
+    'div',
+    { class: 'backdrop-art', 'aria-hidden': 'true' },
+    el('span', { class: 'backdrop-brush brush-one' }),
+    el('span', { class: 'backdrop-brush brush-two' }),
+    el('span', { class: 'backdrop-mark mark-one' }),
+    el('span', { class: 'backdrop-mark mark-two' })
+  );
+}
+
+function renderConfetti(variant: 'result' | 'final'): HTMLElement {
+  return el(
+    'div',
+    { class: `confetti confetti-${variant}`, 'aria-hidden': 'true' },
+    ...Array.from({ length: variant === 'final' ? 18 : 12 }, (_, index) =>
+      el('span', { style: `--piece:${index}; --delay:${(index % 6) * 70}ms` })
+    )
   );
 }
 
@@ -820,12 +870,15 @@ function updateDeadlineText(): void {
   if (!snapshot?.deadlineMs) {
     nodes.forEach((node) => {
       node.textContent = '';
+      node.classList.remove('deadline-warn');
     });
     return;
   }
   const label = formatDeadline(snapshot);
+  const remaining = Math.max(0, snapshot.deadlineMs - nowMs());
   nodes.forEach((node) => {
     node.textContent = label;
+    node.classList.toggle('deadline-warn', remaining <= 10_000);
   });
 }
 

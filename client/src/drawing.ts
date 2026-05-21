@@ -62,10 +62,14 @@ export class DrawingPad {
     this.canvas.className = 'draw-canvas';
     this.canvas.width = CANVAS_WIDTH;
     this.canvas.height = CANVAS_HEIGHT;
+    this.canvas.setAttribute('aria-label', 'Drawing canvas');
+    this.canvas.tabIndex = 0;
     this.status = document.createElement('div');
     this.status.className = 'draw-status';
+    this.status.setAttribute('aria-live', 'polite');
     this.toolsSummary = document.createElement('summary');
     this.toolsSummary.className = 'tools-summary';
+    this.toolsSummary.setAttribute('aria-label', 'Open drawing tools');
 
     const toolbar = document.createElement('div');
     toolbar.className = 'draw-toolbar';
@@ -98,6 +102,7 @@ export class DrawingPad {
       sizeButton.type = 'button';
       sizeButton.className = 'tool-button';
       sizeButton.textContent = `${size}px`;
+      sizeButton.dataset.size = String(size);
       sizeButton.title = `Use ${size}px brush`;
       sizeButton.addEventListener('click', () => {
         this.size = size;
