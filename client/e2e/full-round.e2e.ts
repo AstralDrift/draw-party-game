@@ -59,7 +59,11 @@ test('one TV and three phones complete a full drawing round', async ({ baseURL, 
       }
 
       await expect(tv.getByText('The real prompt was')).toBeVisible();
+      await expect(tv.locator('.round-outcome')).toHaveText(/found it|No one found it/);
       await expect(tv.locator('.breakdown-row')).toHaveCount(3);
+      await expect(tv.locator('.breakdown-kind', { hasText: 'Correct answer' })).toHaveCount(1);
+      await expect(tv.locator('.breakdown-kind', { hasText: /Fake answer by/ })).toHaveCount(2);
+      await expect(tv.locator('.chip-label').first()).toHaveText('Voted by');
 
       for (const player of players) {
         await expect(player.page.getByText('The real prompt was')).toBeVisible();
@@ -104,6 +108,7 @@ async function createPlayers(
     await page.getByPlaceholder('Your name').fill(name);
     await page.getByRole('button', { name: 'Join' }).click();
     await expect(page.locator('.app-shell.player .brand')).toHaveText('Lobby');
+    await expect(page.getByText(`${name}, you're in`)).toBeVisible();
     players.push({ name, page });
   }
   return players;

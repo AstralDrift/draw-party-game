@@ -3,6 +3,7 @@ import './style.css';
 import { button, clear, el } from './dom';
 import { DrawingPad, renderDrawing } from './drawing';
 import { GameSocket } from './net';
+import { finalWinnerText, roundOutcomeText } from './polish';
 import {
   defaultRoomSettings,
   phaseLabel,
@@ -15,7 +16,7 @@ import {
 } from './protocol';
 import { playCue, setSoundEnabled, soundEnabled } from './sound';
 import { viewKeyFor } from './store';
-import { formatDeadline, syncServerClock } from './time';
+import { formatDeadline, nowMs, syncServerClock } from './time';
 
 const appRoot = document.querySelector<HTMLDivElement>('#app');
 if (!appRoot) {
@@ -41,6 +42,7 @@ let drawingPad: DrawingPad | null = null;
 let reconnectTimer = 0;
 let lastPhase = '';
 let lastPlayerCount = 0;
+let selectedVote: { turnToken: number; optionId: string } | null = null;
 
 function connect(roomCode?: string): void {
   socket?.close();
@@ -170,6 +172,9 @@ function handleServerMessage(message: ServerMessage): void {
 
 function applySnapshot(nextSnapshot: RoomSnapshot): void {
   syncServerClock(nextSnapshot);
+  if (nextSnapshot.phase !== 'voting' || selectedVote?.turnToken !== nextSnapshot.turnToken) {
+    selectedVote = null;
+  }
   if (lastPhase && lastPhase !== nextSnapshot.phase) {
     playCue(nextSnapshot.phase === 'results' ? 'results' : 'phase');
   }
@@ -191,7 +196,8 @@ function render(): void {
       pendingRoomCode: pendingJoin?.roomCode,
       snapshot
     }),
-    errorMessage
+    errorMessage,
+    selectedVote ? `vote:${selectedVote.turnToken}:${selectedVote.optionId}` : ''
   ].join(';error:');
   if (key === viewKey) {
     updateDynamicText();
@@ -238,7 +244,7 @@ function renderPlayer(): HTMLElement {
   }
 
   if (snapshot.phase === 'lobby') {
-    return shell('Lobby', renderPlayersPanel(false));
+    return shell('Lobby', renderPlayerLobby());
   }
   if (snapshot.phase === 'drawing') {
     return shell('Draw', renderDrawingTurn());
@@ -253,6 +259,22 @@ function renderPlayer(): HTMLElement {
     return shell('Results', renderResults(snapshot.roundResult, false));
   }
   return shell('Final Scores', renderScores(snapshot.finalScores, false));
+}
+
+function renderPlayerLobby(): HTMLElement {
+  const readyText = playerName ? `${playerName}, you're in` : "You're in";
+  return el(
+    'div',
+    { class: 'player-lobby-stack' },
+    el(
+      'section',
+      { class: 'panel ready-panel' },
+      el('p', { class: 'eyebrow' }, 'Ready'),
+      el('h2', {}, readyText),
+      el('p', { class: 'muted' }, 'Watch the TV. The host can start once enough phones are connected.')
+    ),
+    renderPlayersPanel(false)
+  );
 }
 
 function renderJoin(): HTMLElement {
@@ -483,7 +505,7 @@ function renderDrawingTurn(): HTMLElement {
 
   const submitted = snapshot.drawingSubmittedIds.includes(clientId);
   const turnToken = snapshot.turnToken;
-  const submitButton = button('Submit Drawing', 'primary wide', () => {
+  const submitButton = button('Draw before submitting', 'primary wide', () => {
     if (!drawingPad?.hasInk()) {
       errorMessage = 'Draw at least one stroke before submitting.';
       render();
@@ -494,10 +516,15 @@ function renderDrawingTurn(): HTMLElement {
   }, submitted);
 
   const submitDock = el('div', { class: 'submit-dock' }, submitButton);
+  const updateSubmitButton = () => {
+    const hasInk = Boolean(drawingPad?.hasInk());
+    submitButton.disabled = submitted || !hasInk;
+    submitButton.textContent = hasInk ? 'Submit Drawing' : 'Draw before submitting';
+  };
   drawingPad = new DrawingPad(() => {
-    submitButton.disabled = !drawingPad?.hasInk();
+    updateSubmitButton();
   }, submitDock);
-  submitButton.disabled = submitted || !drawingPad.hasInk();
+  updateSubmitButton();
 
   return el(
     'section',
@@ -614,17 +641,27 @@ function renderVotingOptions(options: VotingOption[], interactive: boolean, subm
   }
   for (const option of options) {
     const ownGuess = option.authorPlayerId === clientId;
-    const disabled = submitted || ownGuess;
+    const selectedVoteForTurn = selectedVote?.turnToken === snapshot?.turnToken ? selectedVote : null;
+    const selected = selectedVoteForTurn?.optionId === option.id;
+    const waitingForVoteAck = Boolean(selectedVoteForTurn);
+    const disabled = submitted || ownGuess || waitingForVoteAck;
     const voteButton = el(
       'button',
-      { class: disabled ? 'vote-option disabled' : 'vote-option', disabled: !interactive || disabled },
+      {
+        class: `${disabled ? 'vote-option disabled' : 'vote-option'}${selected ? ' is-selected' : ''}`,
+        disabled: !interactive || disabled
+      },
       el('span', { class: 'vote-answer' }, option.text),
+      interactive && selected ? el('span', { class: 'vote-reason' }, 'Your vote') : null,
       interactive && ownGuess ? el('span', { class: 'vote-reason' }, 'Your fake answer') : null,
-      interactive && submitted && !ownGuess ? el('span', { class: 'vote-reason' }, 'Vote submitted') : null
+      interactive && submitted && !ownGuess && !selected ? el('span', { class: 'vote-reason' }, 'Vote submitted') : null
     );
     if (interactive && !disabled) {
       voteButton.addEventListener('click', () => {
-        send({ type: 'submitVote', turnToken: snapshot?.turnToken ?? 0, optionId: option.id });
+        const turnToken = snapshot?.turnToken ?? 0;
+        selectedVote = { turnToken, optionId: option.id };
+        render();
+        send({ type: 'submitVote', turnToken, optionId: option.id });
         playCue('submit');
       });
     }
@@ -664,8 +701,12 @@ function renderResults(result: RoundResult | null | undefined, includeDrawing: b
       el(
         'div',
         { class: `breakdown-row ${item.isCorrect ? 'correct' : ''}` },
+        el(
+          'div',
+          { class: 'breakdown-kind' },
+          item.isCorrect ? 'Correct answer' : item.authorName ? `Fake answer by ${item.authorName}` : 'Fake answer'
+        ),
         el('div', { class: 'breakdown-answer' }, item.optionText),
-        item.authorName ? el('div', { class: 'muted' }, `By ${item.authorName}`) : null,
         renderVoterChips(item.voterNames)
       )
     );
@@ -680,6 +721,7 @@ function renderResults(result: RoundResult | null | undefined, includeDrawing: b
     'section',
     { class: 'panel results-panel' },
     el('p', { class: 'eyebrow' }, `Drawing by ${result.artistName}`),
+    el('div', { class: 'round-outcome' }, roundOutcomeText(result)),
     el('h2', {}, 'The real prompt was'),
     el('div', { class: 'prompt' }, result.correctAnswer),
     includeDrawing ? canvas : null,
@@ -692,7 +734,12 @@ function renderVoterChips(names: string[]): HTMLElement {
   if (names.length === 0) {
     return el('div', { class: 'muted' }, 'No votes');
   }
-  return el('div', { class: 'chip-row' }, ...names.map((name) => el('span', { class: 'pill vote-chip' }, name)));
+  return el(
+    'div',
+    { class: 'chip-row' },
+    el('span', { class: 'chip-label' }, 'Voted by'),
+    ...names.map((name) => el('span', { class: 'pill vote-chip' }, name))
+  );
 }
 
 function renderScoreDeltas(deltas: RoundResult['scoreDeltas']): HTMLElement | null {
@@ -724,6 +771,7 @@ function renderScores(scores: ScoreEntry[], podium: boolean): HTMLElement {
     'section',
     { class: 'panel scores-panel' },
     el('div', { class: 'panel-title' }, podium ? 'Final Podium' : 'Scores'),
+    el('div', { class: 'winner-callout' }, finalWinnerText(scores)),
     podium
       ? el(
           'div',
@@ -775,7 +823,7 @@ function shell(title: string, child: HTMLElement): HTMLElement {
   const connectionText = displayStatusText();
   return el(
     'main',
-    { class: `app-shell ${role}` },
+    { class: `app-shell ${role} ${shellPhaseClass()}` },
     el(
       'header',
       { class: 'topbar' },
@@ -820,13 +868,28 @@ function updateDeadlineText(): void {
   if (!snapshot?.deadlineMs) {
     nodes.forEach((node) => {
       node.textContent = '';
+      node.classList.remove('is-urgent');
     });
     return;
   }
   const label = formatDeadline(snapshot);
+  const urgent = Math.max(0, snapshot.deadlineMs - nowMs()) <= 10_000;
   nodes.forEach((node) => {
     node.textContent = label;
+    node.classList.toggle('is-urgent', urgent);
   });
+}
+
+function shellPhaseClass(): string {
+  if (!snapshot) {
+    return role === 'player' && !pendingJoin ? 'phase-join' : 'phase-connecting';
+  }
+  switch (snapshot.phase) {
+    case 'finalScores':
+      return 'phase-final-scores';
+    default:
+      return `phase-${snapshot.phase}`;
+  }
 }
 
 function getStoredValue(key: string, fallback: () => string): string {
