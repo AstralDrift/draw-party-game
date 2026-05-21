@@ -1,0 +1,20 @@
+{
+  "name": "Draw Party",
+  "short_name": "Draw Party",
+  "description": "Open-source TV and phone drawing party game.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#10131f",
+  "theme_color": "#10131f",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
