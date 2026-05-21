@@ -4,10 +4,23 @@ pub const CANVAS_WIDTH: u16 = 1024;
 pub const CANVAS_HEIGHT: u16 = 768;
 pub const MAX_PLAYERS: usize = 8;
 pub const MIN_PLAYERS: usize = 2;
-pub const TOTAL_ROUNDS: u8 = 5;
-pub const DRAW_SECONDS: u64 = 90;
-pub const GUESS_SECONDS: u64 = 45;
-pub const VOTE_SECONDS: u64 = 30;
+pub const DEFAULT_TOTAL_ROUNDS: u8 = 5;
+pub const TOTAL_ROUNDS: u8 = DEFAULT_TOTAL_ROUNDS;
+pub const MIN_ROUNDS: u8 = 1;
+pub const MAX_ROUNDS: u8 = 12;
+pub const DEFAULT_DRAW_SECONDS: u64 = 90;
+pub const DRAW_SECONDS: u64 = DEFAULT_DRAW_SECONDS;
+pub const MIN_DRAW_SECONDS: u64 = 15;
+pub const MAX_DRAW_SECONDS: u64 = 300;
+pub const DEFAULT_GUESS_SECONDS: u64 = 45;
+pub const GUESS_SECONDS: u64 = DEFAULT_GUESS_SECONDS;
+pub const MIN_GUESS_SECONDS: u64 = 10;
+pub const MAX_GUESS_SECONDS: u64 = 180;
+pub const DEFAULT_VOTE_SECONDS: u64 = 30;
+pub const VOTE_SECONDS: u64 = DEFAULT_VOTE_SECONDS;
+pub const MIN_VOTE_SECONDS: u64 = 10;
+pub const MAX_VOTE_SECONDS: u64 = 120;
+pub const DEFAULT_PROMPT_PACK_ID: &str = "safe-party";
 pub const ROOM_TTL_MS: u64 = 3 * 60 * 60 * 1000;
 pub const MAX_STROKES: usize = 220;
 pub const MAX_POINTS_PER_STROKE: usize = 180;
@@ -30,6 +43,28 @@ pub enum GamePhase {
     Voting,
     Results,
     FinalScores,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomSettings {
+    pub rounds: u8,
+    pub draw_seconds: u64,
+    pub guess_seconds: u64,
+    pub vote_seconds: u64,
+    pub prompt_pack_id: String,
+}
+
+impl Default for RoomSettings {
+    fn default() -> Self {
+        Self {
+            rounds: DEFAULT_TOTAL_ROUNDS,
+            draw_seconds: DEFAULT_DRAW_SECONDS,
+            guess_seconds: DEFAULT_GUESS_SECONDS,
+            vote_seconds: DEFAULT_VOTE_SECONDS,
+            prompt_pack_id: DEFAULT_PROMPT_PACK_ID.to_string(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -85,12 +120,21 @@ pub struct VoteBreakdown {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct ScoreDelta {
+    pub player_id: String,
+    pub name: String,
+    pub delta: i32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct RoundResult {
     pub artist_id: String,
     pub artist_name: String,
     pub correct_answer: String,
     pub correct_voter_names: Vec<String>,
     pub breakdown: Vec<VoteBreakdown>,
+    pub score_deltas: Vec<ScoreDelta>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -109,6 +153,8 @@ pub struct RoomSnapshot {
     pub players: Vec<PlayerPublic>,
     pub min_players: usize,
     pub max_players: usize,
+    pub settings: RoomSettings,
+    pub server_now_ms: u64,
     pub current_round: u8,
     pub total_rounds: u8,
     pub turn_token: u64,
@@ -138,6 +184,9 @@ pub enum ClientMessage {
     },
     SetName {
         name: String,
+    },
+    UpdateRoomSettings {
+        settings: RoomSettings,
     },
     StartGame,
     SubmitDrawing {

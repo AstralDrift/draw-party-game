@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Install client dependencies
+        run: npm --prefix client ci
+
+      - name: Check Rust formatting
+        run: cargo fmt --check --manifest-path server/Cargo.toml
+
+      - name: Lint Rust
+        run: cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings
+
+      - name: Test Rust
+        run: cargo test --manifest-path server/Cargo.toml
+
+      - name: Typecheck client
+        run: npm --prefix client run typecheck
+
+      - name: Test client
+        run: npm --prefix client test -- --run
+
+      - name: Build client
+        run: npm --prefix client run build
+
+      - name: Install Playwright browser
+        run: npm --prefix client exec -- playwright install --with-deps chromium
+
+      - name: Build server for e2e
+        run: cargo build --manifest-path server/Cargo.toml
+
+      - name: Run Playwright e2e
+        run: npm run e2e

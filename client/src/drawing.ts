@@ -2,6 +2,16 @@ import { CANVAS_HEIGHT, CANVAS_WIDTH, type DrawingDoc, type Point, type Stroke }
 
 const COLORS = ['#111111', '#ff595e', '#ffca3a', '#34d399', '#1982c4', '#6a4c93', '#f957a8', '#ffffff'];
 const SIZES = [3, 6, 10, 16];
+const COLOR_LABELS: Record<string, string> = {
+  '#111111': 'black ink',
+  '#ff595e': 'red ink',
+  '#ffca3a': 'yellow ink',
+  '#34d399': 'green ink',
+  '#1982c4': 'blue ink',
+  '#6a4c93': 'purple ink',
+  '#f957a8': 'pink ink',
+  '#ffffff': 'eraser'
+};
 
 export function createEmptyDrawing(): DrawingDoc {
   return {
@@ -39,6 +49,8 @@ export class DrawingPad {
   private size = SIZES[1];
   private currentStroke: Stroke | null = null;
   private readonly onChange: () => void;
+  private readonly colorButtons = new Map<string, HTMLButtonElement>();
+  private readonly sizeButtons = new Map<number, HTMLButtonElement>();
 
   constructor(onChange: () => void) {
     this.onChange = onChange;
@@ -53,43 +65,58 @@ export class DrawingPad {
     toolbar.className = 'draw-toolbar';
     for (const color of COLORS) {
       const swatch = document.createElement('button');
+      swatch.type = 'button';
       swatch.className = 'swatch';
       swatch.style.background = color;
-      swatch.title = color === '#ffffff' ? 'Eraser' : color;
+      swatch.title = `Use ${COLOR_LABELS[color] ?? color}`;
+      swatch.setAttribute('aria-label', swatch.title);
       swatch.addEventListener('click', () => {
         this.color = color;
         this.updateStatus();
       });
+      this.colorButtons.set(color, swatch);
       toolbar.appendChild(swatch);
     }
     for (const size of SIZES) {
       const sizeButton = document.createElement('button');
+      sizeButton.type = 'button';
       sizeButton.className = 'tool-button';
       sizeButton.textContent = `${size}px`;
+      sizeButton.title = `Use ${size}px brush`;
       sizeButton.addEventListener('click', () => {
         this.size = size;
         this.updateStatus();
       });
+      this.sizeButtons.set(size, sizeButton);
       toolbar.appendChild(sizeButton);
     }
 
     const undo = document.createElement('button');
+    undo.type = 'button';
     undo.className = 'tool-button';
     undo.textContent = 'Undo';
+    undo.title = 'Undo last stroke';
     undo.addEventListener('click', () => {
       this.drawing.strokes.pop();
       this.redraw();
       this.onChange();
+      this.updateStatus();
     });
     toolbar.appendChild(undo);
 
     const clear = document.createElement('button');
+    clear.type = 'button';
     clear.className = 'tool-button danger';
     clear.textContent = 'Clear';
+    clear.title = 'Clear drawing';
     clear.addEventListener('click', () => {
+      if (!this.hasInk() || !window.confirm('Clear your drawing?')) {
+        return;
+      }
       this.drawing.strokes.length = 0;
       this.redraw();
       this.onChange();
+      this.updateStatus();
     });
     toolbar.appendChild(clear);
 
@@ -175,8 +202,24 @@ export class DrawingPad {
   }
 
   private updateStatus(): void {
-    const colorLabel = this.color === '#ffffff' ? 'eraser' : this.color;
+    const colorLabel = COLOR_LABELS[this.color] ?? this.color;
     this.status.textContent = `${this.drawing.strokes.length} strokes · ${colorLabel} · ${this.size}px`;
+    this.updateToolState();
+  }
+
+  private updateToolState(): void {
+    for (const [color, button] of this.colorButtons) {
+      const selected = color === this.color;
+      button.classList.toggle('is-selected', selected);
+      button.setAttribute('aria-pressed', String(selected));
+      button.title = `${selected ? 'Selected' : 'Use'} ${COLOR_LABELS[color] ?? color}`;
+    }
+    for (const [size, button] of this.sizeButtons) {
+      const selected = size === this.size;
+      button.classList.toggle('is-selected', selected);
+      button.setAttribute('aria-pressed', String(selected));
+      button.title = `${selected ? 'Selected' : 'Use'} ${size}px brush`;
+    }
   }
 }
 
@@ -213,5 +256,6 @@ function clamp(value: number, min: number, max: number): number {
 export const drawingTestExports = {
   COLORS,
   SIZES,
+  COLOR_LABELS,
   clamp
 };

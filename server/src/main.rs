@@ -1,15 +1,20 @@
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Query, State,
+        Query, Request, State,
     },
+    http::{
+        header::{HeaderValue, CACHE_CONTROL},
+        Uri,
+    },
+    middleware::{self, Next},
     response::Response,
     routing::get,
     Json, Router,
 };
 use draw_party_server::{
     engine::{generate_room_code, EngineError, EngineEvent, Room},
-    protocol::{ClientMessage, GamePhase, Role, RoomSnapshot, ServerMessage},
+    protocol::{ClientMessage, GamePhase, Role, RoomSettings, RoomSnapshot, ServerMessage},
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -95,6 +100,7 @@ async fn main() {
         .route("/api/health", get(health))
         .route("/ws", get(ws_handler))
         .fallback_service(static_service)
+        .layer(middleware::from_fn(cache_headers))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
@@ -141,6 +147,31 @@ async fn health() -> Json<HealthResponse> {
     })
 }
 
+async fn cache_headers(request: Request, next: Next) -> Response {
+    let uri = request.uri().clone();
+    let mut response = next.run(request).await;
+    if let Some(value) = cache_control_for(&uri) {
+        response.headers_mut().insert(CACHE_CONTROL, value);
+    }
+    response
+}
+
+fn cache_control_for(uri: &Uri) -> Option<HeaderValue> {
+    let path = uri.path();
+    if path.starts_with("/api/") || path.starts_with("/ws") {
+        return Some(HeaderValue::from_static("no-store"));
+    }
+    if path == "/" || path == "/index.html" || path == "/sw.js" || path.starts_with("/join/") {
+        return Some(HeaderValue::from_static("no-cache"));
+    }
+    if path.starts_with("/assets/") {
+        return Some(HeaderValue::from_static(
+            "public, max-age=31536000, immutable",
+        ));
+    }
+    None
+}
+
 async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
@@ -170,11 +201,12 @@ async fn handle_socket(socket: WebSocket, state: AppState, query: WsQuery) {
 
         if let Some(room_code) = &query.room {
             let room_code = room_code.to_uppercase();
+            let now = now_ms();
             let snapshot = if let Some(room) = inner.rooms.get_mut(&room_code) {
                 if query.role == Role::Display {
-                    room.add_display(client_id.clone(), now_ms());
+                    room.add_display(client_id.clone(), now);
                 }
-                Some(room.snapshot())
+                Some(room.snapshot(now))
             } else {
                 queue_error_for_connection(
                     &inner,
@@ -259,6 +291,9 @@ async fn handle_client_message(state: &AppState, client_id: &str, message: Clien
             join_room(state, client_id, room_code, name).await
         }
         ClientMessage::SetName { name } => set_name(state, client_id, name).await,
+        ClientMessage::UpdateRoomSettings { settings } => {
+            update_room_settings(state, client_id, settings).await
+        }
         ClientMessage::StartGame => start_or_advance(state, client_id).await,
         ClientMessage::SubmitDrawing {
             turn_token,
@@ -318,6 +353,30 @@ async fn set_name(state: &AppState, client_id: &str, name: String) {
     mutate_current_room(state, client_id, |room| {
         room.set_name(client_id, name, now_ms())?;
         Ok(EngineEvent::PlayerListChanged)
+    })
+    .await;
+}
+
+async fn update_room_settings(state: &AppState, client_id: &str, settings: RoomSettings) {
+    let is_display = {
+        let inner = state.inner.lock().await;
+        matches!(
+            inner.connections.get(client_id).map(|conn| &conn.role),
+            Some(Role::Display)
+        )
+    };
+    if !is_display {
+        send_error(
+            state,
+            client_id,
+            "display_only",
+            "Only the TV display can change room settings.",
+        )
+        .await;
+        return;
+    }
+    mutate_current_room(state, client_id, |room| {
+        room.update_settings(settings, now_ms())
     })
     .await;
 }
@@ -499,7 +558,7 @@ fn room_messages(
     let Some(room) = inner.rooms.get(room_code) else {
         return Vec::new();
     };
-    let base_snapshot = room.snapshot();
+    let base_snapshot = room.snapshot(now_ms());
 
     let mut messages = Vec::new();
     for (client_id, conn) in &inner.connections {
@@ -666,4 +725,173 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures_util::{SinkExt, StreamExt};
+    use serde_json::{json, Value};
+    use tokio::net::TcpStream;
+    use tokio_tungstenite::{
+        connect_async, tungstenite::Message as WsMessage, MaybeTlsStream, WebSocketStream,
+    };
+
+    type TestSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
+    async fn spawn_ws_server() -> String {
+        let state = AppState {
+            inner: Arc::new(Mutex::new(AppInner::default())),
+        };
+        let app = Router::new()
+            .route("/ws", get(ws_handler))
+            .with_state(state);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        format!("ws://{addr}/ws")
+    }
+
+    async fn read_json(ws: &mut TestSocket) -> Value {
+        loop {
+            let message = time::timeout(Duration::from_secs(1), ws.next())
+                .await
+                .expect("timed out waiting for websocket message")
+                .expect("websocket closed")
+                .expect("websocket error");
+            if let WsMessage::Text(text) = message {
+                return serde_json::from_str(&text).unwrap();
+            }
+        }
+    }
+
+    async fn read_until_type(ws: &mut TestSocket, message_type: &str) -> Value {
+        for _ in 0..10 {
+            let value = read_json(ws).await;
+            if value.get("type").and_then(Value::as_str) == Some(message_type) {
+                return value;
+            }
+        }
+        panic!("did not receive websocket message type {message_type}");
+    }
+
+    async fn read_until_settings_rounds(ws: &mut TestSocket, rounds: u64) -> Value {
+        for _ in 0..10 {
+            let value = read_json(ws).await;
+            let snapshot_rounds = value
+                .get("snapshot")
+                .and_then(|snapshot| snapshot.get("settings"))
+                .and_then(|settings| settings.get("rounds"))
+                .and_then(Value::as_u64);
+            if snapshot_rounds == Some(rounds) {
+                return value;
+            }
+        }
+        panic!("did not receive websocket snapshot with {rounds} rounds");
+    }
+
+    fn text_message(value: Value) -> WsMessage {
+        WsMessage::Text(value.to_string())
+    }
+
+    #[test]
+    fn cache_policy_matches_shell_assets_and_network_routes() {
+        assert_eq!(
+            cache_control_for(&Uri::from_static("/")).unwrap(),
+            HeaderValue::from_static("no-cache")
+        );
+        assert_eq!(
+            cache_control_for(&Uri::from_static("/sw.js")).unwrap(),
+            HeaderValue::from_static("no-cache")
+        );
+        assert_eq!(
+            cache_control_for(&Uri::from_static("/join/ABCD")).unwrap(),
+            HeaderValue::from_static("no-cache")
+        );
+        assert_eq!(
+            cache_control_for(&Uri::from_static("/api/health")).unwrap(),
+            HeaderValue::from_static("no-store")
+        );
+        assert_eq!(
+            cache_control_for(&Uri::from_static("/assets/index.js")).unwrap(),
+            HeaderValue::from_static("public, max-age=31536000, immutable")
+        );
+    }
+
+    #[tokio::test]
+    async fn websocket_display_updates_lobby_settings_and_players_are_rejected() {
+        let url = spawn_ws_server().await;
+        let (mut display, _) = connect_async(format!("{url}?role=display&clientId=display"))
+            .await
+            .unwrap();
+        display
+            .send(text_message(json!({ "type": "createRoom" })))
+            .await
+            .unwrap();
+
+        let created = read_until_type(&mut display, "phaseChanged").await;
+        let snapshot = created.get("snapshot").unwrap();
+        let room_code = snapshot.get("roomCode").and_then(Value::as_str).unwrap();
+        assert_eq!(
+            snapshot
+                .get("settings")
+                .and_then(|settings| settings.get("rounds"))
+                .and_then(Value::as_u64),
+            Some(5)
+        );
+        assert!(snapshot.get("serverNowMs").and_then(Value::as_u64).unwrap() > 0);
+
+        display
+            .send(text_message(json!({
+                "type": "updateRoomSettings",
+                "settings": {
+                    "rounds": 3,
+                    "drawSeconds": 30,
+                    "guessSeconds": 20,
+                    "voteSeconds": 15,
+                    "promptPackId": "safe-party"
+                }
+            })))
+            .await
+            .unwrap();
+        let updated = read_until_settings_rounds(&mut display, 3).await;
+        let settings = updated
+            .get("snapshot")
+            .and_then(|snapshot| snapshot.get("settings"))
+            .unwrap();
+        assert_eq!(
+            settings.get("drawSeconds").and_then(Value::as_u64),
+            Some(30)
+        );
+        assert_eq!(
+            settings.get("promptPackId").and_then(Value::as_str),
+            Some("safe-party")
+        );
+
+        let (mut player, _) =
+            connect_async(format!("{url}?role=player&room={room_code}&clientId=p1"))
+                .await
+                .unwrap();
+        let _ = read_until_type(&mut player, "roomSnapshot").await;
+        player
+            .send(text_message(json!({
+                "type": "updateRoomSettings",
+                "settings": {
+                    "rounds": 4,
+                    "drawSeconds": 30,
+                    "guessSeconds": 20,
+                    "voteSeconds": 15,
+                    "promptPackId": "safe-party"
+                }
+            })))
+            .await
+            .unwrap();
+        let error = read_until_type(&mut player, "error").await;
+        assert_eq!(
+            error.get("code").and_then(Value::as_str),
+            Some("display_only")
+        );
+    }
 }

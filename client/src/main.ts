@@ -3,7 +3,19 @@ import './style.css';
 import { button, clear, el } from './dom';
 import { DrawingPad, estimateDrawingBytes, renderDrawing } from './drawing';
 import { GameSocket } from './net';
-import { phaseLabel, type RoomSnapshot, type RoundResult, type ScoreEntry, type ServerMessage, type VotingOption } from './protocol';
+import {
+  defaultRoomSettings,
+  phaseLabel,
+  type RoomSettings,
+  type RoomSnapshot,
+  type RoundResult,
+  type ScoreEntry,
+  type ServerMessage,
+  type VotingOption
+} from './protocol';
+import { playCue, setSoundEnabled, soundEnabled } from './sound';
+import { viewKeyFor } from './store';
+import { formatDeadline, syncServerClock } from './time';
 
 const appRoot = document.querySelector<HTMLDivElement>('#app');
 if (!appRoot) {
@@ -26,6 +38,8 @@ let pendingJoin: { roomCode: string; name: string } | null = null;
 let viewKey = '';
 let drawingPad: DrawingPad | null = null;
 let reconnectTimer = 0;
+let lastPhase = '';
+let lastPlayerCount = 0;
 
 function connect(roomCode?: string): void {
   socket?.close();
@@ -80,6 +94,15 @@ function handleServerMessage(message: ServerMessage): void {
   switch (message.type) {
     case 'roomSnapshot':
     case 'phaseChanged':
+      syncServerClock(message.snapshot);
+      if (lastPhase && lastPhase !== message.snapshot.phase) {
+        playCue(message.snapshot.phase === 'results' ? 'results' : 'phase');
+      }
+      if (message.snapshot.players.length > lastPlayerCount) {
+        playCue('join');
+      }
+      lastPhase = message.snapshot.phase;
+      lastPlayerCount = message.snapshot.players.length;
       snapshot = message.snapshot;
       render();
       break;
@@ -89,6 +112,10 @@ function handleServerMessage(message: ServerMessage): void {
       break;
     case 'playerListChanged':
       if (snapshot) {
+        if (message.players.length > snapshot.players.length) {
+          playCue('join');
+        }
+        lastPlayerCount = message.players.length;
         snapshot = { ...snapshot, players: message.players };
       }
       render();
@@ -127,13 +154,22 @@ function handleServerMessage(message: ServerMessage): void {
       break;
     case 'error':
       errorMessage = message.message;
+      if (message.code === 'room_not_found') {
+        pendingJoin = null;
+      }
       render();
       break;
   }
 }
 
 function render(): void {
-  const key = getViewKey();
+  const key = viewKeyFor({
+    role,
+    clientId,
+    initialRoomCode,
+    pendingRoomCode: pendingJoin?.roomCode,
+    snapshot
+  });
   if (key === viewKey) {
     updateDynamicText();
     return;
@@ -145,44 +181,6 @@ function render(): void {
   updateDynamicText();
 }
 
-function getViewKey(): string {
-  if (!snapshot) {
-    return `${role}:join:${pendingJoin?.roomCode ?? initialRoomCode}`;
-  }
-
-  const base = `${role}:${snapshot.roomCode}:${snapshot.phase}:${snapshot.currentRound}:${snapshot.turnToken}:${snapshot.currentArtistId ?? ''}`;
-  const playersKey = snapshot.players
-    .map((player) => `${player.id}:${player.name}:${player.score}:${player.connected}`)
-    .join('|');
-
-  if (role === 'display') {
-    return [
-      base,
-      playersKey,
-      snapshot.drawingSubmittedIds.join(','),
-      snapshot.guessSubmittedIds.join(','),
-      snapshot.voteSubmittedIds.join(','),
-      snapshot.votingOptions.map((option) => `${option.id}:${option.text}`).join('|'),
-      snapshot.roundResult?.correctAnswer ?? '',
-      snapshot.finalScores.map((score) => `${score.playerId}:${score.score}`).join('|')
-    ].join(';');
-  }
-
-  const ownDrawingSubmitted = snapshot.drawingSubmittedIds.includes(clientId);
-  const ownGuessSubmitted = snapshot.guessSubmittedIds.includes(clientId);
-  const ownVoteSubmitted = snapshot.voteSubmittedIds.includes(clientId);
-  return [
-    base,
-    snapshot.phase === 'lobby' ? playersKey : '',
-    ownDrawingSubmitted,
-    ownGuessSubmitted,
-    ownVoteSubmitted,
-    snapshot.votingOptions.map((option) => `${option.id}:${option.text}:${option.authorPlayerId ?? ''}`).join('|'),
-    snapshot.roundResult?.correctAnswer ?? '',
-    snapshot.finalScores.map((score) => `${score.playerId}:${score.score}`).join('|')
-  ].join(';');
-}
-
 function renderDisplay(): HTMLElement {
   if (!snapshot) {
     return shell('TV Display', el('p', { class: 'muted' }, status));
@@ -192,7 +190,7 @@ function renderDisplay(): HTMLElement {
   content.className = 'display-grid';
 
   if (snapshot.phase === 'lobby') {
-    content.append(renderRoomPanel(), renderPlayersPanel(true));
+    content.append(renderRoomPanel(), renderLobbySidePanel());
   } else if (snapshot.phase === 'drawing') {
     content.append(
       heroPanel('Players are drawing', `Round ${snapshot.currentRound} of ${snapshot.totalRounds}`),
@@ -203,9 +201,9 @@ function renderDisplay(): HTMLElement {
   } else if (snapshot.phase === 'voting') {
     content.append(renderRevealPanel('Vote for the real prompt', false), renderVotingOptions(snapshot.votingOptions, false));
   } else if (snapshot.phase === 'results') {
-    content.append(renderResults(snapshot.roundResult), renderAdvancePanel());
+    content.append(renderResults(snapshot.roundResult, true), renderAdvancePanel());
   } else {
-    content.append(renderScores(snapshot.finalScores), renderAdvancePanel());
+    content.append(renderScores(snapshot.finalScores, true), renderAdvancePanel());
   }
 
   return shell('Draw Party', content);
@@ -229,12 +227,31 @@ function renderPlayer(): HTMLElement {
     return shell('Vote', renderVotingTurn());
   }
   if (snapshot.phase === 'results') {
-    return shell('Results', renderResults(snapshot.roundResult));
+    return shell('Results', renderResults(snapshot.roundResult, false));
   }
-  return shell('Final Scores', renderScores(snapshot.finalScores));
+  return shell('Final Scores', renderScores(snapshot.finalScores, false));
 }
 
 function renderJoin(): HTMLElement {
+  if (pendingJoin) {
+    return shell(
+      'Join Game',
+      el(
+        'section',
+        { class: 'panel narrow waiting-panel' },
+        el('p', { class: 'eyebrow' }, pendingJoin.roomCode),
+        el('h2', {}, 'Joining room'),
+        el('p', { class: 'muted' }, status === 'Connected' ? 'Waiting for the TV to confirm your spot.' : 'Reconnecting to the room.'),
+        button('Change Room', 'tool-button wide', () => {
+          pendingJoin = null;
+          socket?.close();
+          snapshot = null;
+          render();
+        })
+      )
+    );
+  }
+
   const roomInput = el('input', {
     class: 'input code-input',
     value: initialRoomCode,
@@ -249,6 +266,9 @@ function renderJoin(): HTMLElement {
     placeholder: 'Your name',
     autocomplete: 'name'
   });
+  roomInput.addEventListener('input', () => {
+    roomInput.value = roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+  });
   const join = () => {
     const roomCode = roomInput.value.trim().toUpperCase();
     const name = nameInput.value.trim() || 'Player';
@@ -261,7 +281,18 @@ function renderJoin(): HTMLElement {
     localStorage.setItem('draw-party-name', playerName);
     pendingJoin = { roomCode, name };
     connect(roomCode);
+    render();
   };
+  roomInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      nameInput.focus();
+    }
+  });
+  nameInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      join();
+    }
+  });
 
   return shell(
     'Join Game',
@@ -329,6 +360,68 @@ function renderPlayersPanel(showScores: boolean): HTMLElement {
   );
 }
 
+function renderLobbySidePanel(): HTMLElement {
+  const wrapper = el('div', { class: 'lobby-side' }, renderPlayersPanel(true), renderSettingsPanel());
+  return wrapper;
+}
+
+function renderSettingsPanel(): HTMLElement {
+  const settings = snapshot?.settings ?? defaultRoomSettings();
+  const rounds = numberInput(settings.rounds, 1, 12);
+  const draw = numberInput(settings.drawSeconds, 30, 180);
+  const guess = numberInput(settings.guessSeconds, 15, 120);
+  const vote = numberInput(settings.voteSeconds, 10, 90);
+
+  const save = () => {
+    const nextSettings: RoomSettings = {
+      rounds: clampInput(rounds.value, 1, 12, settings.rounds),
+      drawSeconds: clampInput(draw.value, 30, 180, settings.drawSeconds),
+      guessSeconds: clampInput(guess.value, 15, 120, settings.guessSeconds),
+      voteSeconds: clampInput(vote.value, 10, 90, settings.voteSeconds),
+      promptPackId: 'safe-party'
+    };
+    send({ type: 'updateRoomSettings', settings: nextSettings });
+  };
+
+  return el(
+    'section',
+    { class: 'panel settings-panel' },
+    el('div', { class: 'panel-title' }, 'Room Settings'),
+    el('label', { class: 'label' }, 'Rounds'),
+    rounds,
+    el('label', { class: 'label' }, 'Drawing seconds'),
+    draw,
+    el('label', { class: 'label' }, 'Guessing seconds'),
+    guess,
+    el('label', { class: 'label' }, 'Voting seconds'),
+    vote,
+    el('p', { class: 'muted' }, 'Prompt pack: Party Safe'),
+    button('Save Settings', 'primary wide', save),
+    button(soundEnabled() ? 'Sound On' : 'Sound Off', 'tool-button wide sound-toggle', () => {
+      setSoundEnabled(!soundEnabled());
+      render();
+    })
+  );
+}
+
+function numberInput(value: number, min: number, max: number): HTMLInputElement {
+  return el('input', {
+    class: 'input compact-input',
+    type: 'number',
+    min,
+    max,
+    value
+  });
+}
+
+function clampInput(value: string, min: number, max: number, fallback: number): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, parsed));
+}
+
 function renderDrawingTurn(): HTMLElement {
   if (!snapshot) {
     return el('section', { class: 'panel' });
@@ -343,6 +436,7 @@ function renderDrawingTurn(): HTMLElement {
       return;
     }
     send({ type: 'submitDrawing', turnToken, drawing: drawingPad.getDrawing() });
+    playCue('submit');
   }, submitted);
 
   drawingPad = new DrawingPad(() => {
@@ -356,6 +450,7 @@ function renderDrawingTurn(): HTMLElement {
     { class: 'panel play-panel' },
     el('div', { class: 'prompt', id: 'prompt-text' }, prompt ? `Draw: ${prompt}` : 'Waiting for prompt...'),
     el('div', { class: 'deadline', id: 'deadline-text' }),
+    renderReconnectHint(submitted ? 'Your drawing is already submitted.' : 'Keep drawing. If your phone reconnects, this screen will return.'),
     submitted ? el('div', { class: 'success-box' }, 'Drawing submitted. Watch the TV.') : drawingPad.root,
     el('div', { class: 'muted', id: 'drawing-bytes' }, ''),
     submitButton
@@ -377,8 +472,10 @@ function renderGuessingTurn(): HTMLElement {
     return el(
       'section',
       { class: 'panel play-panel' },
+      el('p', { class: 'eyebrow' }, 'Your drawing'),
       el('div', { class: 'deadline', id: 'deadline-text' }),
       canvas,
+      renderReconnectHint('You are the artist for this reveal. Other players are writing fake answers.'),
       el('div', { class: 'success-box' }, 'This is your drawing. Wait for guesses.')
     );
   }
@@ -403,8 +500,10 @@ function renderGuessingTurn(): HTMLElement {
         return;
       }
       send({ type: 'submitGuess', turnToken, guess });
+      playCue('submit');
       input.disabled = true;
     }, submitted),
+    renderReconnectHint(submitted ? 'Your guess is in.' : 'Make a convincing fake answer.'),
     submitted ? el('p', { class: 'success-box' }, 'Guess submitted.') : null
   );
 }
@@ -421,11 +520,22 @@ function renderVotingTurn(): HTMLElement {
   return el(
     'section',
     { class: 'panel play-panel' },
+    el('p', { class: 'eyebrow' }, isArtist ? 'Your drawing' : 'Pick an answer'),
     el('div', { class: 'deadline', id: 'deadline-text' }),
     canvas,
+    renderReconnectHint(submitted ? 'Your vote is in.' : isArtist ? 'You drew this one. Watch the votes come in.' : 'Choose the real prompt. You cannot vote for your own fake answer.'),
     isArtist
       ? el('div', { class: 'success-box' }, 'This is your drawing. Watch the vote.')
       : renderVotingOptions(snapshot.votingOptions, true, submitted)
+  );
+}
+
+function renderReconnectHint(message: string): HTMLElement {
+  const connected = status === 'Connected';
+  return el(
+    'div',
+    { class: connected ? 'reconnect-hint stable' : 'reconnect-hint warning' },
+    connected ? message : `Reconnecting. ${message}`
   );
 }
 
@@ -454,6 +564,7 @@ function renderVotingOptions(options: VotingOption[], interactive: boolean, subm
     container.appendChild(
       button(option.text, disabled ? 'vote-option disabled' : 'vote-option', () => {
         send({ type: 'submitVote', turnToken: snapshot?.turnToken ?? 0, optionId: option.id });
+        playCue('submit');
       }, !interactive || disabled)
     );
   }
@@ -471,7 +582,7 @@ function renderProgressPanel(label: string, submittedIds: string[]): HTMLElement
   );
 }
 
-function renderResults(result: RoundResult | null | undefined): HTMLElement {
+function renderResults(result: RoundResult | null | undefined, includeDrawing: boolean): HTMLElement {
   if (!result) {
     return el('section', { class: 'panel' }, 'Waiting for results...');
   }
@@ -484,10 +595,15 @@ function renderResults(result: RoundResult | null | undefined): HTMLElement {
         { class: `breakdown-row ${item.isCorrect ? 'correct' : ''}` },
         el('div', { class: 'breakdown-answer' }, item.optionText),
         item.authorName ? el('div', { class: 'muted' }, `By ${item.authorName}`) : null,
-        el('div', { class: 'muted' }, item.voterNames.length ? `Votes: ${item.voterNames.join(', ')}` : 'No votes')
+        renderVoterChips(item.voterNames)
       )
     );
   }
+
+  const canvas = document.createElement('canvas');
+  canvas.className = 'reveal-canvas result-canvas';
+  renderDrawing(canvas, snapshot?.currentDrawing);
+  const deltas = renderScoreDeltas(result.scoreDeltas);
 
   return el(
     'section',
@@ -495,11 +611,33 @@ function renderResults(result: RoundResult | null | undefined): HTMLElement {
     el('p', { class: 'eyebrow' }, `Drawing by ${result.artistName}`),
     el('h2', {}, 'The real prompt was'),
     el('div', { class: 'prompt' }, result.correctAnswer),
+    includeDrawing ? canvas : null,
+    deltas,
     breakdown
   );
 }
 
-function renderScores(scores: ScoreEntry[]): HTMLElement {
+function renderVoterChips(names: string[]): HTMLElement {
+  if (names.length === 0) {
+    return el('div', { class: 'muted' }, 'No votes');
+  }
+  return el('div', { class: 'chip-row' }, ...names.map((name) => el('span', { class: 'pill vote-chip' }, name)));
+}
+
+function renderScoreDeltas(deltas: RoundResult['scoreDeltas']): HTMLElement | null {
+  const activeDeltas = deltas.filter((delta) => delta.delta > 0);
+  if (activeDeltas.length === 0) {
+    return null;
+  }
+  return el(
+    'div',
+    { class: 'score-deltas' },
+    ...activeDeltas.map((delta) => el('span', { class: 'pill score-delta' }, `${delta.name} +${delta.delta}`))
+  );
+}
+
+function renderScores(scores: ScoreEntry[], podium: boolean): HTMLElement {
+  const topScores = podium ? scores.slice(0, 3) : [];
   const list = el('div', { class: 'score-list' });
   for (const [index, score] of scores.entries()) {
     list.appendChild(
@@ -511,7 +649,27 @@ function renderScores(scores: ScoreEntry[]): HTMLElement {
       )
     );
   }
-  return el('section', { class: 'panel scores-panel' }, el('div', { class: 'panel-title' }, 'Scores'), list);
+  return el(
+    'section',
+    { class: 'panel scores-panel' },
+    el('div', { class: 'panel-title' }, podium ? 'Final Podium' : 'Scores'),
+    podium
+      ? el(
+          'div',
+          { class: 'podium' },
+          ...topScores.map((score, index) =>
+            el(
+              'div',
+              { class: `podium-place place-${index + 1}` },
+              el('span', { class: 'podium-rank' }, `${index + 1}`),
+              el('strong', {}, score.name),
+              el('span', {}, `${score.score} pts`)
+            )
+          )
+        )
+      : null,
+    list
+  );
 }
 
 function renderAdvancePanel(): HTMLElement {
@@ -537,6 +695,7 @@ function heroPanel(title: string, subtitle: string): HTMLElement {
 }
 
 function shell(title: string, child: HTMLElement): HTMLElement {
+  const reconnecting = status !== 'Connected' && status !== 'Disconnected';
   return el(
     'main',
     { class: `app-shell ${role}` },
@@ -546,6 +705,7 @@ function shell(title: string, child: HTMLElement): HTMLElement {
       el('div', {}, el('div', { class: 'brand' }, title), snapshot ? el('div', { class: 'phase' }, phaseLabel(snapshot.phase)) : null),
       el('div', { class: 'connection', id: 'connection-text' }, status)
     ),
+    reconnecting ? el('div', { class: 'connection-banner' }, status) : null,
     errorMessage ? el('div', { class: 'error' }, errorMessage) : null,
     child
   );
@@ -580,9 +740,7 @@ function updateDeadlineText(): void {
     });
     return;
   }
-  const remaining = Math.max(0, snapshot.deadlineMs - Date.now());
-  const seconds = Math.ceil(remaining / 1000);
-  const label = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  const label = formatDeadline(snapshot);
   nodes.forEach((node) => {
     node.textContent = label;
   });

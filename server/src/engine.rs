@@ -1,14 +1,15 @@
 use crate::protocol::{
-    DrawingDoc, GamePhase, PlayerPublic, Point, RoomSnapshot, RoundResult, ScoreEntry, Stroke,
-    VoteBreakdown, VotingOption, CANVAS_HEIGHT, CANVAS_WIDTH, DRAW_SECONDS, GUESS_SECONDS,
-    MAX_GUESS_LEN, MAX_NAME_LEN, MAX_PLAYERS, MAX_POINTS_PER_STROKE, MAX_STROKES, MIN_PLAYERS,
-    ROOM_TTL_MS, TOTAL_ROUNDS, VOTE_SECONDS,
+    DrawingDoc, GamePhase, PlayerPublic, Point, RoomSettings, RoomSnapshot, RoundResult,
+    ScoreDelta, ScoreEntry, Stroke, VoteBreakdown, VotingOption, CANVAS_HEIGHT, CANVAS_WIDTH,
+    DEFAULT_PROMPT_PACK_ID, MAX_DRAW_SECONDS, MAX_GUESS_LEN, MAX_GUESS_SECONDS, MAX_NAME_LEN,
+    MAX_PLAYERS, MAX_POINTS_PER_STROKE, MAX_ROUNDS, MAX_STROKES, MAX_VOTE_SECONDS,
+    MIN_DRAW_SECONDS, MIN_GUESS_SECONDS, MIN_PLAYERS, MIN_ROUNDS, MIN_VOTE_SECONDS, ROOM_TTL_MS,
 };
 use rand::{seq::SliceRandom, Rng};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-const PROMPTS: &[&str] = &[
+const SAFE_PROMPTS: &[&str] = &[
     "vampire dentist",
     "pizza lifeguard",
     "robot doing yoga",
@@ -51,6 +52,16 @@ const PROMPTS: &[&str] = &[
     "bear at a tea party",
 ];
 
+struct PromptPack {
+    id: &'static str,
+    prompts: &'static [&'static str],
+}
+
+const PROMPT_PACKS: &[PromptPack] = &[PromptPack {
+    id: DEFAULT_PROMPT_PACK_ID,
+    prompts: SAFE_PROMPTS,
+}];
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Player {
     pub id: String,
@@ -78,8 +89,8 @@ pub struct Room {
     pub phase: GamePhase,
     pub players: BTreeMap<String, Player>,
     pub displays: BTreeSet<String>,
+    pub settings: RoomSettings,
     pub current_round: u8,
-    pub total_rounds: u8,
     pub turn_token: u64,
     pub deadline_ms: Option<u64>,
     pub round: RoundState,
@@ -122,8 +133,8 @@ impl Room {
             phase: GamePhase::Lobby,
             players: BTreeMap::new(),
             displays,
+            settings: RoomSettings::default(),
             current_round: 0,
-            total_rounds: TOTAL_ROUNDS,
             turn_token: 0,
             deadline_ms: None,
             round: RoundState::default(),
@@ -187,6 +198,23 @@ impl Room {
         })?;
         player.name = safe_name;
         Ok(())
+    }
+
+    pub fn update_settings(
+        &mut self,
+        settings: RoomSettings,
+        now_ms: u64,
+    ) -> EngineResult<EngineEvent> {
+        self.touch(now_ms);
+        if self.phase != GamePhase::Lobby {
+            return Err(EngineError::new(
+                "invalid_phase",
+                "Room settings can only be changed in the lobby.",
+            ));
+        }
+
+        self.settings = normalize_room_settings(settings)?;
+        Ok(EngineEvent::Snapshot)
     }
 
     pub fn mark_disconnected(&mut self, client_id: &str, now_ms: u64) {
@@ -374,7 +402,7 @@ impl Room {
             && now_ms.saturating_sub(self.last_active_ms) > ROOM_TTL_MS
     }
 
-    pub fn snapshot(&self) -> RoomSnapshot {
+    pub fn snapshot(&self, server_now_ms: u64) -> RoomSnapshot {
         let current_artist_id = self.round.current_artist_id.clone();
         let current_artist_name = current_artist_id
             .as_deref()
@@ -407,8 +435,10 @@ impl Room {
             players: self.public_players(),
             min_players: MIN_PLAYERS,
             max_players: MAX_PLAYERS,
+            settings: self.settings.clone(),
+            server_now_ms,
             current_round: self.current_round,
-            total_rounds: self.total_rounds,
+            total_rounds: self.settings.rounds,
             turn_token: self.turn_token,
             deadline_ms: self.deadline_ms,
             current_artist_id,
@@ -446,7 +476,7 @@ impl Room {
 
         self.phase = GamePhase::Drawing;
         self.turn_token = self.turn_token.saturating_add(1);
-        self.deadline_ms = Some(now_ms + DRAW_SECONDS * 1000);
+        self.deadline_ms = Some(deadline_after(now_ms, self.settings.draw_seconds));
         self.round = RoundState::default();
 
         let mut player_ids: Vec<String> = self.players.keys().cloned().collect();
@@ -454,7 +484,9 @@ impl Room {
         player_ids.shuffle(&mut rng);
         self.round.order = player_ids.clone();
 
-        let mut prompts: Vec<&str> = PROMPTS.to_vec();
+        let mut prompts: Vec<&str> = prompt_pack_prompts(&self.settings.prompt_pack_id)
+            .unwrap_or(SAFE_PROMPTS)
+            .to_vec();
         prompts.shuffle(&mut rng);
         for (index, player_id) in player_ids.iter().enumerate() {
             let prompt = prompts[index % prompts.len()].to_string();
@@ -475,7 +507,7 @@ impl Room {
 
         self.phase = GamePhase::Guessing;
         self.turn_token = self.turn_token.saturating_add(1);
-        self.deadline_ms = Some(now_ms + GUESS_SECONDS * 1000);
+        self.deadline_ms = Some(deadline_after(now_ms, self.settings.guess_seconds));
         self.round.current_artist_id = Some(artist_id);
         self.round.guesses.clear();
         self.round.votes.clear();
@@ -537,7 +569,7 @@ impl Room {
         }
         self.phase = GamePhase::Voting;
         self.turn_token = self.turn_token.saturating_add(1);
-        self.deadline_ms = Some(now_ms + VOTE_SECONDS * 1000);
+        self.deadline_ms = Some(deadline_after(now_ms, self.settings.vote_seconds));
         Ok(())
     }
 
@@ -556,6 +588,11 @@ impl Room {
 
         let mut breakdown_by_option: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let mut correct_voter_names = Vec::new();
+        let mut score_delta_by_player: BTreeMap<String, i32> = self
+            .players
+            .keys()
+            .map(|player_id| (player_id.clone(), 0))
+            .collect();
 
         for (voter_id, option_id) in &self.round.votes {
             let voter_name = self
@@ -579,16 +616,15 @@ impl Room {
 
             if option.is_correct {
                 correct_voter_names.push(voter_name);
-                if let Some(voter) = self.players.get_mut(voter_id) {
-                    voter.score += 200;
-                }
-                if let Some(artist) = self.players.get_mut(&artist_id) {
-                    artist.score += 100;
-                }
+                add_score_delta(&mut self.players, &mut score_delta_by_player, voter_id, 200);
+                add_score_delta(
+                    &mut self.players,
+                    &mut score_delta_by_player,
+                    &artist_id,
+                    100,
+                );
             } else if let Some(author_id) = &option.author_player_id {
-                if let Some(author) = self.players.get_mut(author_id) {
-                    author.score += 50;
-                }
+                add_score_delta(&mut self.players, &mut score_delta_by_player, author_id, 50);
             }
         }
 
@@ -610,6 +646,18 @@ impl Room {
             .get(&artist_id)
             .map(|player| player.name.clone())
             .unwrap_or_else(|| "Unknown".to_string());
+        let score_deltas = self
+            .players
+            .values()
+            .map(|player| ScoreDelta {
+                player_id: player.id.clone(),
+                name: player.name.clone(),
+                delta: score_delta_by_player
+                    .get(&player.id)
+                    .copied()
+                    .unwrap_or_default(),
+            })
+            .collect();
 
         self.round.result = Some(RoundResult {
             artist_id,
@@ -617,6 +665,7 @@ impl Room {
             correct_answer,
             correct_voter_names,
             breakdown,
+            score_deltas,
         });
         self.phase = GamePhase::Results;
         self.turn_token = self.turn_token.saturating_add(1);
@@ -633,12 +682,12 @@ impl Room {
     }
 
     fn advance_after_results(&mut self, now_ms: u64) -> EngineResult<bool> {
-        if self.next_artist_with_drawing().is_some() {
+        if self.has_next_artist_with_drawing() {
             self.begin_guessing(now_ms)?;
             return Ok(false);
         }
 
-        if self.current_round >= self.total_rounds {
+        if self.current_round >= self.settings.rounds {
             self.phase = GamePhase::FinalScores;
             self.deadline_ms = None;
             return Ok(true);
@@ -657,6 +706,14 @@ impl Room {
             }
         }
         None
+    }
+
+    fn has_next_artist_with_drawing(&self) -> bool {
+        self.round
+            .order
+            .iter()
+            .skip(self.round.current_index)
+            .any(|candidate| self.round.drawings.contains_key(candidate))
     }
 
     fn ensure_active_non_artist(&self, player_id: &str) -> EngineResult<()> {
@@ -728,6 +785,77 @@ pub fn generate_room_code(existing: &BTreeSet<String>) -> String {
         if !existing.contains(&code) {
             return code;
         }
+    }
+}
+
+fn normalize_room_settings(mut settings: RoomSettings) -> EngineResult<RoomSettings> {
+    settings.prompt_pack_id = settings.prompt_pack_id.trim().to_string();
+    validate_room_settings(&settings)?;
+    Ok(settings)
+}
+
+pub fn validate_room_settings(settings: &RoomSettings) -> EngineResult<()> {
+    if !(MIN_ROUNDS..=MAX_ROUNDS).contains(&settings.rounds) {
+        return Err(EngineError::new(
+            "invalid_settings",
+            format!("Rounds must be between {MIN_ROUNDS} and {MAX_ROUNDS}."),
+        ));
+    }
+    if !(MIN_DRAW_SECONDS..=MAX_DRAW_SECONDS).contains(&settings.draw_seconds) {
+        return Err(EngineError::new(
+            "invalid_settings",
+            format!(
+                "Drawing time must be between {MIN_DRAW_SECONDS} and {MAX_DRAW_SECONDS} seconds."
+            ),
+        ));
+    }
+    if !(MIN_GUESS_SECONDS..=MAX_GUESS_SECONDS).contains(&settings.guess_seconds) {
+        return Err(EngineError::new(
+            "invalid_settings",
+            format!(
+                "Guessing time must be between {MIN_GUESS_SECONDS} and {MAX_GUESS_SECONDS} seconds."
+            ),
+        ));
+    }
+    if !(MIN_VOTE_SECONDS..=MAX_VOTE_SECONDS).contains(&settings.vote_seconds) {
+        return Err(EngineError::new(
+            "invalid_settings",
+            format!(
+                "Voting time must be between {MIN_VOTE_SECONDS} and {MAX_VOTE_SECONDS} seconds."
+            ),
+        ));
+    }
+    if prompt_pack_prompts(&settings.prompt_pack_id).is_none() {
+        return Err(EngineError::new(
+            "invalid_prompt_pack",
+            "That prompt pack is not available.",
+        ));
+    }
+    Ok(())
+}
+
+fn prompt_pack_prompts(prompt_pack_id: &str) -> Option<&'static [&'static str]> {
+    PROMPT_PACKS
+        .iter()
+        .find(|pack| pack.id == prompt_pack_id)
+        .map(|pack| pack.prompts)
+}
+
+fn deadline_after(now_ms: u64, seconds: u64) -> u64 {
+    now_ms.saturating_add(seconds.saturating_mul(1000))
+}
+
+fn add_score_delta(
+    players: &mut BTreeMap<String, Player>,
+    score_delta_by_player: &mut BTreeMap<String, i32>,
+    player_id: &str,
+    delta: i32,
+) {
+    if let Some(player) = players.get_mut(player_id) {
+        player.score += delta;
+        *score_delta_by_player
+            .entry(player_id.to_string())
+            .or_default() += delta;
     }
 }
 
@@ -861,6 +989,16 @@ mod tests {
         room
     }
 
+    fn custom_settings() -> RoomSettings {
+        RoomSettings {
+            rounds: 2,
+            draw_seconds: 30,
+            guess_seconds: 20,
+            vote_seconds: 15,
+            prompt_pack_id: DEFAULT_PROMPT_PACK_ID.to_string(),
+        }
+    }
+
     #[test]
     fn starts_drawing_with_unique_prompts() {
         let mut room = room_with_players();
@@ -868,7 +1006,73 @@ mod tests {
         assert_eq!(room.phase, GamePhase::Drawing);
         assert_eq!(room.round.prompts.len(), 3);
         assert_eq!(room.round.order.len(), 3);
-        assert!(room.deadline_ms.is_some());
+        assert_eq!(room.deadline_ms, Some(100 + 90_000));
+    }
+
+    #[test]
+    fn snapshot_includes_settings_and_server_clock() {
+        let room = room_with_players();
+        let snapshot = room.snapshot(12345);
+        assert_eq!(snapshot.settings, RoomSettings::default());
+        assert_eq!(snapshot.server_now_ms, 12345);
+        assert_eq!(snapshot.total_rounds, RoomSettings::default().rounds);
+    }
+
+    #[test]
+    fn updates_settings_in_lobby_and_uses_custom_deadlines() {
+        let mut room = room_with_players();
+        room.update_settings(custom_settings(), 50).unwrap();
+        assert_eq!(room.settings, custom_settings());
+
+        room.handle_start_or_advance(100).unwrap();
+        assert_eq!(room.deadline_ms, Some(100 + 30_000));
+        let drawing_token = room.turn_token;
+        room.submit_drawing("p1", drawing_token, drawing(), 200)
+            .unwrap();
+        room.submit_drawing("p2", drawing_token, drawing(), 200)
+            .unwrap();
+        room.submit_drawing("p3", drawing_token, drawing(), 200)
+            .unwrap();
+        assert_eq!(room.phase, GamePhase::Guessing);
+        assert_eq!(room.deadline_ms, Some(200 + 20_000));
+
+        let guess_token = room.turn_token;
+        let artist = room.round.current_artist_id.clone().unwrap();
+        let voters: Vec<String> = room
+            .players
+            .keys()
+            .filter(|id| *id != &artist)
+            .cloned()
+            .collect();
+        room.submit_guess(&voters[0], guess_token, "fake one".to_string(), 300)
+            .unwrap();
+        room.submit_guess(&voters[1], guess_token, "fake two".to_string(), 300)
+            .unwrap();
+        assert_eq!(room.phase, GamePhase::Voting);
+        assert_eq!(room.deadline_ms, Some(300 + 15_000));
+    }
+
+    #[test]
+    fn rejects_invalid_room_settings() {
+        let mut room = room_with_players();
+        let mut settings = custom_settings();
+        settings.rounds = 0;
+        let err = room.update_settings(settings, 50).unwrap_err();
+        assert_eq!(err.code, "invalid_settings");
+
+        let mut settings = custom_settings();
+        settings.prompt_pack_id = "unknown".to_string();
+        let err = room.update_settings(settings, 51).unwrap_err();
+        assert_eq!(err.code, "invalid_prompt_pack");
+    }
+
+    #[test]
+    fn rejects_settings_update_after_lobby() {
+        let mut room = room_with_players();
+        room.handle_start_or_advance(100).unwrap();
+        let err = room.update_settings(custom_settings(), 101).unwrap_err();
+        assert_eq!(err.code, "invalid_phase");
+        assert_eq!(room.settings, RoomSettings::default());
     }
 
     #[test]
@@ -879,6 +1083,76 @@ mod tests {
         room.submit_drawing("p1", token, drawing(), 200).unwrap();
         let err = room
             .submit_drawing("p1", token, drawing(), 201)
+            .unwrap_err();
+        assert_eq!(err.code, "duplicate_submission");
+    }
+
+    #[test]
+    fn blocks_duplicate_guess_submission() {
+        let mut room = room_with_players();
+        room.handle_start_or_advance(100).unwrap();
+        let drawing_token = room.turn_token;
+        room.submit_drawing("p1", drawing_token, drawing(), 200)
+            .unwrap();
+        room.submit_drawing("p2", drawing_token, drawing(), 200)
+            .unwrap();
+        room.submit_drawing("p3", drawing_token, drawing(), 200)
+            .unwrap();
+
+        let guess_token = room.turn_token;
+        let artist = room.round.current_artist_id.clone().unwrap();
+        let voter = room
+            .players
+            .keys()
+            .find(|id| *id != &artist)
+            .cloned()
+            .unwrap();
+        room.submit_guess(&voter, guess_token, "first fake".to_string(), 300)
+            .unwrap();
+        let err = room
+            .submit_guess(&voter, guess_token, "second fake".to_string(), 301)
+            .unwrap_err();
+        assert_eq!(err.code, "duplicate_submission");
+    }
+
+    #[test]
+    fn blocks_duplicate_vote_submission() {
+        let mut room = room_with_players();
+        room.handle_start_or_advance(100).unwrap();
+        let drawing_token = room.turn_token;
+        room.submit_drawing("p1", drawing_token, drawing(), 200)
+            .unwrap();
+        room.submit_drawing("p2", drawing_token, drawing(), 200)
+            .unwrap();
+        room.submit_drawing("p3", drawing_token, drawing(), 200)
+            .unwrap();
+
+        let guess_token = room.turn_token;
+        let artist = room.round.current_artist_id.clone().unwrap();
+        let voters: Vec<String> = room
+            .players
+            .keys()
+            .filter(|id| *id != &artist)
+            .cloned()
+            .collect();
+        room.submit_guess(&voters[0], guess_token, "first fake".to_string(), 300)
+            .unwrap();
+        room.submit_guess(&voters[1], guess_token, "second fake".to_string(), 300)
+            .unwrap();
+
+        let vote_token = room.turn_token;
+        let truth = room
+            .round
+            .voting_options
+            .iter()
+            .find(|option| option.is_correct)
+            .unwrap()
+            .id
+            .clone();
+        room.submit_vote(&voters[0], vote_token, truth.clone(), 400)
+            .unwrap();
+        let err = room
+            .submit_vote(&voters[0], vote_token, truth, 401)
             .unwrap_err();
         assert_eq!(err.code, "duplicate_submission");
     }
@@ -925,11 +1199,71 @@ mod tests {
         room.submit_vote(&voters[1], vote_token, truth, 400)
             .unwrap();
         assert_eq!(room.phase, GamePhase::Results);
+        let result = room.round.result.as_ref().unwrap();
         assert_eq!(
-            room.round.result.as_ref().unwrap().correct_answer,
+            result.correct_answer,
             prompts.get(&artist).unwrap().to_string()
         );
-        assert!(room.players.get(&artist).unwrap().score > 0);
+        let deltas: BTreeMap<String, i32> = result
+            .score_deltas
+            .iter()
+            .map(|delta| (delta.player_id.clone(), delta.delta))
+            .collect();
+        assert_eq!(deltas.get(&artist), Some(&200));
+        assert_eq!(deltas.get(&voters[0]), Some(&200));
+        assert_eq!(deltas.get(&voters[1]), Some(&200));
+        assert_eq!(room.players.get(&artist).unwrap().score, 200);
+    }
+
+    #[test]
+    fn results_continue_reveals_all_submitted_drawings_before_next_round() {
+        let mut room = room_with_players();
+        room.update_settings(custom_settings(), 50).unwrap();
+        room.handle_start_or_advance(100).unwrap();
+        let drawing_token = room.turn_token;
+        room.submit_drawing("p1", drawing_token, drawing(), 200)
+            .unwrap();
+        room.submit_drawing("p2", drawing_token, drawing(), 200)
+            .unwrap();
+        room.submit_drawing("p3", drawing_token, drawing(), 200)
+            .unwrap();
+
+        let mut revealed_artists = BTreeSet::new();
+        for turn in 0..3 {
+            assert_eq!(room.phase, GamePhase::Guessing);
+            let artist = room.round.current_artist_id.clone().unwrap();
+            revealed_artists.insert(artist.clone());
+            let voters: Vec<String> = room
+                .players
+                .keys()
+                .filter(|id| *id != &artist)
+                .cloned()
+                .collect();
+            let guess_token = room.turn_token;
+            room.submit_guess(&voters[0], guess_token, format!("fake {turn} a"), 300)
+                .unwrap();
+            room.submit_guess(&voters[1], guess_token, format!("fake {turn} b"), 300)
+                .unwrap();
+            let vote_token = room.turn_token;
+            let truth = room
+                .round
+                .voting_options
+                .iter()
+                .find(|option| option.is_correct)
+                .unwrap()
+                .id
+                .clone();
+            room.submit_vote(&voters[0], vote_token, truth.clone(), 400)
+                .unwrap();
+            room.submit_vote(&voters[1], vote_token, truth, 400)
+                .unwrap();
+            assert_eq!(room.phase, GamePhase::Results);
+            room.handle_start_or_advance(500).unwrap();
+        }
+
+        assert_eq!(revealed_artists.len(), 3);
+        assert_eq!(room.phase, GamePhase::Drawing);
+        assert_eq!(room.current_round, 2);
     }
 
     #[test]
@@ -970,7 +1304,9 @@ mod tests {
         let mut room = room_with_players();
         room.handle_start_or_advance(100).unwrap();
         assert_eq!(room.phase, GamePhase::Drawing);
-        let event = room.advance_if_expired(100 + DRAW_SECONDS * 1000).unwrap();
+        let event = room
+            .advance_if_expired(100 + room.settings.draw_seconds * 1000)
+            .unwrap();
         assert_eq!(event, Some(EngineEvent::PhaseChanged));
         assert_eq!(room.phase, GamePhase::Lobby);
         assert_eq!(room.current_round, 0);
@@ -1001,9 +1337,25 @@ mod tests {
             .unwrap();
         assert_eq!(room.phase, GamePhase::Guessing);
 
-        let event = room.advance_if_expired(200 + GUESS_SECONDS * 1000).unwrap();
+        let event = room
+            .advance_if_expired(200 + room.settings.guess_seconds * 1000)
+            .unwrap();
         assert_eq!(event, Some(EngineEvent::PhaseChanged));
         assert_eq!(room.phase, GamePhase::Results);
         assert!(room.round.result.is_some());
+    }
+
+    #[test]
+    fn room_expires_only_after_everyone_disconnects_and_ttl_passes() {
+        let mut room = room_with_players();
+        assert!(!room.is_expired(ROOM_TTL_MS + 1));
+
+        room.mark_disconnected("display", 10);
+        room.mark_disconnected("p1", 11);
+        room.mark_disconnected("p2", 12);
+        room.mark_disconnected("p3", 13);
+
+        assert!(!room.is_expired(13 + ROOM_TTL_MS));
+        assert!(room.is_expired(14 + ROOM_TTL_MS));
     }
 }

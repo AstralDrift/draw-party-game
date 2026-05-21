@@ -16,7 +16,8 @@ The TV browser creates a room and shows a join code. Each player joins from a ph
 Install Rust, Node.js, and npm first.
 
 ```bash
-npm --prefix client install
+npm --prefix client ci
+npm --prefix client run e2e:install
 npm --prefix client run build
 cargo run --manifest-path server/Cargo.toml
 ```
@@ -40,7 +41,12 @@ cargo test --manifest-path server/Cargo.toml
 npm --prefix client run typecheck
 npm --prefix client test -- --run
 npm --prefix client run build
+npm run e2e
 ```
+
+`npm run e2e` builds the client, starts the Rust server on `127.0.0.1:3100`, and runs Playwright against the built app. Set `E2E_PORT` to use a different local port, or set `E2E_BASE_URL` to run the same tests against an already-running deployment.
+
+The E2E suite covers one TV and three isolated phone browser contexts through drawing, guessing, voting, results, and the next round transition. It also checks that `/sw.js` is served as JavaScript, includes the app-shell cache behavior, leaves `/api/*` routes uncached, and keeps browser routes such as `/join/:roomCode` on the SPA shell.
 
 ## Deployment
 
@@ -54,6 +60,10 @@ DRAW_PARTY_STATIC_DIR=client/dist ./server/target/release/draw-party-server
 ```
 
 `GET /api/health` returns server status. `GET /` opens the TV display. `GET /join/:roomCode` opens the phone join flow.
+
+The production server should serve `client/dist` as its static directory so the copied `sw.js`, `manifest.webmanifest`, and hashed assets are all available from the same origin. The service worker caches the app shell and built assets for browser/PWA resilience, but intentionally bypasses `/api/*` and `/ws` so live game state and WebSocket traffic stay network-first.
+
+GitHub Actions runs Rust formatting, clippy, Rust tests, client typecheck, Vitest, client build, and Playwright on pull requests and pushes to `main`.
 
 ## License
 
