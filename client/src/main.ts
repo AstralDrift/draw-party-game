@@ -415,9 +415,9 @@ function renderRoomPanel(): HTMLElement {
     el(
       'div',
       { class: 'room-art', 'aria-hidden': 'true' },
-      el('span', { class: 'room-spark spark-one' }),
-      el('span', { class: 'room-spark spark-two' }),
-      el('span', { class: 'room-loop' })
+      el('span', { class: 'room-sprite room-starburst' }),
+      el('span', { class: 'room-sprite room-tape' }),
+      el('span', { class: 'room-sprite room-loop' })
     ),
     el(
       'div',
@@ -954,14 +954,12 @@ function renderBackdrop(): HTMLElement {
   return el(
     'div',
     { class: 'backdrop-art', 'aria-hidden': 'true' },
-    el('span', { class: 'backdrop-brush brush-one' }),
-    el('span', { class: 'backdrop-brush brush-two' }),
-    el('span', { class: 'backdrop-mark mark-one' }),
-    el('span', { class: 'backdrop-mark mark-two' }),
     el('span', { class: 'party-sprite sprite-pencil' }),
-    el('span', { class: 'party-sprite sprite-spark sprite-spark-one' }),
-    el('span', { class: 'party-sprite sprite-spark sprite-spark-two' }),
-    el('span', { class: 'party-sprite sprite-loop' })
+    el('span', { class: 'party-sprite sprite-eraser' }),
+    el('span', { class: 'party-sprite sprite-brush' }),
+    el('span', { class: 'party-sprite sprite-tape' }),
+    el('span', { class: 'party-sprite sprite-loop' }),
+    el('span', { class: 'party-sprite sprite-starburst' })
   );
 }
 

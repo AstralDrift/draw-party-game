@@ -36,6 +36,7 @@
   --shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
   --shadow-strong: 0 32px 90px rgba(0, 0, 0, 0.38);
   --motion-duration: 180ms;
+  --sprite-sheet: url("/art/draw-party-sprites.png");
   background: var(--bg);
   color: var(--text);
   font-synthesis: none;
@@ -164,124 +165,103 @@ input:focus-visible,
   mask-image: linear-gradient(180deg, black, transparent 72%);
 }
 
-.backdrop-brush,
-.backdrop-mark,
-.party-sprite {
+.party-sprite,
+.room-sprite {
   position: absolute;
   display: block;
-  opacity: 0.85;
-  filter: blur(0.2px);
-}
-
-.backdrop-brush {
-  width: 360px;
-  height: 28px;
-  border-radius: 999px;
-  transform: rotate(-16deg);
-}
-
-.brush-one {
-  top: 112px;
-  right: -84px;
-  background: linear-gradient(90deg, transparent, rgba(255, 209, 102, 0.5), transparent);
-}
-
-.brush-two {
-  bottom: 72px;
-  left: -88px;
-  background: linear-gradient(90deg, transparent, rgba(88, 239, 181, 0.42), transparent);
-}
-
-.backdrop-mark {
-  width: 96px;
-  height: 12px;
-  border-radius: 3px;
-  transform: rotate(22deg);
-}
-
-.mark-one {
-  top: 38%;
-  left: 5%;
-  background: rgba(99, 210, 255, 0.24);
-}
-
-.mark-two {
-  right: 7%;
-  bottom: 26%;
-  background: rgba(255, 115, 183, 0.22);
-}
-
-.party-sprite {
+  aspect-ratio: 1;
   z-index: 0;
+  background-image: var(--sprite-sheet);
+  background-repeat: no-repeat;
+  background-size: 400% 200%;
+  opacity: 0.9;
+  filter: drop-shadow(0 22px 36px rgba(0, 0, 0, 0.3));
   pointer-events: none;
 }
 
 .sprite-pencil {
-  right: max(32px, 5vw);
-  bottom: 8%;
-  width: 172px;
-  height: 22px;
-  border-radius: 999px 5px 5px 999px;
-  background:
-    linear-gradient(90deg, #ffd166 0 68%, #fffaf0 68% 76%, #ff73b7 76% 100%);
-  box-shadow:
-    0 18px 38px rgba(0, 0, 0, 0.22),
-    inset 0 2px 0 rgba(255, 255, 255, 0.32);
-  transform: rotate(19deg);
+  right: max(4vw, 24px);
+  bottom: 3%;
+  width: min(28vw, 280px);
+  background-position: 0 0;
+  transform: rotate(17deg);
   animation: sprite-drift 6.4s ease-in-out infinite alternate;
 }
 
-.sprite-spark {
-  width: 58px;
-  height: 58px;
-}
-
-.sprite-spark::before,
-.sprite-spark::after {
-  content: "";
-  position: absolute;
-  inset: 25px 2px;
-  border-radius: 999px;
-  background: rgba(255, 209, 102, 0.6);
-  box-shadow: 0 0 24px rgba(255, 209, 102, 0.14);
-}
-
-.sprite-spark::after {
-  transform: rotate(90deg);
-}
-
-.sprite-spark-one {
-  top: 18%;
-  left: 7%;
-  transform: rotate(18deg);
-  animation: spark-pop 3.8s ease-in-out infinite;
-}
-
-.sprite-spark-two {
-  right: 14%;
-  top: 46%;
-  width: 40px;
-  height: 40px;
+.sprite-eraser {
+  top: 14%;
+  left: 6%;
+  width: min(17vw, 180px);
+  background-position: 33.333% 0;
+  opacity: 0.36;
   transform: rotate(-12deg);
-  animation: spark-pop 4.2s ease-in-out 0.5s infinite;
+  animation: sprite-drift 7.2s ease-in-out 0.6s infinite alternate;
 }
 
-.sprite-spark-two::before,
-.sprite-spark-two::after {
-  inset: 18px 0;
-  background: rgba(99, 210, 255, 0.38);
+.sprite-brush {
+  left: -3%;
+  bottom: 6%;
+  width: min(34vw, 360px);
+  background-position: 66.666% 0;
+  opacity: 0.34;
+  transform: rotate(-13deg);
+}
+
+.sprite-tape {
+  right: 3%;
+  top: 5%;
+  width: min(18vw, 220px);
+  background-position: 100% 0;
+  opacity: 0.52;
+  transform: rotate(-14deg);
 }
 
 .sprite-loop {
-  left: 9%;
+  left: 7%;
   bottom: 18%;
-  width: 130px;
-  height: 74px;
-  border: 9px solid rgba(88, 239, 181, 0.22);
-  border-right-color: rgba(255, 115, 183, 0.2);
-  border-radius: 50%;
-  transform: rotate(-21deg);
+  width: min(21vw, 240px);
+  background-position: 66.666% 100%;
+  opacity: 0.48;
+  transform: rotate(-18deg);
   animation: loop-wobble 7s ease-in-out infinite alternate;
+}
+
+.sprite-starburst {
+  right: 10%;
+  bottom: 25%;
+  width: min(16vw, 170px);
+  background-position: 100% 100%;
+  opacity: 0.46;
+  transform: rotate(8deg);
+  animation: spark-pop 4.2s ease-in-out 0.5s infinite;
+}
+
+.room-sprite {
+  opacity: 0.58;
+}
+
+.room-starburst {
+  top: 7%;
+  left: 8%;
+  width: min(9vw, 130px);
+  background-position: 100% 100%;
+  animation: spark-pop 4s ease-in-out infinite;
+}
+
+.room-tape {
+  right: 8%;
+  bottom: 10%;
+  width: min(14vw, 190px);
+  background-position: 100% 0;
+  transform: rotate(12deg);
+}
+
+.room-loop {
+  right: 7%;
+  top: 17%;
+  width: min(11vw, 160px);
+  background-position: 66.666% 100%;
+  transform: rotate(22deg);
 }
 
 .phase-drawing .topbar,
@@ -1410,24 +1390,30 @@ input:focus-visible,
 }
 
 .canvas-stage::before {
-  top: -7px;
-  left: 22px;
-  width: 72px;
-  height: 13px;
-  border-radius: 999px;
-  background: rgba(255, 209, 102, 0.82);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
+  top: -44px;
+  left: 20px;
+  width: 116px;
+  aspect-ratio: 1;
+  background-image: var(--sprite-sheet);
+  background-position: 100% 0;
+  background-repeat: no-repeat;
+  background-size: 400% 200%;
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.16));
   transform: rotate(-5deg);
 }
 
 .canvas-stage::after {
-  right: 18px;
-  bottom: -6px;
-  width: 58px;
-  height: 11px;
-  border-radius: 999px;
-  background: rgba(255, 115, 183, 0.68);
-  transform: rotate(8deg);
+  left: 16px;
+  bottom: -58px;
+  width: 92px;
+  aspect-ratio: 1;
+  background-image: var(--sprite-sheet);
+  background-position: 33.333% 100%;
+  background-repeat: no-repeat;
+  background-size: 400% 200%;
+  opacity: 0.72;
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.14));
+  transform: rotate(7deg);
 }
 
 .draw-canvas,
@@ -2575,6 +2561,12 @@ input:focus-visible,
     width: 100%;
   }
 
+  .player.phase-drawing .draw-canvas {
+    aspect-ratio: auto;
+    height: min(68svh, calc(100svh - 152px - var(--safe-top) - var(--safe-bottom)));
+    min-height: min(430px, calc(100svh - 164px - var(--safe-top) - var(--safe-bottom)));
+  }
+
   .player.phase-drawing .drawing-pad {
     grid-template-columns: minmax(0, 1fr) minmax(112px, 0.46fr);
     grid-template-areas:
@@ -2610,6 +2602,28 @@ input:focus-visible,
   .player.phase-drawing .tools-summary::after {
     float: none;
     font-size: 0.98rem;
+  }
+
+  .player.phase-drawing .party-sprite {
+    opacity: 0.22;
+  }
+
+  .player.phase-drawing .sprite-eraser,
+  .player.phase-drawing .sprite-tape,
+  .player.phase-drawing .sprite-starburst {
+    display: none;
+  }
+
+  .player.phase-drawing .sprite-brush {
+    left: -16%;
+    bottom: -8%;
+    width: 220px;
+  }
+
+  .player.phase-drawing .sprite-pencil {
+    right: -4%;
+    bottom: -5%;
+    width: 165px;
   }
 
   .player.phase-drawing .submit-help {

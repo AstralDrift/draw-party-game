@@ -1,5 +1,5 @@
 const CACHE_NAME = 'draw-party-shell-v1';
-const APP_SHELL = ['.', './index.html', './manifest.webmanifest', './icon.svg'];
+const APP_SHELL = ['.', './index.html', './manifest.webmanifest', './icon.svg', './art/draw-party-sprites.png'];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -53,5 +53,10 @@ self.addEventListener('fetch', (event) => {
 });
 
 function shouldCache(request, url) {
-  return request.mode === 'navigate' || url.pathname.startsWith('/assets/') || APP_SHELL.includes(url.pathname);
+  return (
+    request.mode === 'navigate' ||
+    url.pathname.startsWith('/assets/') ||
+    url.pathname.startsWith('/art/') ||
+    APP_SHELL.includes(url.pathname)
+  );
 }
