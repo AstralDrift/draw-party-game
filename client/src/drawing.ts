@@ -13,6 +13,9 @@ const COLOR_LABELS: Record<string, string> = {
   '#f957a8': 'pink ink',
   '#ffffff': 'eraser'
 };
+const MAX_STROKES = 220;
+const MAX_POINTS_PER_STROKE = 180;
+const POINT_DISTANCE_THRESHOLD = 4;
 
 export function createEmptyDrawing(): DrawingDoc {
   return {
@@ -50,6 +53,8 @@ export class DrawingPad {
   private color = COLORS[0];
   private size = SIZES[1];
   private currentStroke: Stroke | null = null;
+  private activePointerId: number | null = null;
+  private limitMessage = '';
   private readonly onChange: () => void;
   private readonly colorButtons = new Map<string, HTMLButtonElement>();
   private readonly sizeButtons = new Map<number, HTMLButtonElement>();
@@ -115,6 +120,7 @@ export class DrawingPad {
     this.undoButton = iconButton(Undo2, 'Undo last stroke', 'tool-button icon-button');
     this.undoButton.addEventListener('click', () => {
       this.drawing.strokes.pop();
+      this.limitMessage = '';
       this.redraw();
       this.onChange();
       this.updateStatus();
@@ -127,6 +133,7 @@ export class DrawingPad {
         return;
       }
       this.drawing.strokes.length = 0;
+      this.limitMessage = '';
       this.redraw();
       this.onChange();
       this.updateStatus();
@@ -157,11 +164,7 @@ export class DrawingPad {
     return {
       width: CANVAS_WIDTH,
       height: CANVAS_HEIGHT,
-      strokes: this.drawing.strokes.map((stroke) => ({
-        color: stroke.color,
-        size: stroke.size,
-        points: stroke.points.map((point) => ({ ...point }))
-      }))
+      strokes: this.drawing.strokes.slice(0, MAX_STROKES).map(normalizeStroke)
     };
   }
 
@@ -171,38 +174,66 @@ export class DrawingPad {
 
   private bindPointerEvents(): void {
     this.canvas.addEventListener('pointerdown', (event) => {
-      this.canvas.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      if (this.activePointerId !== null) {
+        return;
+      }
+      if (this.drawing.strokes.length >= MAX_STROKES) {
+        this.limitMessage = 'Drawing is full. Undo or clear to keep going.';
+        this.updateStatus();
+        return;
+      }
+      this.activePointerId = event.pointerId;
+      safelySetPointerCapture(this.canvas, event.pointerId);
       const point = this.getPoint(event);
       this.currentStroke = {
         color: this.color,
         size: this.size,
         points: [point]
       };
+      this.limitMessage = '';
+      this.redraw();
     });
 
     this.canvas.addEventListener('pointermove', (event) => {
-      if (!this.currentStroke) {
+      if (!this.currentStroke || this.activePointerId !== event.pointerId) {
         return;
       }
+      event.preventDefault();
       const point = this.getPoint(event);
       const previous = this.currentStroke.points.at(-1);
-      if (!previous || Math.abs(previous.x - point.x) + Math.abs(previous.y - point.y) >= 3) {
+      if (!previous || Math.abs(previous.x - point.x) + Math.abs(previous.y - point.y) >= POINT_DISTANCE_THRESHOLD) {
+        if (this.currentStroke.points.length >= MAX_POINTS_PER_STROKE) {
+          this.limitMessage = 'Stroke is full. Lift your finger to keep drawing.';
+          this.updateStatus();
+          return;
+        }
         this.currentStroke.points.push(point);
         this.redraw();
-        drawStroke(setupCanvas(this.canvas), this.currentStroke);
       }
     });
 
     const finish = (event: PointerEvent) => {
-      if (!this.currentStroke) {
+      if (!this.currentStroke || this.activePointerId !== event.pointerId) {
         return;
       }
+      event.preventDefault();
       if (this.currentStroke.points.length === 1) {
-        this.currentStroke.points.push({ ...this.currentStroke.points[0], x: this.currentStroke.points[0].x + 1 });
+        const point = this.currentStroke.points[0];
+        this.currentStroke.points.push({
+          ...point,
+          x: point.x < CANVAS_WIDTH ? point.x + 1 : point.x - 1
+        });
       }
-      this.drawing.strokes.push(this.currentStroke);
+      const normalizedStroke = normalizeStroke(this.currentStroke);
+      if (normalizedStroke.points.length >= 2 && this.drawing.strokes.length < MAX_STROKES) {
+        this.drawing.strokes.push(normalizedStroke);
+      }
+      this.limitMessage =
+        this.drawing.strokes.length >= MAX_STROKES ? 'Drawing is full. Undo or clear to keep going.' : '';
       this.currentStroke = null;
-      this.canvas.releasePointerCapture(event.pointerId);
+      this.activePointerId = null;
+      safelyReleasePointerCapture(this.canvas, event.pointerId);
       this.redraw();
       this.updateStatus();
       this.onChange();
@@ -223,13 +254,18 @@ export class DrawingPad {
   }
 
   private redraw(): void {
-    renderDrawing(this.canvas, this.drawing);
+    renderDrawing(this.canvas, {
+      ...this.drawing,
+      strokes: this.currentStroke ? [...this.drawing.strokes, this.currentStroke] : this.drawing.strokes
+    });
   }
 
   private updateStatus(): void {
     const colorLabel = COLOR_LABELS[this.color] ?? this.color;
     this.toolsSummary.textContent = `Tools · ${colorLabel} · ${this.size}px`;
-    this.status.textContent = `${this.drawing.strokes.length} ${this.drawing.strokes.length === 1 ? 'stroke' : 'strokes'}`;
+    this.status.textContent =
+      this.limitMessage ||
+      `${this.drawing.strokes.length} ${this.drawing.strokes.length === 1 ? 'stroke' : 'strokes'}`;
     this.undoButton.disabled = !this.hasInk();
     this.clearButton.disabled = !this.hasInk();
     this.updateToolState();
@@ -268,8 +304,12 @@ function iconButton(icon: IconNode, label: string, className: string): HTMLButto
 }
 
 function setupCanvas(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
-  canvas.width = CANVAS_WIDTH;
-  canvas.height = CANVAS_HEIGHT;
+  if (canvas.width !== CANVAS_WIDTH) {
+    canvas.width = CANVAS_WIDTH;
+  }
+  if (canvas.height !== CANVAS_HEIGHT) {
+    canvas.height = CANVAS_HEIGHT;
+  }
   const ctx = canvas.getContext('2d');
   if (!ctx) {
     throw new Error('Canvas rendering context is unavailable.');
@@ -293,6 +333,47 @@ function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke): void {
   ctx.stroke();
 }
 
+function normalizeStroke(stroke: Stroke): Stroke {
+  return {
+    color: stroke.color,
+    size: stroke.size,
+    points: simplifyStrokePoints(stroke.points, MAX_POINTS_PER_STROKE)
+  };
+}
+
+function simplifyStrokePoints(points: Point[], maxPoints: number): Point[] {
+  if (points.length <= maxPoints) {
+    return points.map((point) => ({ ...point }));
+  }
+  if (maxPoints <= 1) {
+    return points.length === 0 ? [] : [{ ...points[0] }];
+  }
+
+  const lastIndex = points.length - 1;
+  return Array.from({ length: maxPoints }, (_, index) => {
+    const sourceIndex = Math.round((index / (maxPoints - 1)) * lastIndex);
+    return { ...points[sourceIndex] };
+  });
+}
+
+function safelySetPointerCapture(canvas: HTMLCanvasElement, pointerId: number): void {
+  try {
+    canvas.setPointerCapture(pointerId);
+  } catch {
+    // Synthetic browser tests may dispatch pointer events without a captured pointer.
+  }
+}
+
+function safelyReleasePointerCapture(canvas: HTMLCanvasElement, pointerId: number): void {
+  try {
+    if (canvas.hasPointerCapture(pointerId)) {
+      canvas.releasePointerCapture(pointerId);
+    }
+  } catch {
+    // Releasing a pointer that the browser already cancelled is harmless.
+  }
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -301,5 +382,8 @@ export const drawingTestExports = {
   COLORS,
   SIZES,
   COLOR_LABELS,
+  MAX_STROKES,
+  MAX_POINTS_PER_STROKE,
+  simplifyStrokePoints,
   clamp
 };

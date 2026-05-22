@@ -20,23 +20,35 @@ test('phone join screen starts neutral and renders local validation errors', asy
 
 test('TV lobby gives room code and QR the showcase hierarchy', async ({ baseURL, page }) => {
   const appUrl = makeAppUrl(baseURL);
+  const viewports = [
+    { width: 1280, height: 720 },
+    { width: 1366, height: 768 },
+    { width: 1440, height: 900 }
+  ];
 
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(appUrl('/'));
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await page.goto(appUrl('/'));
 
-  await expect(page.locator('.room-code')).toHaveText(/[A-Z]{4}/);
-  await expect(page.locator('.qr')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Start Game' })).toBeVisible();
-  await expect(page.getByText('Everybody draws. Everybody guesses.')).toBeVisible();
-  await expect(page.locator('.settings-panel')).toBeVisible();
+    await expect(page.locator('.room-code')).toHaveText(/[A-Z]{4}/);
+    await expect(page.locator('.qr')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Start Game' })).toBeVisible();
+    await expect(page.getByText('Everybody draws. Everybody guesses.')).toBeVisible();
+    await expect(page.locator('.settings-panel')).toBeVisible();
+    await expectNoVerticalOverflow(page);
 
-  const roomPanel = await page.locator('.room-panel').boundingBox();
-  const settingsPanel = await page.locator('.settings-panel').boundingBox();
-  if (!roomPanel || !settingsPanel) {
-    throw new Error('TV lobby panels must have layout boxes.');
+    const roomPanel = await page.locator('.room-panel').boundingBox();
+    const settingsPanel = await page.locator('.settings-panel').boundingBox();
+    const qr = await page.locator('.qr').boundingBox();
+    const start = await page.getByRole('button', { name: 'Start Game' }).boundingBox();
+    if (!roomPanel || !settingsPanel || !qr || !start) {
+      throw new Error('TV lobby panels must have layout boxes.');
+    }
+    expect(roomPanel.width).toBeGreaterThan(360);
+    expect(roomPanel.height).toBeGreaterThan(settingsPanel.height * 0.65);
+    expect(qr.y + qr.height).toBeLessThanOrEqual(viewport.height);
+    expect(start.y + start.height).toBeLessThanOrEqual(viewport.height);
   }
-  expect(roomPanel.width).toBeGreaterThan(420);
-  expect(roomPanel.height).toBeGreaterThan(settingsPanel.height * 0.65);
 });
 
 test('large-phone lobby presents player-ready hierarchy without clipping', async ({ baseURL, browser }) => {
@@ -107,7 +119,7 @@ test('phone drawing screen prioritizes canvas before controls on mobile', async 
       throw new Error('Drawing canvas and tools drawer must have layout boxes.');
     }
     expect(canvasBox.y).toBeLessThan(drawerBox.y);
-    expect(canvasBox.width).toBeGreaterThan(320);
+    expect(canvasBox.width).toBeGreaterThan(340);
     expect(submitBox.y + submitBox.height).toBeLessThanOrEqual(844);
 
     await drawStroke(ava);
@@ -146,6 +158,14 @@ test('iPad portrait and landscape drawing use expanded tools without overflow', 
       await expectNoHorizontalOverflow(page);
     }
 
+    const portraitCanvas = await portrait.locator('canvas.draw-canvas').boundingBox();
+    const landscapeCanvas = await landscape.locator('canvas.draw-canvas').boundingBox();
+    if (!portraitCanvas || !landscapeCanvas) {
+      throw new Error('iPad drawing canvases must have layout boxes.');
+    }
+    expect(portraitCanvas.width).toBeGreaterThan(480);
+    expect(landscapeCanvas.width).toBeGreaterThan(620);
+
     const portraitSubmit = await portrait.getByRole('button', { name: 'Submit Drawing' }).boundingBox();
     const landscapeSubmit = await landscape.getByRole('button', { name: 'Submit Drawing' }).boundingBox();
     if (!portraitSubmit || !landscapeSubmit) {
@@ -153,6 +173,56 @@ test('iPad portrait and landscape drawing use expanded tools without overflow', 
     }
     expect(portraitSubmit.y + portraitSubmit.height).toBeLessThanOrEqual(1024);
     expect(landscapeSubmit.y + landscapeSubmit.height).toBeLessThanOrEqual(768);
+  } finally {
+    await Promise.all(contexts.map((context) => context.close()));
+  }
+});
+
+test('solo drawing keeps live ink stable, ignores extra touches, and submits dense strokes', async ({ baseURL, browser }) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+    await tv.locator('.settings-panel input').first().fill('1');
+    await tv.getByRole('button', { name: 'Save Settings' }).click();
+
+    const [player] = await createPlayers(browser, contexts, appUrl, roomCode, ['Solo']);
+    await expect(tv.getByRole('button', { name: 'Start Game' })).toBeEnabled();
+    await tv.getByRole('button', { name: 'Start Game' }).click();
+
+    await drawStroke(player);
+    await expect.poll(() => hasCanvasInkNear(player, 0.46, 0.48)).toBe(true);
+
+    const canvas = player.locator('canvas.draw-canvas');
+    const box = await canvas.boundingBox();
+    if (!box) {
+      throw new Error('Drawing canvas did not have a layout box.');
+    }
+    await player.mouse.move(box.x + box.width * 0.18, box.y + box.height * 0.68);
+    await player.mouse.down();
+    await player.mouse.move(box.x + box.width * 0.62, box.y + box.height * 0.66, { steps: 8 });
+    await expect.poll(() => hasCanvasInkNear(player, 0.46, 0.48)).toBe(true);
+    await player.mouse.up();
+    await expect(player.locator('.draw-status')).toHaveText('2 strokes');
+
+    await dispatchTwoFingerStroke(player);
+    await expect(player.locator('.draw-status')).toHaveText('3 strokes');
+
+    await dispatchDenseStroke(player);
+    await expect(player.locator('.draw-status')).toHaveText('4 strokes');
+    await player.getByRole('button', { name: 'Submit Drawing' }).click();
+
+    await expect(tv.getByText('The real prompt was')).toBeVisible();
+    await expect(player.getByText('The real prompt was')).toBeVisible();
+    await tv.getByRole('button', { name: 'Continue' }).click();
+    await expect(tv.getByText('Final Podium')).toBeVisible();
+    await expect(player.getByText('Final Podium')).toBeVisible();
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }
@@ -315,6 +385,17 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
     .toBe(true);
 }
 
+async function expectNoVerticalOverflow(page: Page): Promise<void> {
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const root = document.documentElement;
+        return Math.ceil(root.scrollHeight) <= Math.ceil(window.innerHeight) + 4;
+      })
+    )
+    .toBe(true);
+}
+
 async function drawStroke(page: Page): Promise<void> {
   const canvas = page.locator('canvas.draw-canvas');
   await expect(canvas).toBeVisible();
@@ -328,6 +409,85 @@ async function drawStroke(page: Page): Promise<void> {
   await page.mouse.move(box.x + box.width * 0.46, box.y + box.height * 0.48, { steps: 4 });
   await page.mouse.move(box.x + box.width * 0.72, box.y + box.height * 0.28, { steps: 4 });
   await page.mouse.up();
+}
+
+async function hasCanvasInkNear(page: Page, xRatio: number, yRatio: number): Promise<boolean> {
+  return page.locator('canvas.draw-canvas').evaluate(
+    (canvas: HTMLCanvasElement, point) => {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        return false;
+      }
+      const centerX = Math.round(canvas.width * point.xRatio);
+      const centerY = Math.round(canvas.height * point.yRatio);
+      for (let offsetY = -6; offsetY <= 6; offsetY += 1) {
+        for (let offsetX = -6; offsetX <= 6; offsetX += 1) {
+          const x = Math.min(canvas.width - 1, Math.max(0, centerX + offsetX));
+          const y = Math.min(canvas.height - 1, Math.max(0, centerY + offsetY));
+          const [red, green, blue] = Array.from(ctx.getImageData(x, y, 1, 1).data);
+          if (red < 245 || green < 245 || blue < 245) {
+            return true;
+          }
+        }
+      }
+      return false;
+    },
+    { xRatio, yRatio }
+  );
+}
+
+async function dispatchTwoFingerStroke(page: Page): Promise<void> {
+  await page.locator('canvas.draw-canvas').evaluate((canvas: HTMLCanvasElement) => {
+    const rect = canvas.getBoundingClientRect();
+    const fire = (type: string, pointerId: number, xRatio: number, yRatio: number, buttons = 1) => {
+      canvas.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          pointerId,
+          pointerType: 'touch',
+          isPrimary: pointerId === 21,
+          buttons,
+          clientX: rect.left + rect.width * xRatio,
+          clientY: rect.top + rect.height * yRatio
+        })
+      );
+    };
+    fire('pointerdown', 21, 0.12, 0.16);
+    fire('pointermove', 21, 0.22, 0.2);
+    fire('pointerdown', 22, 0.84, 0.84);
+    fire('pointermove', 22, 0.92, 0.92);
+    fire('pointerup', 22, 0.92, 0.92, 0);
+    fire('pointermove', 21, 0.36, 0.24);
+    fire('pointerup', 21, 0.36, 0.24, 0);
+  });
+}
+
+async function dispatchDenseStroke(page: Page): Promise<void> {
+  await page.locator('canvas.draw-canvas').evaluate((canvas: HTMLCanvasElement) => {
+    const rect = canvas.getBoundingClientRect();
+    const fire = (type: string, pointerId: number, xRatio: number, yRatio: number, buttons = 1) => {
+      canvas.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          pointerId,
+          pointerType: 'pen',
+          isPrimary: true,
+          buttons,
+          clientX: rect.left + rect.width * xRatio,
+          clientY: rect.top + rect.height * yRatio
+        })
+      );
+    };
+    fire('pointerdown', 31, 0.1, 0.28);
+    for (let index = 1; index <= 260; index += 1) {
+      const xRatio = 0.1 + 0.8 * (index / 260);
+      const yRatio = 0.45 + Math.sin(index / 7) * 0.18;
+      fire('pointermove', 31, xRatio, yRatio);
+    }
+    fire('pointerup', 31, 0.9, 0.45, 0);
+  });
 }
 
 async function waitForPagesWithVisibleLocator(pages: Page[], selector: string): Promise<Page[]> {

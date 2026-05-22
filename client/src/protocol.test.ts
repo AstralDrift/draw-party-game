@@ -7,7 +7,7 @@ describe('protocol helpers', () => {
       roomCode: 'ABCD',
       phase: 'lobby',
       players: [],
-      minPlayers: 2,
+      minPlayers: 1,
       maxPlayers: 8,
       currentRound: 0,
       totalRounds: 5,

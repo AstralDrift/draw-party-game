@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 pub const CANVAS_WIDTH: u16 = 1024;
 pub const CANVAS_HEIGHT: u16 = 768;
 pub const MAX_PLAYERS: usize = 8;
-pub const MIN_PLAYERS: usize = 2;
+pub const MIN_PLAYERS: usize = 1;
 pub const DEFAULT_TOTAL_ROUNDS: u8 = 5;
 pub const TOTAL_ROUNDS: u8 = DEFAULT_TOTAL_ROUNDS;
 pub const MIN_ROUNDS: u8 = 1;

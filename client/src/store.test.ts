@@ -7,7 +7,7 @@ function snapshot(): RoomSnapshot {
     roomCode: 'ABCD',
     phase: 'lobby',
     players: [{ id: 'p1', name: 'Ava', score: 0, connected: true }],
-    minPlayers: 2,
+    minPlayers: 1,
     maxPlayers: 8,
     currentRound: 0,
     totalRounds: 5,

@@ -515,9 +515,10 @@ impl Room {
     fn start_drawing_round(&mut self, now_ms: u64) -> EngineResult<()> {
         self.prune_disconnected_players();
         if self.connected_player_count() < MIN_PLAYERS {
+            let player_word = if MIN_PLAYERS == 1 { "player" } else { "players" };
             return Err(EngineError::new(
                 "not_enough_players",
-                format!("Need at least {MIN_PLAYERS} players to start."),
+                format!("Need at least {MIN_PLAYERS} {player_word} to start."),
             ));
         }
 
@@ -1522,17 +1523,38 @@ mod tests {
     }
 
     #[test]
-    fn start_requires_two_connected_players() {
+    fn start_allows_one_connected_player() {
         let mut room = room_with_players();
         room.mark_disconnected("p2", 10);
         room.mark_disconnected("p3", 11);
 
-        let err = room.handle_start_or_advance(100).unwrap_err();
+        room.handle_start_or_advance(100).unwrap();
 
-        assert_eq!(err.code, "not_enough_players");
-        assert_eq!(room.phase, GamePhase::Lobby);
+        assert_eq!(room.phase, GamePhase::Drawing);
         assert_eq!(room.players.len(), 1);
         assert!(room.players.contains_key("p1"));
+        assert_eq!(room.round.order, vec!["p1".to_string()]);
+    }
+
+    #[test]
+    fn solo_round_skips_guessing_and_voting_after_drawing() {
+        let mut room = room_with_players();
+        room.mark_disconnected("p2", 10);
+        room.mark_disconnected("p3", 11);
+        room.handle_start_or_advance(100).unwrap();
+
+        let event = room
+            .submit_drawing("p1", room.turn_token, drawing(), 200)
+            .unwrap();
+
+        assert_eq!(event, EngineEvent::PhaseChanged);
+        assert_eq!(room.phase, GamePhase::Results);
+        assert_eq!(room.round.guesses.len(), 0);
+        assert_eq!(room.round.votes.len(), 0);
+        let result = room.round.result.as_ref().unwrap();
+        assert_eq!(result.artist_id, "p1");
+        assert_eq!(result.breakdown.len(), 1);
+        assert_eq!(result.correct_voter_names.len(), 0);
     }
 
     #[test]

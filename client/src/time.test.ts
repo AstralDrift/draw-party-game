@@ -7,7 +7,7 @@ function snapshot(serverNowMs: number, deadlineMs: number | null): RoomSnapshot 
     roomCode: 'ABCD',
     phase: 'drawing',
     players: [],
-    minPlayers: 2,
+    minPlayers: 1,
     maxPlayers: 8,
     currentRound: 1,
     totalRounds: 5,

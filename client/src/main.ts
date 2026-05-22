@@ -418,9 +418,9 @@ function renderRoomPanel(): HTMLElement {
       'p',
       { class: canStart ? 'start-note ready' : 'start-note' },
       canStart
-        ? `${connectedPlayers.length} connected players ready.`
+        ? `${connectedPlayers.length} connected ${connectedPlayers.length === 1 ? 'player' : 'players'} ready.`
         : connectedPlayers.length === 0
-          ? `Need ${snapshot.minPlayers} connected players. Phones can scan the code now.`
+          ? `Need ${snapshot.minPlayers} connected ${snapshot.minPlayers === 1 ? 'player' : 'players'}. Phones can scan the code now.`
           : `Need ${neededPlayers} more connected ${neededPlayers === 1 ? 'player' : 'players'}.`
     )
   );
