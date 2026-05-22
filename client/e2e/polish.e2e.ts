@@ -266,6 +266,79 @@ test('phone vote selection stays confirmed while the table is still voting', asy
   }
 });
 
+test('TV progress names submitted players and who is still waiting', async ({ baseURL, browser }) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const names = ['Ava', 'Bo', 'Cy'];
+    const players = await createPlayers(browser, contexts, appUrl, roomCode, names);
+    const nameForPage = new Map<Page, string>(players.map((player, index) => [player, names[index]]));
+    await tv.getByRole('button', { name: 'Start Game' }).click();
+    await expect(tv.getByText('Players are drawing')).toBeVisible();
+
+    await drawStroke(players[0]);
+    await players[0].getByRole('button', { name: 'Submit Drawing' }).click();
+    await expectProgressSummary(tv, 'Drawings', '1/3', ['Ava', 'drawing in'], ['Bo', 'waiting'], ['Cy', 'waiting']);
+    await expectNoVerticalOverflow(tv);
+
+    for (const player of players.slice(1)) {
+      await drawStroke(player);
+      await player.getByRole('button', { name: 'Submit Drawing' }).click();
+    }
+
+    await expect(tv.getByText('What is this?')).toBeVisible();
+    const guessers = await waitForPagesWithVisibleLocatorCount(players, 'input[placeholder="Fake answer"]', 2);
+    const artist = players.find((player) => !guessers.includes(player));
+    const firstGuesserName = nameForPage.get(guessers[0]) ?? '';
+    const secondGuesserName = nameForPage.get(guessers[1]) ?? '';
+    const artistName = artist ? (nameForPage.get(artist) ?? '') : '';
+
+    await guessers[0].getByPlaceholder('Fake answer').fill('first fake');
+    await guessers[0].getByRole('button', { name: 'Submit Guess' }).click();
+    await expectProgressSummary(
+      tv,
+      'Guesses',
+      '1/2',
+      [firstGuesserName, 'guess in'],
+      [secondGuesserName, 'waiting'],
+      [artistName, 'artist']
+    );
+    await expectNoVerticalOverflow(tv);
+
+    await guessers[1].getByPlaceholder('Fake answer').fill('second fake');
+    await guessers[1].getByRole('button', { name: 'Submit Guess' }).click();
+
+    await expect(tv.getByText('Vote for the real prompt')).toBeVisible();
+    const voters = await waitForPagesWithVisibleLocatorCount(players, 'button.vote-option:not([disabled])', 2);
+    const firstVoterName = nameForPage.get(voters[0]) ?? '';
+    const secondVoterName = nameForPage.get(voters[1]) ?? '';
+    const voteArtist = players.find((player) => !voters.includes(player));
+    const voteArtistName = voteArtist ? (nameForPage.get(voteArtist) ?? '') : '';
+
+    await voters[0].locator('button.vote-option:not([disabled])').first().click();
+    await expectProgressSummary(
+      tv,
+      'Votes',
+      '1/2',
+      [firstVoterName, 'voted'],
+      [secondVoterName, 'waiting'],
+      [voteArtistName, 'artist']
+    );
+    await expect(tv.locator('.display-grid-voting > .vote-list')).toBeVisible();
+    await expectNoVerticalOverflow(tv);
+  } finally {
+    await Promise.all(contexts.map((context) => context.close()));
+  }
+});
+
 test('one-round finale renders podium and scores without overflow', async ({ baseURL, browser }) => {
   const contexts: BrowserContext[] = [];
   const appUrl = makeAppUrl(baseURL);
@@ -372,6 +445,20 @@ async function createPlayers(
     pages.push(page);
   }
   return pages;
+}
+
+async function expectProgressSummary(
+  page: Page,
+  title: string,
+  count: string,
+  ...rows: Array<[string, string]>
+): Promise<void> {
+  const panel = page.locator('.progress-panel', { hasText: title });
+  await expect(panel).toBeVisible();
+  await expect(panel.locator('.big-count')).toHaveText(count);
+  for (const [name, status] of rows) {
+    await expect(panel.locator('.submission-row', { hasText: name }).locator('.status-pill')).toHaveText(status);
+  }
 }
 
 async function expectNoHorizontalOverflow(page: Page): Promise<void> {

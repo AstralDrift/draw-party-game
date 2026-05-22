@@ -1,29 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <defs>
-    <linearGradient id="bg" x1="18" y1="12" x2="114" y2="120" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#10231f"/>
-      <stop offset="0.46" stop-color="#111827"/>
-      <stop offset="1" stop-color="#2a1424"/>
-    </linearGradient>
-    <linearGradient id="brush" x1="32" y1="86" x2="99" y2="50" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#fffaf0"/>
-      <stop offset="0.52" stop-color="#ffd166"/>
-      <stop offset="1" stop-color="#58efb5"/>
-    </linearGradient>
-    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="4" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-  </defs>
-  <rect width="128" height="128" rx="24" fill="url(#bg)"/>
-  <path d="M20 28c16-10 33-11 52-3 15 7 27 6 36-2" fill="none" stroke="#ffffff" stroke-opacity=".34" stroke-width="4" stroke-linecap="round"/>
-  <path d="M28 92c16-25 42-42 76-50-3 25-22 43-56 54-9 3-17 1-20-4z" fill="url(#brush)" filter="url(#glow)"/>
-  <path d="M42 83c12-9 27-17 46-24" fill="none" stroke="#15161d" stroke-width="7" stroke-linecap="round"/>
-  <circle cx="34" cy="38" r="10" fill="#ff6b6b"/>
-  <circle cx="63" cy="31" r="10" fill="#ffd166"/>
-  <circle cx="91" cy="45" r="10" fill="#58efb5"/>
-  <path d="M88 28l8-8M99 31l10-3M93 39l9 7" stroke="#fffaf0" stroke-width="4" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" shape-rendering="crispEdges">
+  <rect width="128" height="128" rx="16" fill="#070812"/>
+  <rect x="6" y="6" width="116" height="116" rx="10" fill="#11172f"/>
+  <rect x="10" y="10" width="108" height="108" rx="6" fill="#151a35"/>
+  <path d="M18 26h10v-8h8v8h10v8H36v10h-8V34H18z" fill="#4ed7ff"/>
+  <path d="M88 18h10v8h8v10h-8v8H88v-8h-8V26h8z" fill="#ffd84d"/>
+  <path d="M25 88h8v-8h10v8h8v10h-8v8H33v-8h-8z" fill="#ff62b0"/>
+  <path d="M42 83h10v-8h10v-8h10v-8h10v-8h18v12H90v8H80v8H70v8H60v8H42z" fill="#fff6d7"/>
+  <path d="M58 75h10v-8h10v-8h10v-8h12v8H90v8H80v8H70v8H58z" fill="#ffd84d"/>
+  <path d="M98 47h12v12H98z" fill="#ff62b0"/>
+  <path d="M34 42h10v10H34zM48 34h8v8h-8zM76 94h8v8h-8zM90 82h10v10H90z" fill="#63f5b7"/>
+  <path d="M42 83h10v10H42zM52 75h10v8H52zM62 67h10v8H62z" fill="#15141f"/>
+  <rect x="10" y="108" width="108" height="10" fill="#0a0d1c" opacity=".65"/>
 </svg>

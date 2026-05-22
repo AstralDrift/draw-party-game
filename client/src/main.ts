@@ -224,12 +224,19 @@ function renderDisplay(): HTMLElement {
   } else if (snapshot.phase === 'drawing') {
     content.append(
       heroPanel('Players are drawing', `Round ${snapshot.currentRound} of ${snapshot.totalRounds}`),
-      renderProgressPanel('Drawings', snapshot.drawingSubmittedIds)
+      renderProgressPanel('Drawings', snapshot.drawingSubmittedIds, 'drawing')
     );
   } else if (snapshot.phase === 'guessing') {
-    content.append(renderRevealPanel('What is this?', false), renderProgressPanel('Guesses', snapshot.guessSubmittedIds));
+    content.append(
+      renderRevealPanel('What is this?', false),
+      renderProgressPanel('Guesses', snapshot.guessSubmittedIds, 'guessing')
+    );
   } else if (snapshot.phase === 'voting') {
-    content.append(renderRevealPanel('Vote for the real prompt', false), renderVotingOptions(snapshot.votingOptions, false));
+    content.append(
+      renderRevealPanel('Vote for the real prompt', false),
+      renderVotingOptions(snapshot.votingOptions, false),
+      renderProgressPanel('Votes', snapshot.voteSubmittedIds, 'voting')
+    );
   } else if (snapshot.phase === 'results') {
     content.append(renderResults(snapshot.roundResult, true), renderAdvancePanel());
   } else {
@@ -748,12 +755,15 @@ function renderVotingOptions(options: VotingOption[], interactive: boolean, subm
   return container;
 }
 
-function renderProgressPanel(label: string, submittedIds: string[]): HTMLElement {
-  const activePlayers = snapshot?.players.filter((player) => player.connected) ?? [];
-  const activeSubmittedIds = submittedIds.filter((playerId) => activePlayers.some((player) => player.id === playerId));
-  const total = Math.max(1, activePlayers.length);
-  const progress = Math.round((activeSubmittedIds.length / total) * 100);
-  const waitingNames = activePlayers
+type SubmissionPhase = 'drawing' | 'guessing' | 'voting';
+
+function renderProgressPanel(label: string, submittedIds: string[], phase: SubmissionPhase): HTMLElement {
+  const players = snapshot?.players ?? [];
+  const connectedPlayers = players.filter((player) => player.connected);
+  const eligiblePlayers = connectedPlayers.filter((player) => phase === 'drawing' || player.id !== snapshot?.currentArtistId);
+  const activeSubmittedIds = submittedIds.filter((playerId) => eligiblePlayers.some((player) => player.id === playerId));
+  const progress = eligiblePlayers.length === 0 ? 100 : Math.round((activeSubmittedIds.length / eligiblePlayers.length) * 100);
+  const waitingNames = eligiblePlayers
     .filter((player) => !submittedIds.includes(player.id))
     .map((player) => player.name);
   return el(
@@ -763,7 +773,7 @@ function renderProgressPanel(label: string, submittedIds: string[]): HTMLElement
     el(
       'div',
       { class: 'progress-hero' },
-      el('div', { class: 'big-count' }, `${activeSubmittedIds.length}/${activePlayers.length}`),
+      el('div', { class: 'big-count' }, `${activeSubmittedIds.length}/${eligiblePlayers.length}`),
       el('div', { class: 'progress-ring', style: `--progress:${progress}%` }, el('span', {}, `${progress}%`))
     ),
     el(
@@ -771,8 +781,52 @@ function renderProgressPanel(label: string, submittedIds: string[]): HTMLElement
       { class: 'muted' },
       waitingNames.length === 0 ? 'Everyone is in.' : `Waiting on ${waitingNames.join(', ')}.`
     ),
-    renderPlayerList(false)
+    renderSubmissionList(players, submittedIds, phase)
   );
+}
+
+function renderSubmissionList(players: RoomSnapshot['players'], submittedIds: string[], phase: SubmissionPhase): HTMLElement {
+  const list = el('div', { class: 'player-list submission-list' });
+  for (const [index, player] of players.entries()) {
+    const artist = phase !== 'drawing' && player.id === snapshot?.currentArtistId;
+    const submitted = submittedIds.includes(player.id);
+    const state = !player.connected ? 'offline' : artist ? 'artist' : submitted ? 'submitted' : 'waiting';
+    list.appendChild(
+      el(
+        'div',
+        {
+          class: `player-row submission-row ${player.connected ? 'online' : 'offline'} is-${state}`,
+          style: `--row-index:${index}`
+        },
+        el('span', { class: 'player-name' }, player.name),
+        el('span', { class: `pill status-pill status-${state}` }, submissionStatusLabel(state, phase))
+      )
+    );
+  }
+  if (!players.length) {
+    list.appendChild(el('div', { class: 'empty-state' }, 'Waiting for players.'));
+  }
+  return list;
+}
+
+function submissionStatusLabel(state: 'offline' | 'artist' | 'submitted' | 'waiting', phase: SubmissionPhase): string {
+  if (state === 'offline') {
+    return 'offline';
+  }
+  if (state === 'artist') {
+    return 'artist';
+  }
+  if (state === 'waiting') {
+    return 'waiting';
+  }
+  switch (phase) {
+    case 'drawing':
+      return 'drawing in';
+    case 'guessing':
+      return 'guess in';
+    case 'voting':
+      return 'voted';
+  }
 }
 
 function renderResults(result: RoundResult | null | undefined, includeDrawing: boolean): HTMLElement {
