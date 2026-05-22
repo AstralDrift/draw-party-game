@@ -396,9 +396,12 @@ function renderRoomPanel(): HTMLElement {
   const qrCanvas = document.createElement('canvas');
   qrCanvas.className = 'qr';
   QRCode.toCanvas(qrCanvas, joinUrl, {
-    width: 260,
+    width: 640,
     margin: 1,
     color: { dark: '#10131f', light: '#ffffff' }
+  }).then(() => {
+    qrCanvas.style.width = '';
+    qrCanvas.style.height = '';
   }).catch(() => {
     qrCanvas.replaceWith(el('p', { class: 'muted' }, joinUrl));
   });
@@ -409,7 +412,19 @@ function renderRoomPanel(): HTMLElement {
   return el(
     'section',
     { class: 'panel room-panel' },
-    el('div', { class: 'room-hero-copy' }, el('p', { class: 'eyebrow' }, 'Scan to play'), el('h2', {}, 'Everybody draws. Everybody guesses.')),
+    el(
+      'div',
+      { class: 'room-art', 'aria-hidden': 'true' },
+      el('span', { class: 'room-spark spark-one' }),
+      el('span', { class: 'room-spark spark-two' }),
+      el('span', { class: 'room-loop' })
+    ),
+    el(
+      'div',
+      { class: 'room-hero-copy' },
+      el('p', { class: 'eyebrow' }, 'Scan to play'),
+      el('h2', {}, 'Everybody draws. Everybody guesses.')
+    ),
     el('div', { class: 'room-code-wrap' }, el('span', { class: 'room-code-label' }, 'Room Code'), el('div', { class: 'room-code' }, snapshot.roomCode)),
     el('div', { class: 'qr-stage' }, qrCanvas),
     el('p', { class: 'join-url' }, joinUrl),
@@ -548,7 +563,6 @@ function renderDrawingTurn(): HTMLElement {
       'section',
       { class: 'panel play-panel player-turn-panel drawing-turn' },
       heading,
-      renderReconnectHint('Your drawing is already submitted.'),
       el('div', { class: 'success-box' }, 'Drawing submitted. Watch the TV.')
     );
   }
@@ -579,7 +593,6 @@ function renderDrawingTurn(): HTMLElement {
     'section',
     { class: 'panel play-panel player-turn-panel drawing-turn' },
     heading,
-    renderReconnectHint(submitted ? 'Your drawing is already submitted.' : 'Keep drawing. If your phone reconnects, this screen will return.'),
     drawingPad.root
   );
 }
@@ -944,7 +957,11 @@ function renderBackdrop(): HTMLElement {
     el('span', { class: 'backdrop-brush brush-one' }),
     el('span', { class: 'backdrop-brush brush-two' }),
     el('span', { class: 'backdrop-mark mark-one' }),
-    el('span', { class: 'backdrop-mark mark-two' })
+    el('span', { class: 'backdrop-mark mark-two' }),
+    el('span', { class: 'party-sprite sprite-pencil' }),
+    el('span', { class: 'party-sprite sprite-spark sprite-spark-one' }),
+    el('span', { class: 'party-sprite sprite-spark sprite-spark-two' }),
+    el('span', { class: 'party-sprite sprite-loop' })
   );
 }
 

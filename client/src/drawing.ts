@@ -13,6 +13,16 @@ const COLOR_LABELS: Record<string, string> = {
   '#f957a8': 'pink ink',
   '#ffffff': 'eraser'
 };
+const SUMMARY_COLOR_LABELS: Record<string, string> = {
+  '#111111': 'black',
+  '#ff595e': 'red',
+  '#ffca3a': 'yellow',
+  '#34d399': 'green',
+  '#1982c4': 'blue',
+  '#6a4c93': 'purple',
+  '#f957a8': 'pink',
+  '#ffffff': 'eraser'
+};
 const MAX_STROKES = 220;
 const MAX_POINTS_PER_STROKE = 180;
 const POINT_DISTANCE_THRESHOLD = 4;
@@ -148,13 +158,17 @@ export class DrawingPad {
     }
     toolsDrawer.append(this.toolsSummary, toolbar);
 
+    const canvasStage = document.createElement('div');
+    canvasStage.className = 'canvas-stage';
+    canvasStage.append(this.canvas, this.status);
+
     this.root = document.createElement('section');
     this.root.className = 'drawing-pad';
-    this.root.append(this.canvas);
+    this.root.append(canvasStage);
     if (submitSlot) {
       this.root.appendChild(submitSlot);
     }
-    this.root.append(toolsDrawer, this.status);
+    this.root.append(toolsDrawer);
     this.bindPointerEvents();
     this.redraw();
     this.updateStatus();
@@ -262,7 +276,8 @@ export class DrawingPad {
 
   private updateStatus(): void {
     const colorLabel = COLOR_LABELS[this.color] ?? this.color;
-    this.toolsSummary.textContent = `Tools · ${colorLabel} · ${this.size}px`;
+    const summaryColorLabel = SUMMARY_COLOR_LABELS[this.color] ?? colorLabel;
+    this.toolsSummary.textContent = `Tools · ${summaryColorLabel} · ${this.size}px`;
     this.status.textContent =
       this.limitMessage ||
       `${this.drawing.strokes.length} ${this.drawing.strokes.length === 1 ? 'stroke' : 'strokes'}`;
