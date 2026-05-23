@@ -1,0 +1,12 @@
+---
+description: Draw Party repository guidance
+globs: **/*
+alwaysApply: true
+---
+
+Use `AGENTS.md` as the canonical agent guidance for this repository.
+
+Important defaults:
+- Keep the Rust server authoritative for rooms, phase transitions, deadlines, scoring, reconnects, and cleanup.
+- Keep the Vite + TypeScript client focused on TV/player rendering, drawing input, protocol guards, and PWA assets.
+- Validate changes with the smallest relevant subset from `AGENTS.md`, then broaden when shared game behavior changes.
