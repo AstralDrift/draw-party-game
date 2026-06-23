@@ -1,58 +1,33 @@
-import type { GamePhase, RoundResult, ScoreEntry } from './protocol';
+import type { RoundResult, ScoreEntry } from './protocol';
 
-/** Soft party-size guidance. Server `MIN_PLAYERS` stays 1 for solo/demo. */
-export const RECOMMENDED_PARTY_SIZE = 3;
+type RoundOutcomeInput = Pick<RoundResult, 'breakdown' | 'correctVoterNames'>;
 
-type RoundOutcomeInput = Pick<
-  RoundResult,
-  'breakdown' | 'correctVoterNames' | 'nobodyFoundIt' | 'perfectTruth'
->;
+export type RoundHighlightTone = 'truth' | 'fake' | 'score';
 
-export function displayLobbyStartNote(connectedCount: number, minPlayers: number): string {
-  if (connectedCount < minPlayers) {
-    if (connectedCount === 0) {
-      return `Scan the QR (or type the code). Need ${minPlayers}+ phones.`;
-    }
-    const needed = Math.max(0, minPlayers - connectedCount);
-    return `Need ${needed} more phone${needed === 1 ? '' : 's'} before kickoff.`;
-  }
-  if (connectedCount < RECOMMENDED_PARTY_SIZE) {
-    return `${connectedCount} ready — playable now, best with 3+ for votes and fakes.`;
-  }
-  return `${connectedCount} ready — hit Start when the couch is full.`;
-}
-
-export function playerLobbyReadyNote(connectedCount: number, minPlayers: number): string {
-  const needed = Math.max(0, minPlayers - connectedCount);
-  if (needed > 0) {
-    return `Need ${needed} more ${needed === 1 ? 'player' : 'players'}.`;
-  }
-  if (connectedCount < RECOMMENDED_PARTY_SIZE) {
-    const invite = RECOMMENDED_PARTY_SIZE - connectedCount;
-    return `Invite ${invite} more for better voting.`;
-  }
-  return 'The TV can start the game.';
+export interface RoundHighlightCard {
+  label: string;
+  title: string;
+  detail: string;
+  tone: RoundHighlightTone;
 }
 
 export function roundOutcomeText(result: RoundOutcomeInput): string {
-  if (result.nobodyFoundIt) {
-    return 'Nobody got it — artist wins the room';
-  }
-  if (result.perfectTruth) {
-    return 'Everyone saw through it — perfect!';
-  }
-
+  const totalVoters = new Set(result.breakdown.flatMap((item) => item.voterNames)).size;
   const correctVoters = result.correctVoterNames;
+
+  if (correctVoters.length === 0) {
+    return 'No one found it';
+  }
+  if (totalVoters > 0 && correctVoters.length === totalVoters) {
+    return 'Everyone found it';
+  }
   if (correctVoters.length === 1) {
-    return `${correctVoters[0]} cracked it`;
+    return `${correctVoters[0]} found it`;
   }
   if (correctVoters.length === 2) {
-    return `${correctVoters[0]} and ${correctVoters[1]} cracked it`;
+    return `${correctVoters[0]} and ${correctVoters[1]} found it`;
   }
-  if (correctVoters.length > 2) {
-    return `${correctVoters.length} players cracked it`;
-  }
-  return 'Nobody got it — artist wins the room';
+  return `${correctVoters.length} players found it`;
 }
 
 export function finalWinnerText(scores: ScoreEntry[]): string {
@@ -71,54 +46,73 @@ export function finalWinnerText(scores: ScoreEntry[]): string {
   return `${winners.length} players tie`;
 }
 
-export function playerActionHint(phase: GamePhase, isArtist: boolean): string {
-  switch (phase) {
-    case 'lobby':
-      return 'You’re in. Watch the TV — the host starts when the room feels ready.';
-    case 'drawing':
-      return 'Draw fast and messy. Clarity is optional. Comedy is not.';
-    case 'guessing':
-      return isArtist
-        ? 'Your drawing is on the TV. Enjoy the fake titles rolling in.'
-        : 'Invent a title that sounds real. Fooling people is the whole game.';
-    case 'voting':
-      return isArtist
-        ? 'Sit back. You can’t vote on your own masterpiece.'
-        : 'Hunt the real prompt. Skip your own fake — that’s the trap.';
-    case 'results':
-      return 'Watch who got cooked. Next drawing is loading.';
-    case 'finalScores':
-      return 'Cheer the podium. Yell for one more round.';
-    default: {
-      const _exhaustive: never = phase;
-      return _exhaustive;
-    }
+export function roundHighlightCards(result: RoundResult): RoundHighlightCard[] {
+  const highlights: RoundHighlightCard[] = [];
+  const totalVoters = new Set(result.breakdown.flatMap((item) => item.voterNames)).size;
+
+  if (result.correctVoterNames.length === 0) {
+    highlights.push({
+      label: 'Table stumper',
+      title: 'Nobody found the real prompt',
+      detail: 'The room got completely fooled.',
+      tone: 'truth'
+    });
+  } else if (totalVoters > 0 && result.correctVoterNames.length === totalVoters) {
+    highlights.push({
+      label: 'Clean sweep',
+      title: 'Everyone found it',
+      detail: 'The fakes did not stand a chance.',
+      tone: 'truth'
+    });
+  } else {
+    highlights.push({
+      label: 'Truth squad',
+      title: formatNameList(result.correctVoterNames),
+      detail: 'Found the real prompt.',
+      tone: 'truth'
+    });
   }
+
+  const bestFake = result.breakdown
+    .filter((item) => !item.isCorrect && item.voterNames.length > 0)
+    .sort((a, b) => b.voterNames.length - a.voterNames.length)[0];
+  if (bestFake) {
+    const voteCount = bestFake.voterNames.length;
+    highlights.push({
+      label: 'Best fake',
+      title: bestFake.authorName ? `${bestFake.authorName}'s bluff` : 'Mystery bluff',
+      detail: `“${bestFake.optionText}” pulled ${voteCount} ${voteCount === 1 ? 'vote' : 'votes'}.`,
+      tone: 'fake'
+    });
+  }
+
+  const positiveDeltas = result.scoreDeltas.filter((delta) => delta.delta > 0);
+  const biggestDelta = Math.max(0, ...positiveDeltas.map((delta) => delta.delta));
+  const topDeltas = positiveDeltas.filter((delta) => delta.delta === biggestDelta);
+  if (biggestDelta > 0 && topDeltas.length > 0) {
+    highlights.push({
+      label: 'Biggest jump',
+      title: topDeltas.length === 1 ? `${topDeltas[0].name} +${biggestDelta}` : `${topDeltas.length} players +${biggestDelta}`,
+      detail:
+        topDeltas.length === 1
+          ? 'Largest score gain this reveal.'
+          : `${formatNameList(topDeltas.map((delta) => delta.name))} had the largest score gain this reveal.`,
+      tone: 'score'
+    });
+  }
+
+  return highlights;
 }
 
-export type PodiumTitle = {
-  playerId: string;
-  title: string;
-};
-
-export function podiumTitles(scores: ScoreEntry[]): PodiumTitle[] {
-  if (scores.length === 0) {
-    return [];
+function formatNameList(names: string[]): string {
+  if (names.length === 0) {
+    return 'No one';
   }
-  const titles: PodiumTitle[] = [];
-  const champion = scores[0];
-  if (champion) {
-    titles.push({ playerId: champion.playerId, title: 'Champion' });
+  if (names.length === 1) {
+    return names[0];
   }
-  if (scores[1]) {
-    titles.push({ playerId: scores[1].playerId, title: 'Runner-up' });
+  if (names.length === 2) {
+    return `${names[0]} and ${names[1]}`;
   }
-  if (scores[2]) {
-    titles.push({ playerId: scores[2].playerId, title: 'Crowd Favorite' });
-  }
-  const underdog = [...scores].sort((a, b) => a.score - b.score)[0];
-  if (underdog && underdog.playerId !== champion?.playerId && scores.length > 3) {
-    titles.push({ playerId: underdog.playerId, title: 'Dark Horse' });
-  }
-  return titles;
+  return `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}`;
 }

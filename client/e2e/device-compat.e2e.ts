@@ -97,7 +97,7 @@ const PLAYER_TARGETS: PlayerTarget[] = [
   }
 ];
 
-test('TV Bro style lobby fits from 720p through 4K without page scroll', async ({ baseURL, browser }, testInfo) => {
+test('liquid glass TV lobby fits from 720p through 4K without page scroll', async ({ baseURL, browser }, testInfo) => {
   const appUrl = makeAppUrl(baseURL);
 
   for (const target of TV_VIEWPORTS) {
@@ -113,7 +113,7 @@ test('TV Bro style lobby fits from 720p through 4K without page scroll', async (
   }
 });
 
-test('TV remote focus stays visible for TV Bro style navigation', async ({ baseURL, browser }, testInfo) => {
+test('TV remote focus stays visible for liquid glass living-room navigation', async ({ baseURL, browser }, testInfo) => {
   const appUrl = makeAppUrl(baseURL);
   const contexts: BrowserContext[] = [];
 
