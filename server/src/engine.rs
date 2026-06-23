@@ -515,7 +515,11 @@ impl Room {
     fn start_drawing_round(&mut self, now_ms: u64) -> EngineResult<()> {
         self.prune_disconnected_players();
         if self.connected_player_count() < MIN_PLAYERS {
-            let player_word = if MIN_PLAYERS == 1 { "player" } else { "players" };
+            let player_word = if MIN_PLAYERS == 1 {
+                "player"
+            } else {
+                "players"
+            };
             return Err(EngineError::new(
                 "not_enough_players",
                 format!("Need at least {MIN_PLAYERS} {player_word} to start."),
