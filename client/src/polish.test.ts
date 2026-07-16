@@ -6,7 +6,9 @@ describe('party polish copy', () => {
   it('summarizes round outcomes from correct voters', () => {
     expect(roundOutcomeText(roundResult([], ['Ava', 'Bo']))).toBe('No one found it');
     expect(roundOutcomeText(roundResult(['Ava'], ['Ava', 'Bo']))).toBe('Ava found it');
-    expect(roundOutcomeText(roundResult(['Ava', 'Bo'], ['Ava', 'Bo']))).toBe('Everyone found it');
+    expect(roundOutcomeText(roundResult(['Ava', 'Bo'], ['Ava', 'Bo'], { perfectTruth: true }))).toBe(
+      'Everyone found it — perfect!'
+    );
     expect(roundOutcomeText(roundResult(['Ava', 'Bo'], ['Ava', 'Bo', 'Cy']))).toBe('Ava and Bo found it');
   });
 
@@ -18,9 +20,15 @@ describe('party polish copy', () => {
   });
 });
 
-function roundResult(correctVoterNames: string[], voterNames: string[]): Pick<RoundResult, 'breakdown' | 'correctVoterNames'> {
+function roundResult(
+  correctVoterNames: string[],
+  voterNames: string[],
+  flags: Partial<Pick<RoundResult, 'nobodyFoundIt' | 'perfectTruth'>> = {}
+): Pick<RoundResult, 'breakdown' | 'correctVoterNames' | 'nobodyFoundIt' | 'perfectTruth'> {
   return {
     correctVoterNames,
+    nobodyFoundIt: flags.nobodyFoundIt ?? false,
+    perfectTruth: flags.perfectTruth ?? false,
     breakdown: [
       {
         optionId: 'option-0',

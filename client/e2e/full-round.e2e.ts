@@ -69,6 +69,7 @@ test('one TV and three phones complete a full drawing round', async ({ baseURL, 
         await expect(player.page.getByText('The real prompt was')).toBeVisible();
       }
 
+      await expect(tv.getByRole('button', { name: 'Continue' })).toBeEnabled({ timeout: 5000 });
       await tv.getByRole('button', { name: 'Continue' }).click();
     }
 

@@ -113,17 +113,25 @@ input:focus-visible,
 }
 
 .app-shell.display {
-  width: min(100%, 1440px);
+  width: min(100%, 92vw, 2520px);
   margin: 0 auto;
-  padding: 28px 36px 34px;
+  padding:
+    clamp(20px, 2.2vw, 56px)
+    clamp(22px, 3vw, 64px)
+    clamp(22px, 2.6vw, 56px);
 }
 
-.app-shell.display.phase-lobby {
+.app-shell.display.phase-lobby,
+.app-shell.display.phase-guessing,
+.app-shell.display.phase-voting,
+.app-shell.display.phase-results,
+.app-shell.display.phase-final-scores {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   height: 100vh;
   height: 100svh;
   min-height: 0;
+  overflow: hidden;
 }
 
 .app-shell.player {
@@ -349,26 +357,38 @@ input:focus-visible,
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(360px, 0.92fr) minmax(420px, 1.08fr);
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
   gap: 20px;
   align-items: start;
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
 }
 
 .display-grid-lobby {
-  grid-template-columns: minmax(360px, 1fr) minmax(330px, 0.78fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.78fr);
   gap: 18px;
   min-height: 0;
   height: 100%;
   align-items: stretch;
+  overflow: hidden;
 }
 
 .display-grid-results,
 .display-grid-finalScores {
-  grid-template-columns: minmax(540px, 1.25fr) minmax(300px, 0.75fr);
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
 }
 
 .display-grid-voting {
-  grid-template-columns: minmax(420px, 0.95fr) minmax(300px, 0.62fr) minmax(230px, 0.43fr);
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 0.62fr) minmax(0, 0.43fr);
+}
+
+.display.phase-guessing .display-grid,
+.display.phase-voting .display-grid,
+.display.phase-results .display-grid,
+.display.phase-final-scores .display-grid {
+  align-content: start;
+  overflow: hidden;
 }
 
 .lobby-side,
@@ -669,7 +689,7 @@ input:focus-visible,
 .room-code {
   font-family: var(--font-mono);
   color: var(--text);
-  font-size: 5.05rem;
+  font-size: clamp(3.4rem, 7.2vw, 7.25rem);
   font-weight: 950;
   letter-spacing: 0;
   line-height: 0.9;
@@ -689,8 +709,8 @@ input:focus-visible,
 }
 
 .qr {
-  width: min(188px, 26svh, 32vw);
-  height: min(188px, 26svh, 32vw);
+  width: min(220px, 28svh, 18vw);
+  height: min(220px, 28svh, 18vw);
   border: 8px solid var(--canvas);
   border-radius: var(--radius);
   background: var(--canvas);
@@ -1024,13 +1044,31 @@ input:focus-visible,
 .results-panel h2 {
   margin: 0;
   color: var(--text);
-  font-size: 4.7rem;
+  font-size: clamp(2.4rem, 4.6vw, 4.7rem);
   line-height: 0.96;
   text-wrap: balance;
 }
 
+.results-panel .prompt {
+  font-size: clamp(1.6rem, 3.4vw, 3.05rem);
+  font-weight: 950;
+  color: var(--yellow);
+  text-shadow: 0 0 24px rgba(255, 216, 77, 0.28);
+}
+
+.results-panel .score-deltas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.results-panel .score-delta {
+  font-size: clamp(0.95rem, 1.4vw, 1.2rem);
+  font-weight: 950;
+}
+
 .hero-panel {
-  min-height: 420px;
+  min-height: min(420px, 48svh);
   align-content: center;
   background:
     linear-gradient(145deg, rgba(99, 210, 255, 0.22), transparent 46%),
@@ -1477,6 +1515,9 @@ input:focus-visible,
   width: min(100%, 760px);
   aspect-ratio: 4 / 3;
   height: auto;
+  max-height: none;
+  min-height: 0;
+  object-fit: contain;
   border: 1px solid rgba(21, 22, 29, 0.12);
   border-radius: var(--radius);
   background: var(--canvas);
@@ -1499,11 +1540,36 @@ input:focus-visible,
 .player.phase-drawing .canvas-stage {
   width: 100%;
   max-width: none;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+}
+
+.player.phase-drawing .draw-canvas {
+  width: 100%;
+  max-width: min(
+    100%,
+    calc(min(70svh, calc(100svh - 150px - var(--safe-top) - var(--safe-bottom))) * 4 / 3)
+  );
+  max-height: min(70svh, calc(100svh - 150px - var(--safe-top) - var(--safe-bottom)));
+  aspect-ratio: 4 / 3;
+  height: auto;
+  margin-inline: auto;
 }
 
 .reveal-canvas {
   width: min(100%, 760px);
   justify-self: center;
+}
+
+.display.phase-guessing .reveal-canvas,
+.display.phase-voting .reveal-canvas,
+.display.phase-results .reveal-canvas,
+.display.phase-results .result-canvas {
+  width: min(100%, calc(min(42svh, 520px) * 4 / 3), 760px);
+  max-height: min(42svh, 520px);
+  aspect-ratio: 4 / 3;
+  height: auto;
 }
 
 .phone-canvas {
@@ -1804,9 +1870,12 @@ input:focus-visible,
     rgba(255, 255, 255, 0.09);
 }
 
-.display-grid-finalScores .scores-panel {
+.display-grid-finalScores .scores-panel,
+.display.phase-final-scores .scores-panel {
   gap: 12px;
   padding-block: 24px;
+  max-height: calc(100svh - 120px);
+  overflow: auto;
 }
 
 .display-grid-finalScores .winner-callout {
@@ -2618,9 +2687,16 @@ input:focus-visible,
   }
 
   .player.phase-drawing .draw-canvas {
-    aspect-ratio: auto;
-    height: min(68svh, calc(100svh - 152px - var(--safe-top) - var(--safe-bottom)));
-    min-height: min(430px, calc(100svh - 164px - var(--safe-top) - var(--safe-bottom)));
+    aspect-ratio: 4 / 3;
+    width: 100%;
+    max-width: min(
+      100%,
+      calc(min(64svh, calc(100svh - 140px - var(--safe-top) - var(--safe-bottom))) * 4 / 3)
+    );
+    max-height: min(64svh, calc(100svh - 140px - var(--safe-top) - var(--safe-bottom)));
+    height: auto;
+    min-height: 0;
+    margin-inline: auto;
   }
 
   .player.phase-drawing .drawing-pad {
@@ -3232,8 +3308,16 @@ body {
   }
 
   .player.phase-drawing .draw-canvas {
-    height: min(74svh, calc(100svh - 126px - var(--safe-top) - var(--safe-bottom)));
-    min-height: min(520px, calc(100svh - 138px - var(--safe-top) - var(--safe-bottom)));
+    aspect-ratio: 4 / 3;
+    width: 100%;
+    max-width: min(
+      100%,
+      calc(min(60svh, calc(100svh - 126px - var(--safe-top) - var(--safe-bottom))) * 4 / 3)
+    );
+    max-height: min(60svh, calc(100svh - 126px - var(--safe-top) - var(--safe-bottom)));
+    height: auto;
+    min-height: 0;
+    margin-inline: auto;
   }
 
   .canvas-stage::before {
@@ -3251,6 +3335,9 @@ body {
   .player.phase-drawing .drawing-pad {
     gap: 6px;
     grid-template-columns: minmax(0, 1fr) minmax(104px, 0.38fr);
+    grid-template-areas:
+      "canvas canvas"
+      "submit tools";
   }
 
   .player.phase-drawing .submit-dock .primary {
@@ -3278,10 +3365,74 @@ body {
   }
 }
 
-@media (max-width: 520px) and (max-height: 720px) {
+@media (max-width: 699px) {
+  .app-shell.player.phase-drawing {
+    --touch-target: 46px;
+    max-width: 760px;
+    padding:
+      calc(8px + var(--safe-top))
+      max(8px, var(--safe-right))
+      calc(12px + var(--safe-bottom))
+      max(8px, var(--safe-left));
+  }
+
+  .player.phase-drawing .topbar {
+    display: none;
+  }
+
+  .player.phase-drawing .canvas-stage {
+    width: 100%;
+  }
+
   .player.phase-drawing .draw-canvas {
-    height: min(70svh, calc(100svh - 116px - var(--safe-top) - var(--safe-bottom)));
-    min-height: min(430px, calc(100svh - 126px - var(--safe-top) - var(--safe-bottom)));
+    aspect-ratio: 4 / 3;
+    width: 100%;
+    max-width: min(
+      100%,
+      calc(min(64svh, calc(100svh - 140px - var(--safe-top) - var(--safe-bottom))) * 4 / 3)
+    );
+    max-height: min(64svh, calc(100svh - 140px - var(--safe-top) - var(--safe-bottom)));
+    height: auto;
+    min-height: 0;
+    margin-inline: auto;
+  }
+
+  .player.phase-drawing .drawing-pad {
+    grid-template-columns: minmax(0, 1fr) minmax(112px, 0.46fr);
+    grid-template-areas:
+      "canvas canvas"
+      "submit tools";
+    align-items: start;
+  }
+
+  .player.phase-drawing .submit-dock {
+    grid-area: submit;
+    min-width: 0;
+  }
+
+  .player.phase-drawing .tools-drawer {
+    grid-area: tools;
+    align-self: start;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 699px) and (max-height: 720px) {
+  .player.phase-drawing .draw-canvas {
+    aspect-ratio: 4 / 3;
+    width: 100%;
+    max-width: min(
+      100%,
+      calc(min(56svh, calc(100svh - 120px - var(--safe-top) - var(--safe-bottom))) * 4 / 3)
+    );
+    max-height: min(56svh, calc(100svh - 120px - var(--safe-top) - var(--safe-bottom)));
+    height: auto;
+    min-height: 0;
+    margin-inline: auto;
+  }
+
+  .player.phase-drawing .turn-header {
+    min-height: 48px;
   }
 }
 
@@ -3334,8 +3485,12 @@ body {
   }
 
   .display.phase-guessing .reveal-canvas,
-  .display.phase-voting .reveal-canvas {
-    height: clamp(440px, 40vh, 680px);
+  .display.phase-voting .reveal-canvas,
+  .display.phase-results .result-canvas {
+    width: min(100%, calc(min(48svh, 680px) * 4 / 3), 980px);
+    max-height: min(48svh, 680px);
+    aspect-ratio: 4 / 3;
+    height: auto;
   }
 
   .room-panel {
@@ -3415,5 +3570,134 @@ body {
   .tool-button:not(:disabled):active,
   .vote-option:not(:disabled):active {
     transform: none;
+  }
+
+  .reveal-stage {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .reaction-burst {
+    animation: none;
+  }
+}
+
+.action-hint {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 0.98rem;
+  font-weight: 850;
+}
+
+.display .room-panel {
+  position: relative;
+}
+
+.display .room-code-wrap,
+.display .qr-stage {
+  position: relative;
+  z-index: 1;
+}
+
+.display .settings-panel {
+  opacity: 0.96;
+}
+
+.results-panel .reveal-stage {
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity 280ms ease,
+    transform 280ms ease;
+  pointer-events: none;
+}
+
+.results-panel .reveal-stage.is-visible {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.results-panel[data-reveal-stage='4'] .confetti {
+  opacity: 1;
+}
+
+.reaction-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.reaction-button {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  font-size: 1.35rem;
+  box-shadow: var(--shadow);
+}
+
+.reaction-burst {
+  position: fixed;
+  left: 50%;
+  bottom: 18%;
+  z-index: 40;
+  transform: translateX(-50%);
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: rgba(16, 19, 31, 0.88);
+  border: 2px solid var(--border-strong);
+  color: var(--text);
+  font-weight: 950;
+  font-size: 1.2rem;
+  pointer-events: none;
+  animation: reaction-pop 1.5s ease-out both;
+}
+
+@keyframes reaction-pop {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(18px) scale(0.9);
+  }
+  18% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1.05);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-36px) scale(1);
+  }
+}
+
+.podium-title {
+  display: block;
+  color: var(--yellow);
+  font-size: 0.85rem;
+  font-weight: 900;
+}
+
+.share-card-button {
+  margin-top: 8px;
+  min-height: 44px;
+}
+
+@media (max-height: 780px) {
+  .display.phase-final-scores .share-card-button {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    clip: rect(0 0 0 0);
+    overflow: hidden;
+  }
+
+  .display-grid-finalScores .podium-place {
+    min-height: 96px;
+  }
+
+  .display-grid-finalScores .winner-callout h2 {
+    font-size: clamp(2rem, 4vw, 2.8rem);
   }
 }

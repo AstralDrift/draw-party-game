@@ -20,8 +20,13 @@ pub const DEFAULT_VOTE_SECONDS: u64 = 30;
 pub const VOTE_SECONDS: u64 = DEFAULT_VOTE_SECONDS;
 pub const MIN_VOTE_SECONDS: u64 = 10;
 pub const MAX_VOTE_SECONDS: u64 = 120;
+pub const DEFAULT_RESULTS_SECONDS: u64 = 12;
+pub const MIN_RESULTS_SECONDS: u64 = 5;
+pub const MAX_RESULTS_SECONDS: u64 = 30;
 pub const DEFAULT_PROMPT_PACK_ID: &str = "safe-party";
+pub const PARTY_CHAOS_PROMPT_PACK_ID: &str = "party-chaos";
 pub const ROOM_TTL_MS: u64 = 3 * 60 * 60 * 1000;
+pub const REACTION_COOLDOWN_MS: u64 = 1500;
 pub const MAX_STROKES: usize = 220;
 pub const MAX_POINTS_PER_STROKE: usize = 180;
 pub const MAX_NAME_LEN: usize = 24;
@@ -52,6 +57,7 @@ pub struct RoomSettings {
     pub draw_seconds: u64,
     pub guess_seconds: u64,
     pub vote_seconds: u64,
+    pub results_seconds: u64,
     pub prompt_pack_id: String,
 }
 
@@ -62,6 +68,7 @@ impl Default for RoomSettings {
             draw_seconds: DEFAULT_DRAW_SECONDS,
             guess_seconds: DEFAULT_GUESS_SECONDS,
             vote_seconds: DEFAULT_VOTE_SECONDS,
+            results_seconds: DEFAULT_RESULTS_SECONDS,
             prompt_pack_id: DEFAULT_PROMPT_PACK_ID.to_string(),
         }
     }
@@ -135,6 +142,8 @@ pub struct RoundResult {
     pub correct_voter_names: Vec<String>,
     pub breakdown: Vec<VoteBreakdown>,
     pub score_deltas: Vec<ScoreDelta>,
+    pub nobody_found_it: bool,
+    pub perfect_truth: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -201,6 +210,9 @@ pub enum ClientMessage {
         turn_token: u64,
         option_id: String,
     },
+    SendReaction {
+        emoji: String,
+    },
     Heartbeat,
     LeaveRoom,
 }
@@ -241,6 +253,12 @@ pub enum ServerMessage {
     },
     FinalScores {
         scores: Vec<ScoreEntry>,
+    },
+    ReactionBurst {
+        player_id: String,
+        name: String,
+        emoji: String,
+        at_ms: u64,
     },
     Pong {
         now_ms: u64,

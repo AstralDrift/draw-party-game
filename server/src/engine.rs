@@ -2,8 +2,9 @@ use crate::protocol::{
     DrawingDoc, GamePhase, PlayerPublic, Point, RoomSettings, RoomSnapshot, RoundResult,
     ScoreDelta, ScoreEntry, Stroke, VoteBreakdown, VotingOption, CANVAS_HEIGHT, CANVAS_WIDTH,
     DEFAULT_PROMPT_PACK_ID, MAX_DRAW_SECONDS, MAX_GUESS_LEN, MAX_GUESS_SECONDS, MAX_NAME_LEN,
-    MAX_PLAYERS, MAX_POINTS_PER_STROKE, MAX_ROUNDS, MAX_STROKES, MAX_VOTE_SECONDS,
-    MIN_DRAW_SECONDS, MIN_GUESS_SECONDS, MIN_PLAYERS, MIN_ROUNDS, MIN_VOTE_SECONDS, ROOM_TTL_MS,
+    MAX_PLAYERS, MAX_POINTS_PER_STROKE, MAX_RESULTS_SECONDS, MAX_ROUNDS, MAX_STROKES,
+    MAX_VOTE_SECONDS, MIN_DRAW_SECONDS, MIN_GUESS_SECONDS, MIN_PLAYERS, MIN_RESULTS_SECONDS,
+    MIN_ROUNDS, MIN_VOTE_SECONDS, PARTY_CHAOS_PROMPT_PACK_ID, REACTION_COOLDOWN_MS, ROOM_TTL_MS,
 };
 use rand::{seq::SliceRandom, Rng};
 use serde::{Deserialize, Serialize};
@@ -92,15 +93,54 @@ const SAFE_PROMPTS: &[&str] = &[
     "teapot at a dance contest",
 ];
 
+const CHAOS_PROMPTS: &[&str] = &[
+    "sentient traffic light judging your life choices",
+    "raccoon CEO giving a TED talk",
+    "haunted Roomba with revenge plans",
+    "croissant that learned parkour",
+    "wifi router hosting a talent show",
+    "pickle jar running for class president",
+    "goose in a tuxedo arguing with a mirror",
+    "bluetooth speaker that only speaks in riddles",
+    "toaster oven opening a jazz club",
+    "rubber duck detective solving cereal crimes",
+    "elevator that only stops at weird floors",
+    "cactus influencer livestreaming a desert spa",
+    "mime stuck inside a group chat",
+    "lasagna plotting a soft coup",
+    "umbrella that refuses to open on purpose",
+    "sock that became a motivational speaker",
+    "vending machine with trust issues",
+    "paperclip building a tiny spaceship",
+    "fridge magnet organizing a rebellion",
+    "banana peel teaching defensive driving",
+    "stapler with a secret double life",
+    "parking cone running a luxury hotel",
+    "dust bunny training for the Olympics",
+    "keyboard missing only the useful keys",
+    "coffee mug whispering spoilers",
+    "charging cable that ghosted everyone",
+    "plant that rates your interior design",
+    "alarm clock that negotiates snoozes",
+    "shopping cart escaping the supermarket",
+    "glitter bomb applying for a quiet job",
+];
+
 struct PromptPack {
     id: &'static str,
     prompts: &'static [&'static str],
 }
 
-const PROMPT_PACKS: &[PromptPack] = &[PromptPack {
-    id: DEFAULT_PROMPT_PACK_ID,
-    prompts: SAFE_PROMPTS,
-}];
+const PROMPT_PACKS: &[PromptPack] = &[
+    PromptPack {
+        id: DEFAULT_PROMPT_PACK_ID,
+        prompts: SAFE_PROMPTS,
+    },
+    PromptPack {
+        id: PARTY_CHAOS_PROMPT_PACK_ID,
+        prompts: CHAOS_PROMPTS,
+    },
+];
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Player {
@@ -108,6 +148,8 @@ pub struct Player {
     pub name: String,
     pub score: i32,
     pub connected: bool,
+    #[serde(default, skip)]
+    pub last_reaction_ms: u64,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -228,6 +270,7 @@ impl Room {
                 name: safe_name,
                 score: 0,
                 connected: true,
+                last_reaction_ms: 0,
             });
 
         Ok(())
@@ -447,8 +490,54 @@ impl Room {
                 self.finish_voting(now_ms)?;
                 Ok(Some(EngineEvent::PhaseChanged))
             }
+            GamePhase::Results => {
+                if self.advance_after_results(now_ms)? {
+                    Ok(Some(EngineEvent::FinalScores))
+                } else {
+                    Ok(Some(EngineEvent::PhaseChanged))
+                }
+            }
             _ => Ok(None),
         }
+    }
+
+    pub fn submit_reaction(
+        &mut self,
+        player_id: &str,
+        emoji: &str,
+        now_ms: u64,
+    ) -> EngineResult<Option<(String, String, String, u64)>> {
+        self.touch(now_ms);
+        if !matches!(
+            self.phase,
+            GamePhase::Guessing | GamePhase::Voting | GamePhase::Results
+        ) {
+            return Ok(None);
+        }
+        if !is_allowed_reaction(emoji) {
+            return Err(EngineError::new(
+                "invalid_reaction",
+                "That reaction is not available.",
+            ));
+        }
+        let player = self
+            .players
+            .get_mut(player_id)
+            .ok_or_else(|| EngineError::new("not_joined", "Join the room before reacting."))?;
+        if !player.connected {
+            return Ok(None);
+        }
+        if now_ms.saturating_sub(player.last_reaction_ms) < REACTION_COOLDOWN_MS {
+            return Ok(None);
+        }
+        player.last_reaction_ms = now_ms;
+        let name = player.name.clone();
+        Ok(Some((
+            player_id.to_string(),
+            name,
+            emoji.to_string(),
+            now_ms,
+        )))
     }
 
     pub fn is_expired(&self, now_ms: u64) -> bool {
@@ -515,7 +604,11 @@ impl Room {
     fn start_drawing_round(&mut self, now_ms: u64) -> EngineResult<()> {
         self.prune_disconnected_players();
         if self.connected_player_count() < MIN_PLAYERS {
-            let player_word = if MIN_PLAYERS == 1 { "player" } else { "players" };
+            let player_word = if MIN_PLAYERS == 1 {
+                "player"
+            } else {
+                "players"
+            };
             return Err(EngineError::new(
                 "not_enough_players",
                 format!("Need at least {MIN_PLAYERS} {player_word} to start."),
@@ -630,7 +723,7 @@ impl Room {
         Ok(())
     }
 
-    fn finish_voting(&mut self, _now_ms: u64) -> EngineResult<()> {
+    fn finish_voting(&mut self, now_ms: u64) -> EngineResult<()> {
         let artist_id = self
             .round
             .current_artist_id
@@ -685,6 +778,37 @@ impl Room {
             }
         }
 
+        let eligible_voter_ids: Vec<String> = self
+            .players
+            .keys()
+            .filter(|player_id| player_id.as_str() != artist_id.as_str())
+            .cloned()
+            .collect();
+        let nobody_found_it = correct_voter_names.is_empty() && !eligible_voter_ids.is_empty();
+        let perfect_truth = !eligible_voter_ids.is_empty()
+            && eligible_voter_ids.iter().all(|voter_id| {
+                self.round.votes.get(voter_id).is_some_and(|option_id| {
+                    self.round
+                        .voting_options
+                        .iter()
+                        .any(|option| option.id == *option_id && option.is_correct)
+                })
+            });
+
+        if nobody_found_it {
+            add_score_delta(
+                &mut self.players,
+                &mut score_delta_by_player,
+                &artist_id,
+                50,
+            );
+        }
+        if perfect_truth {
+            for voter_id in &eligible_voter_ids {
+                add_score_delta(&mut self.players, &mut score_delta_by_player, voter_id, 25);
+            }
+        }
+
         let breakdown = self
             .round
             .voting_options
@@ -723,10 +847,12 @@ impl Room {
             correct_voter_names,
             breakdown,
             score_deltas,
+            nobody_found_it,
+            perfect_truth,
         });
         self.phase = GamePhase::Results;
         self.turn_token = self.turn_token.saturating_add(1);
-        self.deadline_ms = None;
+        self.deadline_ms = Some(deadline_after(now_ms, self.settings.results_seconds));
         Ok(())
     }
 
@@ -940,6 +1066,14 @@ pub fn validate_room_settings(settings: &RoomSettings) -> EngineResult<()> {
             ),
         ));
     }
+    if !(MIN_RESULTS_SECONDS..=MAX_RESULTS_SECONDS).contains(&settings.results_seconds) {
+        return Err(EngineError::new(
+            "invalid_settings",
+            format!(
+                "Results time must be between {MIN_RESULTS_SECONDS} and {MAX_RESULTS_SECONDS} seconds."
+            ),
+        ));
+    }
     if prompt_pack_prompts(&settings.prompt_pack_id).is_none() {
         return Err(EngineError::new(
             "invalid_prompt_pack",
@@ -958,6 +1092,10 @@ fn prompt_pack_prompts(prompt_pack_id: &str) -> Option<&'static [&'static str]> 
 
 fn deadline_after(now_ms: u64, seconds: u64) -> u64 {
     now_ms.saturating_add(seconds.saturating_mul(1000))
+}
+
+fn is_allowed_reaction(emoji: &str) -> bool {
+    matches!(emoji, "😂" | "😱" | "🔥" | "👏")
 }
 
 fn add_score_delta(
@@ -1115,6 +1253,7 @@ mod tests {
             draw_seconds: 30,
             guess_seconds: 20,
             vote_seconds: 15,
+            results_seconds: 8,
             prompt_pack_id: DEFAULT_PROMPT_PACK_ID.to_string(),
         }
     }
@@ -1453,9 +1592,115 @@ mod tests {
             .map(|delta| (delta.player_id.clone(), delta.delta))
             .collect();
         assert_eq!(deltas.get(&artist), Some(&200));
-        assert_eq!(deltas.get(&voters[0]), Some(&200));
-        assert_eq!(deltas.get(&voters[1]), Some(&200));
+        assert_eq!(deltas.get(&voters[0]), Some(&225));
+        assert_eq!(deltas.get(&voters[1]), Some(&225));
+        assert!(result.perfect_truth);
+        assert!(!result.nobody_found_it);
         assert_eq!(room.players.get(&artist).unwrap().score, 200);
+        assert!(room.deadline_ms.is_some());
+    }
+
+    #[test]
+    fn nobody_found_it_awards_artist_bonus() {
+        let mut room = room_with_players();
+        room.handle_start_or_advance(100).unwrap();
+        let drawing_token = room.turn_token;
+        for player_id in ["p1", "p2", "p3"] {
+            room.submit_drawing(player_id, drawing_token, drawing(), 200)
+                .unwrap();
+        }
+        let artist = room.round.current_artist_id.clone().unwrap();
+        let voters: Vec<String> = room
+            .players
+            .keys()
+            .filter(|id| *id != &artist)
+            .cloned()
+            .collect();
+        let guess_token = room.turn_token;
+        room.submit_guess(&voters[0], guess_token, "fake a".to_string(), 300)
+            .unwrap();
+        room.submit_guess(&voters[1], guess_token, "fake b".to_string(), 300)
+            .unwrap();
+        let vote_token = room.turn_token;
+        let fake_for_first = room
+            .round
+            .voting_options
+            .iter()
+            .find(|option| {
+                !option.is_correct && option.author_player_id.as_deref() == Some(voters[1].as_str())
+            })
+            .unwrap()
+            .id
+            .clone();
+        let fake_for_second = room
+            .round
+            .voting_options
+            .iter()
+            .find(|option| {
+                !option.is_correct && option.author_player_id.as_deref() == Some(voters[0].as_str())
+            })
+            .unwrap()
+            .id
+            .clone();
+        room.submit_vote(&voters[0], vote_token, fake_for_first, 400)
+            .unwrap();
+        room.submit_vote(&voters[1], vote_token, fake_for_second, 400)
+            .unwrap();
+        let result = room.round.result.as_ref().unwrap();
+        assert!(result.nobody_found_it);
+        assert!(!result.perfect_truth);
+        let artist_delta = result
+            .score_deltas
+            .iter()
+            .find(|delta| delta.player_id == artist)
+            .map(|delta| delta.delta)
+            .unwrap_or_default();
+        assert!(artist_delta >= 50);
+    }
+
+    #[test]
+    fn results_deadline_auto_advances() {
+        let mut room = room_with_players();
+        room.update_settings(custom_settings(), 50).unwrap();
+        room.handle_start_or_advance(100).unwrap();
+        let drawing_token = room.turn_token;
+        for player_id in ["p1", "p2", "p3"] {
+            room.submit_drawing(player_id, drawing_token, drawing(), 200)
+                .unwrap();
+        }
+        let artist = room.round.current_artist_id.clone().unwrap();
+        let voters: Vec<String> = room
+            .players
+            .keys()
+            .filter(|id| *id != &artist)
+            .cloned()
+            .collect();
+        let guess_token = room.turn_token;
+        room.submit_guess(&voters[0], guess_token, "fake a".to_string(), 300)
+            .unwrap();
+        room.submit_guess(&voters[1], guess_token, "fake b".to_string(), 300)
+            .unwrap();
+        let vote_token = room.turn_token;
+        let truth = room
+            .round
+            .voting_options
+            .iter()
+            .find(|option| option.is_correct)
+            .unwrap()
+            .id
+            .clone();
+        room.submit_vote(&voters[0], vote_token, truth.clone(), 400)
+            .unwrap();
+        room.submit_vote(&voters[1], vote_token, truth, 400)
+            .unwrap();
+        assert_eq!(room.phase, GamePhase::Results);
+        let deadline = room.deadline_ms.expect("results deadline");
+        let event = room.advance_if_expired(deadline).unwrap();
+        assert!(matches!(
+            event,
+            Some(EngineEvent::PhaseChanged) | Some(EngineEvent::FinalScores)
+        ));
+        assert_ne!(room.phase, GamePhase::Results);
     }
 
     #[test]

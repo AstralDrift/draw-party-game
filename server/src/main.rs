@@ -334,11 +334,54 @@ async fn handle_client_message(state: &AppState, client_id: &str, message: Clien
             turn_token,
             option_id,
         } => submit_vote(state, client_id, turn_token, option_id).await,
+        ClientMessage::SendReaction { emoji } => send_reaction(state, client_id, emoji).await,
         ClientMessage::Heartbeat => {
             send_to_client(state, client_id, ServerMessage::Pong { now_ms: now_ms() }).await
         }
         ClientMessage::LeaveRoom => disconnect_client(state, client_id).await,
     }
+}
+
+async fn send_reaction(state: &AppState, client_id: &str, emoji: String) {
+    let messages = {
+        let mut inner = state.inner.lock().await;
+        let Some(conn) = inner.connections.get(client_id) else {
+            return;
+        };
+        if conn.role != Role::Player {
+            return;
+        }
+        let Some(room_code) = conn.room_code.clone() else {
+            return;
+        };
+        let Some(room) = inner.rooms.get_mut(&room_code) else {
+            return;
+        };
+        match room.submit_reaction(client_id, &emoji, now_ms()) {
+            Ok(Some((player_id, name, emoji, at_ms))) => {
+                let mut out = Vec::new();
+                for (other_id, other_conn) in &inner.connections {
+                    if other_conn.room_code.as_deref() != Some(room_code.as_str()) {
+                        continue;
+                    }
+                    let _ = other_id;
+                    out.push((
+                        other_conn.tx.clone(),
+                        ServerMessage::ReactionBurst {
+                            player_id: player_id.clone(),
+                            name: name.clone(),
+                            emoji: emoji.clone(),
+                            at_ms,
+                        },
+                    ));
+                }
+                out
+            }
+            Ok(None) => Vec::new(),
+            Err(err) => targeted_error(&inner, client_id, err.code, &err.message),
+        }
+    };
+    send_many(messages);
 }
 
 async fn create_room(state: &AppState, client_id: &str) {
@@ -1006,6 +1049,7 @@ mod tests {
                     "drawSeconds": 30,
                     "guessSeconds": 20,
                     "voteSeconds": 15,
+                    "resultsSeconds": 12,
                     "promptPackId": "safe-party"
                 }
             })))
@@ -1046,6 +1090,7 @@ mod tests {
                     "drawSeconds": 30,
                     "guessSeconds": 20,
                     "voteSeconds": 15,
+                    "resultsSeconds": 12,
                     "promptPackId": "safe-party"
                 }
             })))

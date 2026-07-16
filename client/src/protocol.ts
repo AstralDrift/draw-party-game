@@ -3,7 +3,9 @@ export const CANVAS_HEIGHT = 768;
 
 export type Role = 'display' | 'player';
 export type GamePhase = 'lobby' | 'drawing' | 'guessing' | 'voting' | 'results' | 'finalScores';
-export type PromptPackId = 'safe-party';
+export type PromptPackId = 'safe-party' | 'party-chaos';
+export const REACTION_EMOJIS = ['😂', '😱', '🔥', '👏'] as const;
+export type ReactionEmoji = (typeof REACTION_EMOJIS)[number];
 
 export interface Point {
   x: number;
@@ -34,6 +36,7 @@ export interface RoomSettings {
   drawSeconds: number;
   guessSeconds: number;
   voteSeconds: number;
+  resultsSeconds: number;
   promptPackId: PromptPackId;
 }
 
@@ -60,6 +63,8 @@ export interface RoundResult {
   correctVoterNames: string[];
   breakdown: VoteBreakdown[];
   scoreDeltas: ScoreDelta[];
+  nobodyFoundIt: boolean;
+  perfectTruth: boolean;
 }
 
 export interface ScoreEntry {
@@ -106,6 +111,7 @@ export type ClientMessage =
   | { type: 'submitDrawing'; turnToken: number; drawing: DrawingDoc }
   | { type: 'submitGuess'; turnToken: number; guess: string }
   | { type: 'submitVote'; turnToken: number; optionId: string }
+  | { type: 'sendReaction'; emoji: ReactionEmoji }
   | { type: 'heartbeat' }
   | { type: 'leaveRoom' };
 
@@ -119,6 +125,7 @@ export type ServerMessage =
   | { type: 'votingOptions'; options: VotingOption[] }
   | { type: 'roundResult'; result: RoundResult }
   | { type: 'finalScores'; scores: ScoreEntry[] }
+  | { type: 'reactionBurst'; playerId: string; name: string; emoji: ReactionEmoji; atMs: number }
   | { type: 'pong'; nowMs: number }
   | { type: 'error'; code: string; message: string };
 
@@ -152,6 +159,8 @@ export function isServerMessage(value: unknown): value is ServerMessage {
       return isRoundResult((value as { result?: unknown }).result);
     case 'finalScores':
       return isScoreEntries((value as { scores?: unknown }).scores);
+    case 'reactionBurst':
+      return isReactionBurst(value);
     case 'pong':
       return typeof (value as { nowMs?: unknown }).nowMs === 'number';
     case 'error':
@@ -187,8 +196,17 @@ export function defaultRoomSettings(): RoomSettings {
     drawSeconds: 90,
     guessSeconds: 45,
     voteSeconds: 30,
+    resultsSeconds: 12,
     promptPackId: 'safe-party'
   };
+}
+
+export function isPromptPackId(value: unknown): value is PromptPackId {
+  return value === 'safe-party' || value === 'party-chaos';
+}
+
+export function isReactionEmoji(value: unknown): value is ReactionEmoji {
+  return typeof value === 'string' && (REACTION_EMOJIS as readonly string[]).includes(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -219,7 +237,8 @@ function isRoomSettings(value: unknown): value is RoomSettings {
     isPositiveInteger(value.drawSeconds) &&
     isPositiveInteger(value.guessSeconds) &&
     isPositiveInteger(value.voteSeconds) &&
-    value.promptPackId === 'safe-party'
+    isPositiveInteger(value.resultsSeconds) &&
+    isPromptPackId(value.promptPackId)
   );
 }
 
@@ -334,7 +353,21 @@ function isRoundResult(value: unknown): value is RoundResult {
     isStringArray(value.correctVoterNames) &&
     Array.isArray(value.breakdown) &&
     value.breakdown.every(isVoteBreakdown) &&
-    isScoreDeltas(value.scoreDeltas)
+    isScoreDeltas(value.scoreDeltas) &&
+    typeof value.nobodyFoundIt === 'boolean' &&
+    typeof value.perfectTruth === 'boolean'
+  );
+}
+
+function isReactionBurst(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.playerId === 'string' &&
+    typeof value.name === 'string' &&
+    isReactionEmoji(value.emoji) &&
+    typeof value.atMs === 'number'
   );
 }
 
