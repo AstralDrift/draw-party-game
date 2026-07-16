@@ -1,146 +1,15 @@
+use crate::prompts::{prompt_pack_prompts, SAFE_PROMPTS};
 use crate::protocol::{
-    DrawingDoc, GamePhase, PlayerPublic, Point, RoomSettings, RoomSnapshot, RoundResult,
-    ScoreDelta, ScoreEntry, Stroke, VoteBreakdown, VotingOption, CANVAS_HEIGHT, CANVAS_WIDTH,
-    DEFAULT_PROMPT_PACK_ID, MAX_DRAW_SECONDS, MAX_GUESS_LEN, MAX_GUESS_SECONDS, MAX_NAME_LEN,
+    DrawingDoc, GamePhase, PlayerPublic, Point, ReactionBurst, RoomSettings, RoomSnapshot,
+    RoundResult, ScoreDelta, ScoreEntry, Stroke, VoteBreakdown, VotingOption, ALLOWED_REACTIONS,
+    CANVAS_HEIGHT, CANVAS_WIDTH, MAX_DRAW_SECONDS, MAX_GUESS_LEN, MAX_GUESS_SECONDS, MAX_NAME_LEN,
     MAX_PLAYERS, MAX_POINTS_PER_STROKE, MAX_RESULTS_SECONDS, MAX_ROUNDS, MAX_STROKES,
     MAX_VOTE_SECONDS, MIN_DRAW_SECONDS, MIN_GUESS_SECONDS, MIN_PLAYERS, MIN_RESULTS_SECONDS,
-    MIN_ROUNDS, MIN_VOTE_SECONDS, PARTY_CHAOS_PROMPT_PACK_ID, REACTION_COOLDOWN_MS, ROOM_TTL_MS,
+    MIN_ROUNDS, MIN_VOTE_SECONDS, REACTION_COOLDOWN_MS, ROOM_TTL_MS,
 };
 use rand::{seq::SliceRandom, Rng};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-
-const SAFE_PROMPTS: &[&str] = &[
-    "vampire dentist",
-    "pizza lifeguard",
-    "robot doing yoga",
-    "haunted toaster",
-    "wizard with stage fright",
-    "moon on a first date",
-    "cowboy accountant",
-    "spaghetti tornado",
-    "cat running a courtroom",
-    "shark at a job interview",
-    "grandma riding a comet",
-    "turtle winning a marathon",
-    "alien learning to skateboard",
-    "snowman at the beach",
-    "dragon selling insurance",
-    "banana detective",
-    "pirate in a library",
-    "ghost taking a selfie",
-    "octopus barista",
-    "unicorn traffic cop",
-    "angry refrigerator",
-    "hamster business meeting",
-    "skeleton birthday party",
-    "penguin rock concert",
-    "time traveler stuck in traffic",
-    "ninja cooking pancakes",
-    "giraffe in an elevator",
-    "mermaid at a dentist",
-    "monster babysitting",
-    "wizard losing WiFi",
-    "chair with stage dreams",
-    "cloud walking a dog",
-    "frog hosting a podcast",
-    "mummy on vacation",
-    "robot afraid of magnets",
-    "potato superhero",
-    "zombie ordering coffee",
-    "castle with tiny legs",
-    "fish driving a taxi",
-    "bear at a tea party",
-    "avocado running for mayor",
-    "astronaut losing their keys",
-    "cactus at a water park",
-    "detective made of jelly",
-    "sandwich giving a speech",
-    "volcano taking a nap",
-    "calendar with stage fright",
-    "sock puppet news anchor",
-    "mailbox joining a band",
-    "pancake on a treasure hunt",
-    "snail delivering pizza",
-    "lamp training for a marathon",
-    "toothbrush at a talent show",
-    "spaceship stuck in a car wash",
-    "cupcake lifting weights",
-    "traffic cone at a fancy dinner",
-    "backpack full of thunder",
-    "submarine in a bathtub",
-    "wizard opening a food truck",
-    "moon wearing roller skates",
-    "library book on vacation",
-    "ice cream trying to hide",
-    "robot learning ballet",
-    "pillow solving a mystery",
-    "rainbow in a board meeting",
-    "pirate afraid of puddles",
-    "sneaker running a bakery",
-    "snow globe weather reporter",
-    "accordion in outer space",
-    "spoon winning a spelling bee",
-    "hot dog at a chess match",
-    "umbrella giving directions",
-    "mountain learning karaoke",
-    "pickle driving a race car",
-    "kite stuck in an office",
-    "waffle with a secret identity",
-    "bubblegum building a rocket",
-    "trophy going undercover",
-    "pretzel teaching math class",
-    "teapot at a dance contest",
-];
-
-const CHAOS_PROMPTS: &[&str] = &[
-    "sentient traffic light judging your life choices",
-    "raccoon CEO giving a TED talk",
-    "haunted Roomba with revenge plans",
-    "croissant that learned parkour",
-    "wifi router hosting a talent show",
-    "pickle jar running for class president",
-    "goose in a tuxedo arguing with a mirror",
-    "bluetooth speaker that only speaks in riddles",
-    "toaster oven opening a jazz club",
-    "rubber duck detective solving cereal crimes",
-    "elevator that only stops at weird floors",
-    "cactus influencer livestreaming a desert spa",
-    "mime stuck inside a group chat",
-    "lasagna plotting a soft coup",
-    "umbrella that refuses to open on purpose",
-    "sock that became a motivational speaker",
-    "vending machine with trust issues",
-    "paperclip building a tiny spaceship",
-    "fridge magnet organizing a rebellion",
-    "banana peel teaching defensive driving",
-    "stapler with a secret double life",
-    "parking cone running a luxury hotel",
-    "dust bunny training for the Olympics",
-    "keyboard missing only the useful keys",
-    "coffee mug whispering spoilers",
-    "charging cable that ghosted everyone",
-    "plant that rates your interior design",
-    "alarm clock that negotiates snoozes",
-    "shopping cart escaping the supermarket",
-    "glitter bomb applying for a quiet job",
-];
-
-struct PromptPack {
-    id: &'static str,
-    prompts: &'static [&'static str],
-}
-
-const PROMPT_PACKS: &[PromptPack] = &[
-    PromptPack {
-        id: DEFAULT_PROMPT_PACK_ID,
-        prompts: SAFE_PROMPTS,
-    },
-    PromptPack {
-        id: PARTY_CHAOS_PROMPT_PACK_ID,
-        prompts: CHAOS_PROMPTS,
-    },
-];
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Player {
@@ -506,7 +375,7 @@ impl Room {
         player_id: &str,
         emoji: &str,
         now_ms: u64,
-    ) -> EngineResult<Option<(String, String, String, u64)>> {
+    ) -> EngineResult<Option<ReactionBurst>> {
         self.touch(now_ms);
         if !matches!(
             self.phase,
@@ -532,12 +401,12 @@ impl Room {
         }
         player.last_reaction_ms = now_ms;
         let name = player.name.clone();
-        Ok(Some((
-            player_id.to_string(),
+        Ok(Some(ReactionBurst {
+            player_id: player_id.to_string(),
             name,
-            emoji.to_string(),
-            now_ms,
-        )))
+            emoji: emoji.to_string(),
+            at_ms: now_ms,
+        }))
     }
 
     pub fn is_expired(&self, now_ms: u64) -> bool {
@@ -1083,19 +952,12 @@ pub fn validate_room_settings(settings: &RoomSettings) -> EngineResult<()> {
     Ok(())
 }
 
-fn prompt_pack_prompts(prompt_pack_id: &str) -> Option<&'static [&'static str]> {
-    PROMPT_PACKS
-        .iter()
-        .find(|pack| pack.id == prompt_pack_id)
-        .map(|pack| pack.prompts)
-}
-
 fn deadline_after(now_ms: u64, seconds: u64) -> u64 {
     now_ms.saturating_add(seconds.saturating_mul(1000))
 }
 
 fn is_allowed_reaction(emoji: &str) -> bool {
-    matches!(emoji, "😂" | "😱" | "🔥" | "👏")
+    ALLOWED_REACTIONS.contains(&emoji)
 }
 
 fn add_score_delta(
@@ -1210,6 +1072,7 @@ fn normalize_text(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::DEFAULT_PROMPT_PACK_ID;
 
     fn drawing() -> DrawingDoc {
         DrawingDoc {

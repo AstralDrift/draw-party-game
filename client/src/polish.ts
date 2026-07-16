@@ -1,7 +1,9 @@
 import type { GamePhase, RoundResult, ScoreEntry } from './protocol';
 
-type RoundOutcomeInput = Pick<RoundResult, 'breakdown' | 'correctVoterNames'> &
-  Partial<Pick<RoundResult, 'nobodyFoundIt' | 'perfectTruth'>>;
+type RoundOutcomeInput = Pick<
+  RoundResult,
+  'breakdown' | 'correctVoterNames' | 'nobodyFoundIt' | 'perfectTruth'
+>;
 
 export function roundOutcomeText(result: RoundOutcomeInput): string {
   if (result.nobodyFoundIt) {
@@ -11,22 +13,17 @@ export function roundOutcomeText(result: RoundOutcomeInput): string {
     return 'Everyone found it — perfect!';
   }
 
-  const totalVoters = new Set(result.breakdown.flatMap((item) => item.voterNames)).size;
   const correctVoters = result.correctVoterNames;
-
-  if (correctVoters.length === 0) {
-    return 'No one found it';
-  }
-  if (totalVoters > 0 && correctVoters.length === totalVoters) {
-    return 'Everyone found it';
-  }
   if (correctVoters.length === 1) {
     return `${correctVoters[0]} found it`;
   }
   if (correctVoters.length === 2) {
     return `${correctVoters[0]} and ${correctVoters[1]} found it`;
   }
-  return `${correctVoters.length} players found it`;
+  if (correctVoters.length > 2) {
+    return `${correctVoters.length} players found it`;
+  }
+  return 'No one found it';
 }
 
 export function finalWinnerText(scores: ScoreEntry[]): string {

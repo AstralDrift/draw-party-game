@@ -358,7 +358,7 @@ async fn send_reaction(state: &AppState, client_id: &str, emoji: String) {
             return;
         };
         match room.submit_reaction(client_id, &emoji, now_ms()) {
-            Ok(Some((player_id, name, emoji, at_ms))) => {
+            Ok(Some(burst)) => {
                 let mut out = Vec::new();
                 for (other_id, other_conn) in &inner.connections {
                     if other_conn.room_code.as_deref() != Some(room_code.as_str()) {
@@ -368,10 +368,10 @@ async fn send_reaction(state: &AppState, client_id: &str, emoji: String) {
                     out.push((
                         other_conn.tx.clone(),
                         ServerMessage::ReactionBurst {
-                            player_id: player_id.clone(),
-                            name: name.clone(),
-                            emoji: emoji.clone(),
-                            at_ms,
+                            player_id: burst.player_id.clone(),
+                            name: burst.name.clone(),
+                            emoji: burst.emoji.clone(),
+                            at_ms: burst.at_ms,
                         },
                     ));
                 }

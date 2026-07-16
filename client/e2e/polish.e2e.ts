@@ -36,7 +36,7 @@ test('staged results reveal enables Continue after the show beat', async ({ base
     await expect(tv.locator('#advance-button')).toBeVisible();
     await expect(tv.locator('#advance-button')).toBeDisabled();
     await expect(tv.locator('#advance-button')).toBeEnabled({ timeout: 5000 });
-    await expect(tv.locator('.results-panel')).toHaveAttribute('data-reveal-stage', '4');
+    await expect(tv.locator('.results-panel')).toHaveAttribute('data-reveal-stage', 'complete');
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }

@@ -4,6 +4,10 @@ export const CANVAS_HEIGHT = 768;
 export type Role = 'display' | 'player';
 export type GamePhase = 'lobby' | 'drawing' | 'guessing' | 'voting' | 'results' | 'finalScores';
 export type PromptPackId = 'safe-party' | 'party-chaos';
+export const PROMPT_PACK_OPTIONS = [
+  { id: 'safe-party', label: 'Party Safe' },
+  { id: 'party-chaos', label: 'Party Chaos' }
+] as const satisfies ReadonlyArray<{ id: PromptPackId; label: string }>;
 export const REACTION_EMOJIS = ['😂', '😱', '🔥', '👏'] as const;
 export type ReactionEmoji = (typeof REACTION_EMOJIS)[number];
 

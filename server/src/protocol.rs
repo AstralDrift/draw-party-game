@@ -27,6 +27,7 @@ pub const DEFAULT_PROMPT_PACK_ID: &str = "safe-party";
 pub const PARTY_CHAOS_PROMPT_PACK_ID: &str = "party-chaos";
 pub const ROOM_TTL_MS: u64 = 3 * 60 * 60 * 1000;
 pub const REACTION_COOLDOWN_MS: u64 = 1500;
+pub const ALLOWED_REACTIONS: &[&str] = &["😂", "😱", "🔥", "👏"];
 pub const MAX_STROKES: usize = 220;
 pub const MAX_POINTS_PER_STROKE: usize = 180;
 pub const MAX_NAME_LEN: usize = 24;
@@ -152,6 +153,15 @@ pub struct ScoreEntry {
     pub player_id: String,
     pub name: String,
     pub score: i32,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReactionBurst {
+    pub player_id: String,
+    pub name: String,
+    pub emoji: String,
+    pub at_ms: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

@@ -1,24 +1,24 @@
 import QRCode from 'qrcode';
 import './style.css';
+import './styles/results-reveal.css';
+import './styles/reactions.css';
 import { button, clear, el } from './dom';
 import { DrawingPad, renderDrawing } from './drawing';
 import { GameSocket } from './net';
-import { finalWinnerText, playerActionHint, podiumTitles, roundOutcomeText } from './polish';
+import { playerActionHint, roundOutcomeText } from './polish';
 import {
-  defaultRoomSettings,
-  isPromptPackId,
   phaseLabel,
-  REACTION_EMOJIS,
-  type PromptPackId,
-  type ReactionEmoji,
-  type RoomSettings,
   type RoomSnapshot,
   type RoundResult,
   type ScoreEntry,
   type ServerMessage,
   type VotingOption
 } from './protocol';
-import { playCue, setSoundEnabled, soundEnabled } from './sound';
+import { renderReactionBar, showReactionBurst } from './reactions';
+import { bindAdvanceButton, isRevealComplete, resetReveal, scheduleReveal } from './reveal';
+import { renderScoresPanel } from './scores-panel';
+import { renderSettingsPanel } from './settings-panel';
+import { playCue } from './sound';
 import { viewKeyFor } from './store';
 import { formatDeadline, nowMs, syncServerClock } from './time';
 
@@ -47,11 +47,7 @@ let reconnectTimer = 0;
 let lastPhase = '';
 let lastPlayerCount = 0;
 let selectedVote: { turnToken: number; optionId: string } | null = null;
-let revealKey = '';
-let revealStage = 0;
-let revealTimers: number[] = [];
 let lastTickSecond = -1;
-const REVEAL_COMPLETE_STAGE = 4;
 
 function connect(roomCode?: string): void {
   socket?.close();
@@ -166,7 +162,7 @@ function handleServerMessage(message: ServerMessage): void {
       render();
       break;
     case 'reactionBurst':
-      showReactionBurst(message.name, message.emoji);
+      showReactionBurst(document.querySelector('.app-shell') ?? app, message.name, message.emoji);
       break;
     case 'pong':
       render();
@@ -195,10 +191,8 @@ function applySnapshot(nextSnapshot: RoomSnapshot): void {
     selectedVote = null;
   }
   if (phaseChanged) {
-    clearRevealTimers();
     if (nextSnapshot.phase !== 'results') {
-      revealKey = '';
-      revealStage = 0;
+      resetReveal();
     }
     playCue(nextSnapshot.phase === 'results' ? 'results' : nextSnapshot.phase === 'finalScores' ? 'podium' : 'phase');
   }
@@ -507,85 +501,16 @@ function playerCountLabel(room: RoomSnapshot): string {
 }
 
 function renderLobbySidePanel(): HTMLElement {
-  const wrapper = el('div', { class: 'lobby-side' }, renderPlayersPanel(true), renderSettingsPanel());
-  return wrapper;
-}
-
-function renderSettingsPanel(): HTMLElement {
-  const settings = snapshot?.settings ?? defaultRoomSettings();
-  const rounds = numberInput(settings.rounds, 1, 12);
-  const draw = numberInput(settings.drawSeconds, 30, 180);
-  const guess = numberInput(settings.guessSeconds, 15, 120);
-  const vote = numberInput(settings.voteSeconds, 10, 90);
-  const results = numberInput(settings.resultsSeconds ?? 12, 5, 30);
-  const pack = el('select', { class: 'input compact-input' }) as HTMLSelectElement;
-  for (const [id, label] of [
-    ['safe-party', 'Party Safe'],
-    ['party-chaos', 'Party Chaos']
-  ] as const) {
-    const option = document.createElement('option');
-    option.value = id;
-    option.textContent = label;
-    if (id === settings.promptPackId) {
-      option.selected = true;
-    }
-    pack.appendChild(option);
-  }
-
-  const save = () => {
-    const packId: PromptPackId = isPromptPackId(pack.value) ? pack.value : 'safe-party';
-    const nextSettings: RoomSettings = {
-      rounds: clampInput(rounds.value, 1, 12, settings.rounds),
-      drawSeconds: clampInput(draw.value, 30, 180, settings.drawSeconds),
-      guessSeconds: clampInput(guess.value, 15, 120, settings.guessSeconds),
-      voteSeconds: clampInput(vote.value, 10, 90, settings.voteSeconds),
-      resultsSeconds: clampInput(results.value, 5, 30, settings.resultsSeconds ?? 12),
-      promptPackId: packId
-    };
-    send({ type: 'updateRoomSettings', settings: nextSettings });
-  };
-
   return el(
-    'section',
-    { class: 'panel settings-panel' },
-    el('div', { class: 'panel-title' }, 'Room Settings'),
-    el('p', { class: 'muted panel-subtitle' }, 'Keep it quick for a loud room.'),
-    el('label', { class: 'label' }, 'Rounds'),
-    rounds,
-    el('label', { class: 'label' }, 'Drawing seconds'),
-    draw,
-    el('label', { class: 'label' }, 'Guessing seconds'),
-    guess,
-    el('label', { class: 'label' }, 'Voting seconds'),
-    vote,
-    el('label', { class: 'label' }, 'Results seconds'),
-    results,
-    el('label', { class: 'label' }, 'Prompt pack'),
-    pack,
-    button('Save Settings', 'primary wide', save),
-    button(soundEnabled() ? 'Sound On' : 'Sound Off', `tool-button wide sound-toggle ${soundEnabled() ? 'is-selected' : ''}`, () => {
-      setSoundEnabled(!soundEnabled());
-      render();
+    'div',
+    { class: 'lobby-side' },
+    renderPlayersPanel(true),
+    renderSettingsPanel({
+      snapshot,
+      onSave: (settings) => send({ type: 'updateRoomSettings', settings }),
+      onToggleSound: () => render()
     })
   );
-}
-
-function numberInput(value: number, min: number, max: number): HTMLInputElement {
-  return el('input', {
-    class: 'input compact-input',
-    type: 'number',
-    min,
-    max,
-    value
-  });
-}
-
-function clampInput(value: string, min: number, max: number, fallback: number): number {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  return Math.min(max, Math.max(min, parsed));
 }
 
 function renderDrawingTurn(): HTMLElement {
@@ -671,7 +596,7 @@ function renderGuessingTurn(): HTMLElement {
       ),
       el('p', { class: 'action-hint' }, playerActionHint('guessing', true)),
       canvas,
-      renderReactionBar(),
+      playerReactionBar(),
       renderReconnectHint('You are the artist for this reveal. Other players are writing fake answers.'),
       el('div', { class: 'success-box' }, 'This is your drawing. Wait for guesses.')
     );
@@ -708,7 +633,7 @@ function renderGuessingTurn(): HTMLElement {
       hapticPulse(10);
       input.disabled = true;
     }, submitted),
-    renderReactionBar(),
+    playerReactionBar(),
     renderReconnectHint(submitted ? 'Your guess is in.' : 'Make a convincing fake answer.'),
     submitted ? el('p', { class: 'success-box' }, 'Guess submitted.') : null
   );
@@ -737,7 +662,7 @@ function renderVotingTurn(): HTMLElement {
     isArtist
       ? el('div', { class: 'success-box' }, 'This is your drawing. Watch the vote.')
       : renderVotingOptions(snapshot.votingOptions, true, submitted),
-    renderReactionBar(),
+    playerReactionBar(),
     renderReconnectHint(submitted ? 'Your vote is in.' : isArtist ? 'You drew this one. Watch the votes come in.' : 'Choose the real prompt. You cannot vote for your own fake answer.')
   );
 }
@@ -922,9 +847,9 @@ function renderResults(result: RoundResult | null | undefined, includeDrawing: b
     includeDrawing ? canvas : null,
     deltas,
     breakdown,
-    role === 'player' ? renderReactionBar() : null
+    role === 'player' ? playerReactionBar() : null
   );
-  scheduleReveal(panel, result);
+  scheduleReveal(panel, result, snapshot?.turnToken ?? 0);
   return panel;
 }
 
@@ -953,65 +878,16 @@ function renderScoreDeltas(deltas: RoundResult['scoreDeltas']): HTMLElement {
 }
 
 function renderScores(scores: ScoreEntry[], podium: boolean): HTMLElement {
-  const topScores = podium ? scores.slice(0, 3) : [];
-  const winner = scores[0];
-  const listedScores = podium && role === 'player' ? scores.slice(3) : scores;
-  const rankOffset = podium && role === 'player' ? 3 : 0;
-  const titles = new Map(podiumTitles(scores).map((entry) => [entry.playerId, entry.title]));
-  const list = el('div', { class: 'score-list' });
-  for (const [index, score] of listedScores.entries()) {
-    const title = titles.get(score.playerId);
-    list.appendChild(
-      el(
-        'div',
-        { class: `score-row ${rankOffset + index === 0 ? 'winner' : ''}` },
-        el('span', {}, `${rankOffset + index + 1}. ${score.name}${title ? ` · ${title}` : ''}`),
-        el('span', { class: 'pill' }, `${score.score} pts`)
-      )
-    );
-  }
-  const panel = el(
-    'section',
-    { class: 'panel scores-panel', id: 'scores-panel' },
-    podium ? renderConfetti('final') : null,
-    podium
-      ? el(
-          'div',
-          { class: 'winner-callout' },
-          role === 'player' ? el('p', { class: 'eyebrow' }, 'Champion') : null,
-          el('h2', {}, finalWinnerText(scores)),
-          role === 'player' && winner ? el('span', { class: 'pill' }, `${winner.score} pts`) : null
-        )
-      : null,
-    el('div', { class: 'panel-title' }, podium ? 'Final Podium' : 'Scores'),
-    podium
-      ? el(
-          'div',
-          { class: 'podium' },
-          ...topScores.map((score, index) =>
-            el(
-              'div',
-              { class: `podium-place place-${index + 1}` },
-              el('span', { class: 'podium-rank' }, podiumRank(index)),
-              el('strong', {}, score.name),
-              el('span', { class: 'podium-title' }, titles.get(score.playerId) ?? ''),
-              el('span', {}, `${score.score} pts`)
-            )
-          )
-        )
-      : null,
-    listedScores.length > 0 ? list : null,
-    podium && role === 'display'
-      ? button('Share Podium Card', 'tool-button wide share-card-button', () => {
-          void exportShareCard(panel);
-        })
-      : null
-  );
-  return panel;
-}
-
-function podiumRank(index: number): string {
-  return ['1st', '2nd', '3rd'][index] ?? `${index + 1}th`;
+  return renderScoresPanel({
+    scores,
+    podium,
+    role,
+    onShareFailed: () => {
+      errorMessage = 'Could not export the podium card.';
+      render();
+    },
+    renderConfetti
+  });
 }
 
 function renderAdvancePanel(): HTMLElement {
@@ -1019,7 +895,7 @@ function renderAdvancePanel(): HTMLElement {
     return el('section', { class: 'panel' }, el('p', { class: 'muted' }, 'Watch the TV for the next step.'));
   }
   const final = snapshot?.phase === 'finalScores';
-  const continueDisabled = !final && snapshot?.phase === 'results' && revealStage < REVEAL_COMPLETE_STAGE;
+  const continueDisabled = !final && snapshot?.phase === 'results' && !isRevealComplete();
   const advanceButton = button(
     final ? 'Play Again' : 'Continue',
     'primary wide spotlight-button',
@@ -1027,6 +903,9 @@ function renderAdvancePanel(): HTMLElement {
     continueDisabled
   );
   advanceButton.id = 'advance-button';
+  if (!final && snapshot?.phase === 'results') {
+    bindAdvanceButton(advanceButton);
+  }
   return el(
     'section',
     { class: 'panel advance-panel' },
@@ -1169,144 +1048,11 @@ function updateDeadlineText(): void {
   });
 }
 
-function prefersReducedMotion(): boolean {
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
-
-function resultRevealKey(result: RoundResult): string {
-  return `${result.artistId}:${result.correctAnswer}:${snapshot?.turnToken ?? 0}`;
-}
-
-function clearRevealTimers(): void {
-  for (const id of revealTimers) {
-    window.clearTimeout(id);
-  }
-  revealTimers = [];
-}
-
-function scheduleReveal(root: HTMLElement, result: RoundResult): void {
-  const key = resultRevealKey(result);
-  const isNewReveal = revealKey !== key;
-  if (isNewReveal) {
-    clearRevealTimers();
-    revealKey = key;
-    revealStage = prefersReducedMotion() ? REVEAL_COMPLETE_STAGE : 0;
-  }
-  applyRevealStage(root, revealStage, result);
-  updateAdvanceButtonEnabled();
-  if (!isNewReveal || revealStage >= REVEAL_COMPLETE_STAGE) {
-    return;
-  }
-  const delays = [600, 1000, 500, 600];
-  let elapsed = 0;
-  for (let stage = 1; stage <= REVEAL_COMPLETE_STAGE; stage += 1) {
-    elapsed += delays[stage - 1] ?? 600;
-    const target = stage;
-    revealTimers.push(
-      window.setTimeout(() => {
-        if (revealKey !== key) {
-          return;
-        }
-        revealStage = target;
-        applyRevealStage(root, target, result);
-        updateAdvanceButtonEnabled();
-      }, elapsed)
-    );
-  }
-}
-
-function applyRevealStage(root: HTMLElement, stage: number, result: RoundResult): void {
-  root.dataset.revealStage = String(stage);
-  root.querySelectorAll<HTMLElement>('.reveal-stage').forEach((node) => {
-    node.classList.remove('is-visible');
+function playerReactionBar(): HTMLElement {
+  return renderReactionBar((emoji) => {
+    send({ type: 'sendReaction', emoji });
+    hapticPulse(8);
   });
-  const show = (selector: string): void => {
-    root.querySelectorAll<HTMLElement>(selector).forEach((node) => node.classList.add('is-visible'));
-  };
-  if (stage >= 0) {
-    show('.reveal-stage-hold, .reveal-stage-drawing');
-  }
-  if (stage >= 1) {
-    show('.reveal-stage-tally');
-  }
-  if (stage >= 2) {
-    show('.reveal-stage-correct');
-    if (stage === 2) {
-      playCue('correct');
-    }
-  }
-  if (stage >= 3) {
-    show('.reveal-stage-deltas');
-    if (stage === 3) {
-      const fooled = result.breakdown.some((item) => !item.isCorrect && item.voterNames.length > 0);
-      playCue(fooled ? 'fooled' : 'results');
-    }
-  }
-  if (stage >= REVEAL_COMPLETE_STAGE) {
-    root.querySelectorAll<HTMLElement>('.reveal-stage').forEach((node) => node.classList.add('is-visible'));
-    root.querySelectorAll('.confetti').forEach((node) => node.classList.add('is-visible'));
-  }
-}
-
-function updateAdvanceButtonEnabled(): void {
-  const buttonNode = document.querySelector<HTMLButtonElement>('#advance-button');
-  if (!buttonNode || snapshot?.phase !== 'results') {
-    return;
-  }
-  buttonNode.disabled = revealStage < REVEAL_COMPLETE_STAGE;
-}
-
-function renderReactionBar(): HTMLElement {
-  return el(
-    'div',
-    { class: 'reaction-bar', 'aria-label': 'Send a reaction' },
-    ...REACTION_EMOJIS.map((emoji) =>
-      button(emoji, 'reaction-button', () => {
-        send({ type: 'sendReaction', emoji: emoji as ReactionEmoji });
-        hapticPulse(8);
-      })
-    )
-  );
-}
-
-function showReactionBurst(name: string, emoji: string): void {
-  const host = document.querySelector('.app-shell') ?? app;
-  const burst = el('div', { class: 'reaction-burst', 'aria-hidden': 'true' }, `${emoji} ${name}`);
-  host.appendChild(burst);
-  window.setTimeout(() => burst.remove(), 1600);
-}
-
-async function exportShareCard(panel: HTMLElement): Promise<void> {
-  try {
-    const canvas = document.createElement('canvas');
-    canvas.width = 1080;
-    canvas.height = 1350;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      return;
-    }
-    ctx.fillStyle = '#10131f';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#fff6d7';
-    ctx.font = 'bold 72px sans-serif';
-    ctx.fillText('Draw Party', 64, 120);
-    ctx.font = 'bold 48px sans-serif';
-    const winner = panel.querySelector('.winner-callout h2')?.textContent ?? 'Final Scores';
-    ctx.fillText(winner, 64, 220);
-    const rows = [...panel.querySelectorAll('.podium-place, .score-row')].slice(0, 8);
-    ctx.font = '36px sans-serif';
-    rows.forEach((row, index) => {
-      ctx.fillText(row.textContent?.replace(/\s+/g, ' ').trim() ?? '', 64, 320 + index * 56);
-    });
-    const url = canvas.toDataURL('image/png');
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'draw-party-podium.png';
-    link.click();
-  } catch {
-    errorMessage = 'Could not export the podium card.';
-    render();
-  }
 }
 
 function shellPhaseClass(): string {

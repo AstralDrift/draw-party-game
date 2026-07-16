@@ -4,7 +4,7 @@ import type { RoundResult, ScoreEntry } from './protocol';
 
 describe('party polish copy', () => {
   it('summarizes round outcomes from correct voters', () => {
-    expect(roundOutcomeText(roundResult([], ['Ava', 'Bo']))).toBe('No one found it');
+    expect(roundOutcomeText(roundResult([], ['Ava', 'Bo'], { nobodyFoundIt: true }))).toBe('No one found it');
     expect(roundOutcomeText(roundResult(['Ava'], ['Ava', 'Bo']))).toBe('Ava found it');
     expect(roundOutcomeText(roundResult(['Ava', 'Bo'], ['Ava', 'Bo'], { perfectTruth: true }))).toBe(
       'Everyone found it — perfect!'

@@ -1,0 +1,29 @@
+.reaction-bar {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;
+}
+.reaction-button {
+  min-width: var(--touch-target); min-height: var(--touch-target);
+  border-radius: var(--radius); background: rgba(255, 255, 255, 0.12);
+  color: var(--text); font-size: 1.35rem; box-shadow: var(--shadow);
+}
+.reaction-burst {
+  position: fixed; left: 50%; bottom: 18%; z-index: 40;
+  transform: translateX(-50%); padding: 10px 16px; border-radius: 8px;
+  background: rgba(16, 19, 31, 0.88); border: 2px solid var(--border-strong);
+  color: var(--text); font-weight: 950; font-size: 1.2rem; pointer-events: none;
+  animation: reaction-pop 1.5s ease-out both;
+}
+@keyframes reaction-pop {
+  0% { opacity: 0; transform: translateX(-50%) translateY(18px) scale(0.9); }
+  18% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1.05); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-36px) scale(1); }
+}
+.podium-title { display: block; color: var(--yellow); font-size: 0.85rem; font-weight: 900; }
+.share-card-button { margin-top: 8px; min-height: 44px; }
+@media (max-height: 780px) {
+  .display.phase-final-scores .share-card-button {
+    position: absolute; width: 1px; height: 1px; margin: -1px; clip: rect(0 0 0 0); overflow: hidden;
+  }
+  .display-grid-finalScores .podium-place { min-height: 96px; }
+  .display-grid-finalScores .winner-callout h2 { font-size: clamp(2rem, 4vw, 2.8rem); }
+}
