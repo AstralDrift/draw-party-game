@@ -6,8 +6,8 @@
   "scope": ".",
   "display": "fullscreen",
   "orientation": "any",
-  "background_color": "#070812",
-  "theme_color": "#151a35",
+  "background_color": "#05060a",
+  "theme_color": "#05060a",
   "categories": ["games", "entertainment"],
   "icons": [
     {

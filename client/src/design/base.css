@@ -1,0 +1,241 @@
+@import "./tokens.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: var(--bg-deep);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  font-family: var(--font-body);
+  color: var(--text-primary);
+  background: var(--bg-deep);
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+#app {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.app-shell {
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: var(--space-8);
+}
+
+.app-shell.display {
+  width: min(100%, 92vw, 2520px);
+  margin: 0 auto;
+  padding:
+    clamp(20px, 2.2vw, 56px)
+    clamp(22px, 3vw, 64px)
+    clamp(22px, 2.6vw, 56px);
+}
+
+.app-shell.display.phase-lobby,
+.app-shell.display.phase-drawing,
+.app-shell.display.phase-guessing,
+.app-shell.display.phase-voting,
+.app-shell.display.phase-results,
+.app-shell.display.phase-final-scores {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-shell.player {
+  max-width: 680px;
+  margin: 0 auto;
+  padding:
+    calc(18px + var(--safe-top))
+    max(16px, var(--safe-right))
+    calc(26px + var(--safe-bottom))
+    max(16px, var(--safe-left));
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 70% 55% at 18% 12%, var(--glow-a), transparent 60%),
+    radial-gradient(ellipse 55% 45% at 88% 18%, var(--glow-b), transparent 55%),
+    radial-gradient(ellipse 60% 50% at 50% 100%, var(--glow-c), transparent 50%),
+    linear-gradient(180deg, #0a0c12 0%, var(--bg-deep) 55%, #07080d 100%);
+}
+
+.atmosphere__orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.55;
+  animation: orb-drift 18s var(--ease-out) infinite alternate;
+}
+
+.atmosphere__orb--a {
+  width: min(48vw, 520px);
+  height: min(48vw, 520px);
+  top: -8%;
+  left: -6%;
+  background: rgba(0, 113, 227, 0.35);
+}
+
+.atmosphere__orb--b {
+  width: min(42vw, 440px);
+  height: min(42vw, 440px);
+  top: 10%;
+  right: -8%;
+  background: rgba(140, 200, 255, 0.22);
+  animation-delay: -6s;
+}
+
+.atmosphere__orb--c {
+  width: min(50vw, 560px);
+  height: min(36vw, 380px);
+  bottom: -12%;
+  left: 30%;
+  background: rgba(255, 255, 255, 0.08);
+  animation-delay: -11s;
+}
+
+@keyframes orb-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(2%, 3%, 0) scale(1.06);
+  }
+}
+
+.topbar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.brand-mark {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.35rem, 2.4vw, 2rem);
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.brand-mark span {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.connection-text,
+#connection-text {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.eyebrow {
+  margin: 0 0 var(--space-2);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.muted {
+  color: var(--text-secondary);
+}
+
+.fine-print {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+
+.display-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: var(--space-6);
+  min-height: 0;
+}
+
+.display-grid-lobby {
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  align-items: stretch;
+}
+
+.display-grid-drawing,
+.display-grid-guessing,
+.display-grid-voting,
+.display-grid-results,
+.display-grid-finalScores {
+  grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr);
+}
+
+.lobby-side,
+.player-stack {
+  display: grid;
+  gap: var(--space-4);
+  min-height: 0;
+}
+
+@media (max-width: 960px) {
+  .display-grid-lobby,
+  .display-grid-drawing,
+  .display-grid-guessing,
+  .display-grid-voting,
+  .display-grid-results,
+  .display-grid-finalScores {
+    grid-template-columns: 1fr;
+  }
+}

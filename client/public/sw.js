@@ -1,5 +1,5 @@
-const CACHE_NAME = 'draw-party-shell-v2';
-const APP_SHELL = ['.', './index.html', './manifest.webmanifest', './icon.svg', './art/draw-party-pixel-sprites.png'];
+const CACHE_NAME = 'draw-party-shell-v3';
+const APP_SHELL = ['.', './index.html', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
