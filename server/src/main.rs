@@ -1171,7 +1171,7 @@ mod tests {
         let (room_code, _, _) = create_test_room(&mut display).await;
 
         let mut p1 = join_player(&url, &room_code, "p1", "Ada").await;
-        let _p2 = join_player(&url, &room_code, "p2", "Grace").await;
+        let mut p2 = join_player(&url, &room_code, "p2", "Grace").await;
 
         display
             .send(text_message(json!({ "type": "startGame" })))
@@ -1216,9 +1216,22 @@ mod tests {
         })))
         .await
         .unwrap();
+        p2.send(text_message(json!({
+            "type": "submitDrawing",
+            "turnToken": turn_token,
+            "drawing": drawing_value()
+        })))
+        .await
+        .unwrap();
 
-        let update = read_until_type(&mut late, "roomSnapshot").await;
-        assert!(update.get("snapshot").is_some());
+        let update = read_until_type(&mut late, "phaseChanged").await;
+        assert_eq!(
+            update
+                .get("snapshot")
+                .and_then(|snapshot| snapshot.get("phase"))
+                .and_then(Value::as_str),
+            Some("guessing")
+        );
     }
 
     #[tokio::test]

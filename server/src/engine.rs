@@ -1103,5 +1103,6 @@ fn normalize_text(text: &str) -> String {
 }
 
 #[cfg(test)]
+<<<<<<< HEAD
 #[path = "engine/tests.rs"]
 mod tests;
