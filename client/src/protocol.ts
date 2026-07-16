@@ -33,6 +33,7 @@ export interface PlayerPublic {
   name: string;
   score: number;
   connected: boolean;
+  spectator: boolean;
 }
 
 export interface RoomSettings {
@@ -258,7 +259,8 @@ function isPlayer(value: unknown): value is PlayerPublic {
     typeof value.id === 'string' &&
     typeof value.name === 'string' &&
     typeof value.score === 'number' &&
-    typeof value.connected === 'boolean'
+    typeof value.connected === 'boolean' &&
+    typeof value.spectator === 'boolean'
   );
 }
 

@@ -6,7 +6,7 @@ function snapshot(): RoomSnapshot {
   return {
     roomCode: 'ABCD',
     phase: 'lobby',
-    players: [{ id: 'p1', name: 'Ava', score: 0, connected: true }],
+    players: [{ id: 'p1', name: 'Ava', score: 0, connected: true, spectator: false }],
     minPlayers: 1,
     maxPlayers: 8,
     currentRound: 0,
@@ -44,7 +44,7 @@ describe('viewKeyFor', () => {
     const first = snapshot();
     const second = snapshot();
     second.settings.drawSeconds = 120;
-    second.players.push({ id: 'p2', name: 'Bo', score: 0, connected: true });
+    second.players.push({ id: 'p2', name: 'Bo', score: 0, connected: true, spectator: false });
 
     expect(viewKeyFor({ role: 'display', clientId: 'tv', initialRoomCode: '', snapshot: first })).not.toBe(
       viewKeyFor({ role: 'display', clientId: 'tv', initialRoomCode: '', snapshot: second })

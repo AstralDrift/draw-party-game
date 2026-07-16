@@ -268,6 +268,16 @@ function renderPlayer(): HTMLElement {
     return renderJoin();
   }
 
+  if (isSpectating()) {
+    if (snapshot.phase === 'results') {
+      return shell('Spectating', renderResults(snapshot.roundResult, false));
+    }
+    if (snapshot.phase === 'finalScores') {
+      return shell('Spectating', renderScores(snapshot.finalScores, true));
+    }
+    return shell('Spectating', renderSpectatorWatch());
+  }
+
   if (snapshot.phase === 'lobby') {
     return shell('Lobby', renderPlayerLobby());
   }
@@ -284,6 +294,30 @@ function renderPlayer(): HTMLElement {
     return shell('Results', renderResults(snapshot.roundResult, false));
   }
   return shell('Final Scores', renderScores(snapshot.finalScores, true));
+}
+
+function isSpectating(): boolean {
+  return Boolean(snapshot?.players.find((player) => player.id === clientId)?.spectator);
+}
+
+function renderSpectatorWatch(): HTMLElement {
+  const phase = snapshot?.phase ?? 'lobby';
+  const copy =
+    phase === 'drawing'
+      ? 'Players are drawing. You will jump in next round.'
+      : phase === 'guessing'
+        ? 'Watch the guesses roll in. You will play next round.'
+        : phase === 'voting'
+          ? 'Votes are in progress. You will play next round.'
+          : 'You are watching this room. You will play when the next round starts.';
+  return el(
+    'section',
+    { class: 'panel narrow spectator-banner' },
+    el('span', { class: 'pill spectator-pill' }, 'Spectator'),
+    el('h2', {}, 'Watching the party'),
+    el('p', { class: 'muted' }, copy),
+    renderPlayersPanel(false)
+  );
 }
 
 function renderJoin(): HTMLElement {
@@ -480,12 +514,22 @@ function renderPlayersPanel(showScores: boolean): HTMLElement {
 function renderPlayerList(showScores: boolean): HTMLElement {
   const list = el('div', { class: 'player-list' });
   for (const [index, player] of (snapshot?.players ?? []).entries()) {
+    const statusPill = player.spectator
+      ? 'spectating'
+      : showScores
+        ? `${player.score} pts`
+        : player.connected
+          ? 'online'
+          : 'offline';
     list.appendChild(
       el(
         'div',
-        { class: `player-row ${player.connected ? 'online' : 'offline'}`, style: `--row-index:${index}` },
+        {
+          class: `player-row ${player.connected ? 'online' : 'offline'}${player.spectator ? ' is-spectator' : ''}`,
+          style: `--row-index:${index}`
+        },
         el('span', { class: 'player-name' }, player.name),
-        el('span', { class: 'pill' }, showScores ? `${player.score} pts` : player.connected ? 'online' : 'offline')
+        el('span', { class: `pill${player.spectator ? ' spectator-pill' : ''}` }, statusPill)
       )
     );
   }
@@ -932,14 +976,19 @@ function shell(title: string, child: HTMLElement): HTMLElement {
   const waitingToJoin = role === 'player' && !pendingJoin && !snapshot;
   const reconnecting = !waitingToJoin && status !== 'Connected' && status !== 'Disconnected';
   const connectionText = displayStatusText();
+  const phaseText = snapshot
+    ? isSpectating()
+      ? `Spectating · ${phaseLabel(snapshot.phase)}`
+      : phaseLabel(snapshot.phase)
+    : null;
   return el(
     'main',
-    { class: `app-shell ${role} ${shellPhaseClass()}` },
+    { class: `app-shell ${role} ${shellPhaseClass()}${isSpectating() ? ' is-spectating' : ''}` },
     renderBackdrop(),
     el(
       'header',
       { class: 'topbar' },
-      el('div', {}, el('div', { class: 'brand' }, title), snapshot ? el('div', { class: 'phase' }, phaseLabel(snapshot.phase)) : null),
+      el('div', {}, el('div', { class: 'brand' }, title), phaseText ? el('div', { class: 'phase' }, phaseText) : null),
       el('div', { class: 'connection', id: 'connection-text' }, connectionText)
     ),
     reconnecting ? el('div', { class: 'connection-banner' }, status) : null,

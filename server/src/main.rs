@@ -1163,7 +1163,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn websocket_rejected_late_join_does_not_subscribe_to_room() {
+    async fn websocket_late_join_becomes_spectator_and_receives_room_updates() {
         let url = spawn_ws_server().await;
         let (mut display, _) = connect_async(format!("{url}?role=display&clientId=display"))
             .await
@@ -1195,11 +1195,19 @@ mod tests {
         })))
         .await
         .unwrap();
-        let error = read_until_type(&mut late, "error").await;
-        assert_eq!(
-            error.get("code").and_then(Value::as_str),
-            Some("game_in_progress")
-        );
+        let joined = read_until_type(&mut late, "roomSnapshot").await;
+        let spectator = joined
+            .get("snapshot")
+            .and_then(|snapshot| snapshot.get("players"))
+            .and_then(Value::as_array)
+            .and_then(|players| {
+                players.iter().find(|player| {
+                    player.get("id").and_then(Value::as_str) == Some("p3")
+                })
+            })
+            .and_then(|player| player.get("spectator"))
+            .and_then(Value::as_bool);
+        assert_eq!(spectator, Some(true));
 
         p1.send(text_message(json!({
             "type": "submitDrawing",
@@ -1209,7 +1217,8 @@ mod tests {
         .await
         .unwrap();
 
-        expect_no_message(&mut late).await;
+        let update = read_until_type(&mut late, "roomSnapshot").await;
+        assert!(update.get("snapshot").is_some());
     }
 
     #[tokio::test]

@@ -104,6 +104,7 @@ pub struct PlayerPublic {
     pub name: String,
     pub score: i32,
     pub connected: bool,
+    pub spectator: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
