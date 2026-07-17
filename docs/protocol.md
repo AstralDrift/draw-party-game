@@ -19,10 +19,10 @@ From `server/src/protocol.rs` (defaults and limits):
 | `MAX_PLAYERS` | 8 | Includes spectators |
 | `MIN_PLAYERS` | 1 | Engine allows; party UX expects more |
 | `DEFAULT_TOTAL_ROUNDS` | 5 | Range 1–12 |
-| `DEFAULT_DRAW_SECONDS` | 90 | Range 15–300 |
-| `DEFAULT_GUESS_SECONDS` | 45 | Range 10–180 |
-| `DEFAULT_VOTE_SECONDS` | 30 | Range 10–120 |
-| `DEFAULT_RESULTS_SECONDS` | 12 | Range 5–30 |
+| `DEFAULT_DRAW_SECONDS` | 75 | Range 15–300 |
+| `DEFAULT_GUESS_SECONDS` | 40 | Range 10–180 |
+| `DEFAULT_VOTE_SECONDS` | 25 | Range 10–120 |
+| `DEFAULT_RESULTS_SECONDS` | 10 | Range 5–30 |
 | `DEFAULT_PROMPT_PACK_ID` | `safe-party` | Also `party-chaos` |
 | `ROOM_TTL_MS` | 3 hours | After all participants disconnect |
 | `REACTION_COOLDOWN_MS` | 1500 | Per player |
