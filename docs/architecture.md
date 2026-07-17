@@ -60,6 +60,7 @@ Spectators are not eligible voters. The artist is never an eligible voter for th
 - Disconnected players remain on the roster with `connected: false`.
 - Progress does not wait forever on disconnected players: once all **connected** eligible players have submitted (draw / guess / vote), the engine can advance.
 - Player re-join sets `connected: true`; display re-attach re-registers the display via host token. Heartbeats are keepalive only (`Pong`); they do not flip `connected`.
+- If a display reconnects to an expired room (`room_not_found`), the client clears the stale host token and creates a fresh lobby.
 
 ## Spectators and seat limits
 

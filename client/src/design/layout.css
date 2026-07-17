@@ -10,9 +10,7 @@
   overflow: hidden;
 }
 
-.app-shell.display > .display-grid,
-.app-shell.display > .connection-banner,
-.app-shell.display > .error {
+.app-shell.display > .display-grid {
   position: relative;
   z-index: 1;
   min-height: 0;
@@ -159,16 +157,20 @@
 }
 
 .qr-stage {
-  width: auto;
-  padding: 8px;
+  --qr-size: min(220px, 22vh, 18vw);
+  /* ~180px QR after 8px stage padding (see e2e/tv-layout.ts). */
+  width: max(196px, var(--qr-size));
+  max-width: 100%;
   margin: 0 auto;
   flex: 0 1 auto;
   min-height: 0;
+  overflow: hidden;
 }
 
-.qr {
-  width: min(220px, 26svh, 18vw) !important;
-  height: min(220px, 26svh, 18vw) !important;
+@supports (height: 1svh) {
+  .qr-stage {
+    --qr-size: min(220px, 22svh, 18vw);
+  }
 }
 
 .brand {
@@ -668,9 +670,14 @@
 
 /* Large TVs: scale with viewport height so hero + QR + CTA stay in one frame. */
 @media (min-width: 1800px) and (min-height: 1000px) {
-  .qr {
-    width: min(320px, 28svh, 14vw) !important;
-    height: min(320px, 28svh, 14vw) !important;
+  .qr-stage {
+    --qr-size: min(320px, 27vh, 14vw);
+  }
+
+  @supports (height: 1svh) {
+    .qr-stage {
+      --qr-size: min(320px, 27svh, 14vw);
+    }
   }
 
   .room-code {
@@ -696,9 +703,14 @@
 }
 
 @media (min-width: 3200px) and (min-height: 1800px) {
-  .qr {
-    width: min(420px, 26svh, 12vw) !important;
-    height: min(420px, 26svh, 12vw) !important;
+  .qr-stage {
+    --qr-size: min(420px, 22vh, 12vw);
+  }
+
+  @supports (height: 1svh) {
+    .qr-stage {
+      --qr-size: min(420px, 22svh, 12vw);
+    }
   }
 
   .room-code {
