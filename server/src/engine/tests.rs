@@ -49,18 +49,40 @@ fn first_player_becomes_host_and_reassigns_on_disconnect() {
         .unwrap();
     assert_eq!(room.host_player_id.as_deref(), Some("p1"));
     assert!(room.player_can_control("p1"));
-    assert!(room.snapshot(1).players.iter().find(|p| p.id == "p1").unwrap().is_host);
+    assert!(
+        room.snapshot(1)
+            .players
+            .iter()
+            .find(|p| p.id == "p1")
+            .unwrap()
+            .is_host
+    );
 
     room.upsert_player("p2".to_string(), "Grace".to_string(), 2)
         .unwrap();
     assert_eq!(room.host_player_id.as_deref(), Some("p1"));
     assert!(!room.player_can_control("p2"));
-    assert!(!room.snapshot(2).players.iter().find(|p| p.id == "p2").unwrap().is_host);
+    assert!(
+        !room
+            .snapshot(2)
+            .players
+            .iter()
+            .find(|p| p.id == "p2")
+            .unwrap()
+            .is_host
+    );
 
     room.mark_disconnected("p1", 3);
     assert_eq!(room.host_player_id.as_deref(), Some("p2"));
     assert!(room.player_can_control("p2"));
-    assert!(room.snapshot(3).players.iter().find(|p| p.id == "p2").unwrap().is_host);
+    assert!(
+        room.snapshot(3)
+            .players
+            .iter()
+            .find(|p| p.id == "p2")
+            .unwrap()
+            .is_host
+    );
 }
 
 #[test]

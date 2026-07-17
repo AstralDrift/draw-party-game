@@ -190,7 +190,11 @@ impl Room {
     /// Sticky host while connected; otherwise earliest join among active phones, else any connected.
     pub fn ensure_host(&mut self) {
         if let Some(host_id) = self.host_player_id.as_deref() {
-            if self.players.get(host_id).is_some_and(|player| player.connected) {
+            if self
+                .players
+                .get(host_id)
+                .is_some_and(|player| player.connected)
+            {
                 return;
             }
         }
@@ -202,9 +206,7 @@ impl Room {
         let earliest = |spectators_ok: bool| {
             self.players
                 .values()
-                .filter(|player| {
-                    player.connected && (spectators_ok || !player.spectator)
-                })
+                .filter(|player| player.connected && (spectators_ok || !player.spectator))
                 .min_by_key(|player| player.joined_at_ms)
                 .map(|player| player.id.clone())
         };
