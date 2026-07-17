@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   displayLobbyStartNote,
   finalWinnerText,
+  playerActionHint,
   playerLobbyReadyNote,
+  podiumTitles,
   roundOutcomeText
 } from './polish';
 import type { RoundResult, ScoreEntry } from './protocol';
@@ -16,7 +18,13 @@ describe('party polish copy', () => {
     expect(roundOutcomeText(roundResult(['Ava', 'Bo'], ['Ava', 'Bo'], { perfectTruth: true }))).toBe(
       'Everyone saw through it — perfect!'
     );
-    expect(roundOutcomeText(roundResult(['Ava', 'Bo'], ['Ava', 'Bo', 'Cy']))).toBe('Ava and Bo cracked it');
+    expect(roundOutcomeText(roundResult(['Ava', 'Bo'], ['Ava', 'Bo', 'Cy']))).toBe(
+      'Ava and Bo cracked it'
+    );
+    expect(roundOutcomeText(roundResult(['Ava', 'Bo', 'Cy'], ['Ava', 'Bo', 'Cy']))).toBe(
+      '3 players cracked it'
+    );
+    expect(roundOutcomeText(roundResult([], [], {}))).toBe('Nobody got it — artist wins the room');
   });
 
   it('summarizes final winners and ties', () => {
@@ -28,6 +36,7 @@ describe('party polish copy', () => {
 
   it('guides hosts toward a fuller party while keeping solo startable', () => {
     expect(displayLobbyStartNote(0, 1)).toBe('Scan the QR (or type the code). Need 1+ phones.');
+    expect(displayLobbyStartNote(1, 3)).toBe('Need 2 more phones before kickoff.');
     expect(displayLobbyStartNote(1, 1)).toBe(
       '1 ready — playable now, best with 3+ for votes and fakes.'
     );
@@ -35,9 +44,34 @@ describe('party polish copy', () => {
       '2 ready — playable now, best with 3+ for votes and fakes.'
     );
     expect(displayLobbyStartNote(3, 1)).toBe('3 ready — hit Start when the couch is full.');
+    expect(playerLobbyReadyNote(0, 1)).toBe('Need 1 more player.');
     expect(playerLobbyReadyNote(1, 1)).toBe('Invite 2 more for better voting.');
     expect(playerLobbyReadyNote(2, 1)).toBe('Invite 1 more for better voting.');
     expect(playerLobbyReadyNote(3, 1)).toBe('The TV can start the game.');
+  });
+
+  it('assigns podium titles and phase action hints', () => {
+    expect(podiumTitles([])).toEqual([]);
+    expect(podiumTitles(scores([['Ava', 10]]))).toEqual([{ playerId: 'p0', title: 'Champion' }]);
+    const four = scores([
+      ['Ava', 400],
+      ['Bo', 300],
+      ['Cy', 200],
+      ['Di', 50]
+    ]);
+    expect(podiumTitles(four)).toEqual([
+      { playerId: 'p0', title: 'Champion' },
+      { playerId: 'p1', title: 'Runner-up' },
+      { playerId: 'p2', title: 'Crowd Favorite' },
+      { playerId: 'p3', title: 'Dark Horse' }
+    ]);
+    expect(podiumTitles(scores([['Ava', 3], ['Bo', 2], ['Cy', 1]])).some((t) => t.title === 'Dark Horse')).toBe(
+      false
+    );
+
+    expect(playerActionHint('voting', true)).toMatch(/can’t vote/);
+    expect(playerActionHint('guessing', false)).toMatch(/Fooling people/);
+    expect(playerActionHint('finalScores', false)).toMatch(/podium/);
   });
 });
 
