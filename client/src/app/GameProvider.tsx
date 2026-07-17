@@ -10,7 +10,6 @@ import {
 } from 'react';
 import { GameSocket } from '../net';
 import {
-  defaultRoomSettings,
   type ClientMessage,
   type ReactionEmoji,
   type RoomSettings,
@@ -419,8 +418,4 @@ export function useGame(): GameContextValue {
     throw new Error('useGame must be used within GameProvider');
   }
   return value;
-}
-
-export function useDefaultSettings(): RoomSettings {
-  return defaultRoomSettings();
 }

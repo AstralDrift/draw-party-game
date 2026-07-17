@@ -369,12 +369,32 @@ async function playerMetrics(page: Page): Promise<{
 async function drawStroke(page: Page): Promise<void> {
   const canvas = page.locator('canvas.draw-canvas');
   await expect(canvas).toBeVisible();
-  const box = await canvas.boundingBox();
-  if (!box) {
-    throw new Error('Drawing canvas did not have a layout box.');
-  }
-  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.25);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.55, { steps: 8 });
-  await page.mouse.up();
+  await expect
+    .poll(async () => {
+      const box = await canvas.boundingBox();
+      return Boolean(box && box.width >= 100 && box.height >= 75);
+    })
+    .toBe(true);
+
+  await canvas.evaluate((element: HTMLCanvasElement) => {
+    const rect = element.getBoundingClientRect();
+    const fire = (type: string, xRatio: number, yRatio: number, buttons = 1) => {
+      element.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 1,
+          pointerType: 'pen',
+          isPrimary: true,
+          buttons,
+          clientX: rect.left + rect.width * xRatio,
+          clientY: rect.top + rect.height * yRatio
+        })
+      );
+    };
+    fire('pointerdown', 0.2, 0.25);
+    fire('pointermove', 0.45, 0.4);
+    fire('pointermove', 0.7, 0.55);
+    fire('pointerup', 0.7, 0.55, 0);
+  });
 }

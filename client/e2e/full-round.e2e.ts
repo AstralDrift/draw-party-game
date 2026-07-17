@@ -118,22 +118,34 @@ async function createPlayers(
 async function drawStroke(page: Page): Promise<void> {
   const canvas = page.locator('canvas.draw-canvas');
   await expect(canvas).toBeVisible();
-  const box = await canvas.boundingBox();
-  if (!box) {
-    throw new Error('Drawing canvas did not have a layout box.');
-  }
+  await expect
+    .poll(async () => {
+      const box = await canvas.boundingBox();
+      return Boolean(box && box.width >= 100 && box.height >= 75);
+    })
+    .toBe(true);
 
-  const points = [
-    { x: box.x + box.width * 0.2, y: box.y + box.height * 0.25 },
-    { x: box.x + box.width * 0.45, y: box.y + box.height * 0.45 },
-    { x: box.x + box.width * 0.7, y: box.y + box.height * 0.3 }
-  ];
-  await page.mouse.move(points[0].x, points[0].y);
-  await page.mouse.down();
-  for (const point of points.slice(1)) {
-    await page.mouse.move(point.x, point.y, { steps: 4 });
-  }
-  await page.mouse.up();
+  await canvas.evaluate((element: HTMLCanvasElement) => {
+    const rect = element.getBoundingClientRect();
+    const fire = (type: string, xRatio: number, yRatio: number, buttons = 1) => {
+      element.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 1,
+          pointerType: 'pen',
+          isPrimary: true,
+          buttons,
+          clientX: rect.left + rect.width * xRatio,
+          clientY: rect.top + rect.height * yRatio
+        })
+      );
+    };
+    fire('pointerdown', 0.2, 0.25);
+    fire('pointermove', 0.45, 0.45);
+    fire('pointermove', 0.7, 0.3);
+    fire('pointerup', 0.7, 0.3, 0);
+  });
 }
 
 async function waitForArtistIndex(players: TestPlayer[]): Promise<number> {
