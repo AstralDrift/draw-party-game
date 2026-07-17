@@ -59,7 +59,8 @@ fn rejects_invalid_room_settings() {
         "invalid_prompt_pack"
     );
 
-    let mutators: [(&str, Box<dyn Fn(&mut RoomSettings)>); 10] = [
+    type SettingsMutator = Box<dyn Fn(&mut RoomSettings)>;
+    let mutators: [(&str, SettingsMutator); 10] = [
         ("rounds_low", Box::new(|s| s.rounds = 0)),
         ("rounds_high", Box::new(|s| s.rounds = MAX_ROUNDS + 1)),
         (
