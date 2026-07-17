@@ -19,7 +19,7 @@ pub struct Player {
     pub connected: bool,
     pub spectator: bool,
     #[serde(default)]
-    pub is_host: bool,
+    pub joined_at_ms: u64,
     #[serde(default, skip)]
     pub last_reaction_ms: u64,
 }
@@ -44,6 +44,8 @@ pub struct Room {
     pub host_token: String,
     pub phase: GamePhase,
     pub players: BTreeMap<String, Player>,
+    #[serde(default)]
+    pub host_player_id: Option<String>,
     pub displays: BTreeSet<String>,
     pub settings: RoomSettings,
     pub current_round: u8,
@@ -89,6 +91,7 @@ impl Room {
             host_token,
             phase: GamePhase::Lobby,
             players: BTreeMap::new(),
+            host_player_id: None,
             displays,
             settings: RoomSettings::default(),
             current_round: 0,
@@ -134,13 +137,13 @@ impl Room {
                 player.name = safe_name.clone();
                 player.connected = true;
             })
-            .or_insert(Player {
+            .or_insert_with(|| Player {
                 id: player_id,
                 name: safe_name,
                 score: 0,
                 connected: true,
                 spectator: joining_as_spectator,
-                is_host: false,
+                joined_at_ms: now_ms,
                 last_reaction_ms: 0,
             });
         self.ensure_host();
@@ -184,45 +187,37 @@ impl Room {
         self.ensure_host();
     }
 
-    /// Keep exactly one connected host phone when possible (first active, else any connected).
+    /// Sticky host while connected; otherwise earliest join among active phones, else any connected.
     pub fn ensure_host(&mut self) {
-        if self
-            .players
-            .values()
-            .any(|player| player.is_host && player.connected)
-        {
-            return;
-        }
-
-        for player in self.players.values_mut() {
-            player.is_host = false;
-        }
-
-        let next_host_id = self
-            .players
-            .values()
-            .filter(|player| player.connected && !player.spectator)
-            .map(|player| player.id.clone())
-            .next()
-            .or_else(|| {
-                self.players
-                    .values()
-                    .filter(|player| player.connected)
-                    .map(|player| player.id.clone())
-                    .next()
-            });
-
-        if let Some(player_id) = next_host_id {
-            if let Some(player) = self.players.get_mut(&player_id) {
-                player.is_host = true;
+        if let Some(host_id) = self.host_player_id.as_deref() {
+            if self.players.get(host_id).is_some_and(|player| player.connected) {
+                return;
             }
         }
+
+        self.host_player_id = self.pick_next_host_id();
+    }
+
+    fn pick_next_host_id(&self) -> Option<String> {
+        let earliest = |spectators_ok: bool| {
+            self.players
+                .values()
+                .filter(|player| {
+                    player.connected && (spectators_ok || !player.spectator)
+                })
+                .min_by_key(|player| player.joined_at_ms)
+                .map(|player| player.id.clone())
+        };
+
+        earliest(false).or_else(|| earliest(true))
     }
 
     pub fn player_can_control(&self, player_id: &str) -> bool {
-        self.players
-            .get(player_id)
-            .is_some_and(|player| player.is_host && player.connected)
+        self.host_player_id.as_deref() == Some(player_id)
+            && self
+                .players
+                .get(player_id)
+                .is_some_and(|player| player.connected)
     }
 
     pub fn handle_start_or_advance(&mut self, now_ms: u64) -> EngineResult<EngineEvent> {
@@ -925,7 +920,7 @@ impl Room {
                 score: player.score,
                 connected: player.connected,
                 spectator: player.spectator,
-                is_host: player.is_host,
+                is_host: self.host_player_id.as_deref() == Some(player.id.as_str()),
             })
             .collect()
     }

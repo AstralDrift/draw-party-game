@@ -48,7 +48,7 @@ Important fields:
 - `turnToken` — submissions must match the current turn
 - `deadlineMs` / `serverNowMs` — client syncs countdowns to server time
 - `players[].spectator` — mid-game watchers until promoted
-- `players[].isHost` — first connected phone that can drive lobby settings / start / continue (reassigned if the host disconnects)
+- `players[].isHost` — derived badge for the room host phone (sticky while connected; on disconnect, earliest joined connected non-spectator, else earliest joined connected)
 
 ## Client → server (`ClientMessage`)
 

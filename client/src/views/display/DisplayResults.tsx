@@ -32,7 +32,7 @@ export function DisplayResults(): React.JSX.Element {
           <p className="eyebrow">Keep it moving</p>
           <Button
             id="advance-button"
-            className="spotlight-button"
+            variant="secondary"
             wide
             disabled={Boolean(result) && !complete}
             onClick={() => send({ type: 'startGame' })}
@@ -71,7 +71,7 @@ export function DisplayFinal(): React.JSX.Element {
           <h2 className="encore-title">Don’t stop now</h2>
           <Button
             id="advance-button"
-            className="spotlight-button"
+            variant="secondary"
             wide
             onClick={() => send({ type: 'startGame' })}
           >

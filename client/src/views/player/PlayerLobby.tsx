@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useGame } from '../../app/GameProvider';
 import { playerLobbyReadyNote } from '../../polish';
 import { activePlayers } from '../../spectator';
+import { isSelfHost } from '../../host';
 import { Button } from '../../components/ui/Button';
 import { Field, TextInput } from '../../components/ui/Field';
 import { GlassPanel } from '../../components/ui/GlassPanel';
@@ -27,7 +28,7 @@ export function PlayerLobby(): React.JSX.Element {
   const neededPlayers = Math.max(0, snapshot.minPlayers - connectedPlayers.length);
   const self = snapshot.players.find((player) => player.id === clientId);
   const spectating = Boolean(self?.spectator);
-  const isHost = Boolean(self?.isHost);
+  const isHost = isSelfHost(snapshot.players, clientId ?? '');
   const ready = neededPlayers === 0;
   const canStart = connectedPlayers.length >= snapshot.minPlayers;
   const displayName = self?.name ?? 'Player';

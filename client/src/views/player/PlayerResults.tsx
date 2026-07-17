@@ -1,6 +1,7 @@
 import { useGame } from '../../app/GameProvider';
 import { useRevealStage } from '../../hooks/useRevealStage';
-import { Button } from '../../components/ui/Button';
+import { isSelfHost } from '../../host';
+import { HostAdvanceControls } from '../../components/ui/HostAdvanceControls';
 import { ResultsPanel } from '../../components/ui/ResultsPanel';
 import { ScoresPanel } from '../../components/ui/ScoresPanel';
 import { GlassPanel } from '../../components/ui/GlassPanel';
@@ -10,8 +11,7 @@ export function PlayerResults(): React.JSX.Element {
   const { snapshot, clientId, send } = useGame();
   const result = snapshot?.roundResult;
   const { stage, complete } = useRevealStage(result, snapshot?.turnToken ?? 0);
-  const self = snapshot?.players.find((player) => player.id === clientId);
-  const isHost = Boolean(self?.isHost);
+  const isHost = isSelfHost(snapshot?.players ?? [], clientId ?? '');
 
   return (
     <Shell title="Results">
@@ -29,18 +29,12 @@ export function PlayerResults(): React.JSX.Element {
         </GlassPanel>
       )}
       {isHost ? (
-        <GlassPanel className="advance-panel" tone="soft">
-          <p className="eyebrow">Host controls</p>
-          <Button
-            className="spotlight-button"
-            wide
-            disabled={Boolean(result) && !complete}
-            onClick={() => send({ type: 'startGame' })}
-          >
-            Continue
-          </Button>
-          <p className="muted">Or wait — the TV auto-continues when the timer hits zero.</p>
-        </GlassPanel>
+        <HostAdvanceControls
+          label="Continue"
+          disabled={Boolean(result) && !complete}
+          onAdvance={() => send({ type: 'startGame' })}
+          hint="Or wait — the TV auto-continues when the timer hits zero."
+        />
       ) : null}
     </Shell>
   );
@@ -49,8 +43,7 @@ export function PlayerResults(): React.JSX.Element {
 export function PlayerFinal(): React.JSX.Element {
   const { snapshot, clientId, send, setErrorMessage } = useGame();
   const scores = snapshot?.finalScores ?? [];
-  const self = snapshot?.players.find((player) => player.id === clientId);
-  const isHost = Boolean(self?.isHost);
+  const isHost = isSelfHost(snapshot?.players ?? [], clientId ?? '');
 
   return (
     <Shell title="Final Scores">
@@ -61,13 +54,11 @@ export function PlayerFinal(): React.JSX.Element {
         onShareFailed={() => setErrorMessage('Could not export the podium card.')}
       />
       {isHost ? (
-        <GlassPanel className="advance-panel encore-panel" tone="soft">
-          <p className="eyebrow">Host controls</p>
-          <Button className="spotlight-button" wide onClick={() => send({ type: 'startGame' })}>
-            Play Again
-          </Button>
-          <p className="muted">Same room. Same phones. Fresh prompts.</p>
-        </GlassPanel>
+        <HostAdvanceControls
+          label="Play Again"
+          onAdvance={() => send({ type: 'startGame' })}
+          hint="Same room. Same phones. Fresh prompts."
+        />
       ) : null}
     </Shell>
   );

@@ -1,6 +1,7 @@
 import { useGame } from '../../app/GameProvider';
 import { displayLobbyStartNote } from '../../polish';
 import { activePlayers, playerCountLabel } from '../../spectator';
+import { roomHost } from '../../host';
 import { Button } from '../../components/ui/Button';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { PlayerList } from '../../components/ui/PlayerList';
@@ -16,7 +17,7 @@ export function DisplayLobby(): React.JSX.Element {
   const joinUrl = `${window.location.origin}/join/${snapshot.roomCode}`;
   const connectedPlayers = activePlayers(snapshot.players);
   const canStart = connectedPlayers.length >= snapshot.minPlayers;
-  const host = snapshot.players.find((player) => player.isHost);
+  const host = roomHost(snapshot.players);
   const settings = snapshot.settings;
 
   return (
@@ -38,7 +39,8 @@ export function DisplayLobby(): React.JSX.Element {
         </div>
         <p className="join-url">{joinUrl}</p>
         <Button
-          className="start-button spotlight-button"
+          className="start-button"
+          variant="secondary"
           wide
           disabled={!canStart}
           onClick={() => send({ type: 'startGame' })}
@@ -47,8 +49,8 @@ export function DisplayLobby(): React.JSX.Element {
         </Button>
         <p className={canStart ? 'start-note ready' : 'start-note'}>
           {host
-            ? `${displayLobbyStartNote(connectedPlayers.length, snapshot.minPlayers)} Host phone: ${host.name}.`
-            : displayLobbyStartNote(connectedPlayers.length, snapshot.minPlayers)}
+            ? `${displayLobbyStartNote(connectedPlayers.length, snapshot.minPlayers)} Host phone: ${host.name}. Start from the host phone — or here if you have a remote.`
+            : `${displayLobbyStartNote(connectedPlayers.length, snapshot.minPlayers)} Start from the host phone — or here if you have a remote.`}
         </p>
       </GlassPanel>
 
@@ -61,10 +63,17 @@ export function DisplayLobby(): React.JSX.Element {
         <RoomSettingsPanel
           settings={settings}
           onSave={updateSettings}
-          soundOn={soundOn}
-          onToggleSound={toggleSound}
-          subtitle="Optional on TV — the host phone can change these too."
+          subtitle="TV remote fallback — prefer the host phone."
         />
+        <Button
+          variant="secondary"
+          wide
+          className={`sound-toggle ${soundOn ? 'is-selected' : ''}`}
+          aria-pressed={soundOn}
+          onClick={toggleSound}
+        >
+          {soundOn ? 'Sound On' : 'Sound Off'}
+        </Button>
       </div>
     </div>
   );
