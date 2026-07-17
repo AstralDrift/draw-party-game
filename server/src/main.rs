@@ -1201,9 +1201,9 @@ mod tests {
             .and_then(|snapshot| snapshot.get("players"))
             .and_then(Value::as_array)
             .and_then(|players| {
-                players.iter().find(|player| {
-                    player.get("id").and_then(Value::as_str) == Some("p3")
-                })
+                players
+                    .iter()
+                    .find(|player| player.get("id").and_then(Value::as_str) == Some("p3"))
             })
             .and_then(|player| player.get("spectator"))
             .and_then(Value::as_bool);

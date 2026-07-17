@@ -65,7 +65,7 @@ For narrow changes, match validation to blast radius:
 - Keep the Rust server authoritative. Do not reintroduce peer-to-peer room authority or client-side phase ownership.
 - Centralize phase advancement in the engine rather than duplicating progression rules in route handlers or client code.
 - Preserve reconnect and dropout behavior: disconnected players should not block progress once all connected eligible players have submitted.
-- Keep room and player limits enforced on both protocol constants and user-facing controls.
+- Keep room and player limits enforced on both protocol constants and user-facing controls. Spectators consume `MAX_PLAYERS` seats (same roster cap as active players).
 - Keep client protocol guards strict; unknown or malformed server messages should not mutate UI state.
 - Avoid complex drawing features unless they directly improve the simple party flow.
 - Prefer small, reviewable changes with tests close to the changed behavior.

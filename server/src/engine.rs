@@ -118,6 +118,7 @@ impl Room {
         let joining_as_spectator =
             self.phase != GamePhase::Lobby && !self.players.contains_key(&player_id);
 
+        // Spectators consume MAX_PLAYERS seats (same roster cap as active players).
         if !self.players.contains_key(&player_id) && self.players.len() >= MAX_PLAYERS {
             return Err(EngineError::new(
                 "room_full",
@@ -469,9 +470,18 @@ impl Room {
     }
 
     fn start_drawing_round(&mut self, now_ms: u64) -> EngineResult<()> {
-        self.prune_disconnected_players();
-        self.promote_spectators();
-        if self.connected_player_count() < MIN_PLAYERS {
+        // Validate the post-promote roster before committing prune/promote/phase mutation.
+        let next_players: BTreeMap<String, Player> = self
+            .players
+            .values()
+            .filter(|player| player.connected)
+            .map(|player| {
+                let mut next = player.clone();
+                next.spectator = false;
+                (next.id.clone(), next)
+            })
+            .collect();
+        if next_players.len() < MIN_PLAYERS {
             let player_word = if MIN_PLAYERS == 1 {
                 "player"
             } else {
@@ -483,12 +493,12 @@ impl Room {
             ));
         }
 
+        self.players = next_players;
+
         if self.current_round == 0 || self.phase == GamePhase::FinalScores {
             self.current_round = 1;
             for player in self.players.values_mut() {
-                if !player.spectator {
-                    player.score = 0;
-                }
+                player.score = 0;
             }
         } else {
             self.current_round = self.current_round.saturating_add(1);
@@ -499,12 +509,7 @@ impl Room {
         self.deadline_ms = Some(deadline_after(now_ms, self.settings.draw_seconds));
         self.round = RoundState::default();
 
-        let mut player_ids: Vec<String> = self
-            .players
-            .values()
-            .filter(|player| !player.spectator)
-            .map(|player| player.id.clone())
-            .collect();
+        let mut player_ids: Vec<String> = self.players.keys().cloned().collect();
         let mut rng = rand::thread_rng();
         player_ids.shuffle(&mut rng);
         self.round.order = player_ids.clone();
@@ -655,9 +660,9 @@ impl Room {
 
         let eligible_voter_ids: Vec<String> = self
             .players
-            .keys()
-            .filter(|player_id| player_id.as_str() != artist_id.as_str())
-            .cloned()
+            .values()
+            .filter(|player| !player.spectator && player.id != artist_id)
+            .map(|player| player.id.clone())
             .collect();
         let nobody_found_it = correct_voter_names.is_empty() && !eligible_voter_ids.is_empty();
         let perfect_truth = !eligible_voter_ids.is_empty()
@@ -836,24 +841,15 @@ impl Room {
     }
 
     fn eligible_voter_count(&self) -> usize {
-        self.players
-            .values()
-            .filter(|player| {
-                player.connected
-                    && !player.spectator
-                    && self.round.current_artist_id.as_deref() != Some(player.id.as_str())
-            })
+        self.active_players()
+            .filter(|player| self.round.current_artist_id.as_deref() != Some(player.id.as_str()))
             .count()
     }
 
     fn connected_drawers_done(&self) -> bool {
-        let connected_players: Vec<&Player> = self
-            .players
-            .values()
-            .filter(|player| player.connected && !player.spectator)
-            .collect();
-        !connected_players.is_empty()
-            && connected_players
+        let drawers: Vec<&Player> = self.active_players().collect();
+        !drawers.is_empty()
+            && drawers
                 .iter()
                 .all(|player| self.round.drawings.contains_key(&player.id))
     }
@@ -869,25 +865,9 @@ impl Room {
     }
 
     fn connected_submissions_done(&self, submissions: &BTreeMap<String, String>) -> bool {
-        self.players
-            .values()
-            .filter(|player| {
-                player.connected
-                    && !player.spectator
-                    && self.round.current_artist_id.as_deref() != Some(player.id.as_str())
-            })
+        self.active_players()
+            .filter(|player| self.round.current_artist_id.as_deref() != Some(player.id.as_str()))
             .all(|player| submissions.contains_key(&player.id))
-    }
-
-    fn connected_player_count(&self) -> usize {
-        self.players
-            .values()
-            .filter(|player| player.connected && !player.spectator)
-            .count()
-    }
-
-    fn prune_disconnected_players(&mut self) {
-        self.players.retain(|_, player| player.connected);
     }
 
     fn public_players(&self) -> Vec<PlayerPublic> {
@@ -917,6 +897,14 @@ impl Room {
         scores.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.name.cmp(&b.name)));
         scores
     }
+
+    fn active_players(&self) -> impl Iterator<Item = &Player> {
+        self.players.values().filter(|player| is_active(player))
+    }
+}
+
+fn is_active(player: &Player) -> bool {
+    player.connected && !player.spectator
 }
 
 pub fn generate_room_code(existing: &BTreeSet<String>) -> String {
@@ -1103,6 +1091,5 @@ fn normalize_text(text: &str) -> String {
 }
 
 #[cfg(test)]
-<<<<<<< HEAD
 #[path = "engine/tests.rs"]
 mod tests;

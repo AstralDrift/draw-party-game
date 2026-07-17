@@ -755,7 +755,9 @@ fn spectator_cannot_submit() {
         .map(|option| option.id.clone())
         .unwrap();
     assert_eq!(
-        room.submit_vote("spec", token, truth, 230).unwrap_err().code,
+        room.submit_vote("spec", token, truth, 230)
+            .unwrap_err()
+            .code,
         "spectator"
     );
 }
@@ -786,8 +788,7 @@ fn connected_progress_ignores_spectators() {
         .unwrap();
     room.submit_vote(&voters[0], token, truth.clone(), 400)
         .unwrap();
-    room.submit_vote(&voters[1], token, truth, 401)
-        .unwrap();
+    room.submit_vote(&voters[1], token, truth, 401).unwrap();
     assert_eq!(room.phase, GamePhase::Results);
     assert!(!room
         .snapshot(500)
@@ -852,4 +853,27 @@ fn late_join_during_drawing_is_spectator_until_next_round() {
     assert!(!room.players.get("p4").unwrap().spectator);
     assert!(room.round.prompts.contains_key("p4"));
     assert!(room.round.order.contains(&"p4".to_string()));
+}
+
+#[test]
+fn start_drawing_round_failure_does_not_promote_or_prune() {
+    let mut room = room_with_players();
+    room.handle_start_or_advance(100).unwrap();
+    room.upsert_player("spec".to_string(), "Spec".to_string(), 150)
+        .unwrap();
+    assert!(room.players.get("spec").unwrap().spectator);
+    assert_eq!(room.players.len(), 4);
+
+    for player_id in ["p1", "p2", "p3", "spec"] {
+        room.mark_disconnected(player_id, 200);
+    }
+    room.phase = GamePhase::FinalScores;
+    room.current_round = 1;
+
+    let err = room.handle_start_or_advance(300).unwrap_err();
+    assert_eq!(err.code, "not_enough_players");
+    assert_eq!(room.phase, GamePhase::FinalScores);
+    assert_eq!(room.players.len(), 4);
+    assert!(room.players.get("spec").unwrap().spectator);
+    assert!(!room.players.get("p1").unwrap().connected);
 }
