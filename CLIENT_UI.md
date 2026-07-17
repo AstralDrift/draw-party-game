@@ -39,7 +39,7 @@ client/src/
 
 ## Design system
 
-See root `DESIGN.md`. CSS is split under `design/` plus `styles/results-reveal.css` and `styles/reactions.css`.
+See root `DESIGN.md`. All client CSS lives under `design/` (tokens, base, components, drawing, layout, motion).
 Buttons use `btn` / `btn--primary|secondary|ghost` / `btn--wide` only.
 
 ## Validation

@@ -324,6 +324,35 @@
   max-height: min(38svh, 360px);
 }
 
+.display .room-panel {
+  position: relative;
+}
+
+.display .room-code-wrap,
+.display .qr-stage {
+  position: relative;
+  z-index: 1;
+}
+
+.display .settings-panel {
+  opacity: 0.96;
+}
+
+.results-panel .reveal-stage {
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity var(--motion-med) var(--ease-out),
+    transform var(--motion-med) var(--ease-out);
+  pointer-events: none;
+}
+
+.results-panel .reveal-stage.is-visible {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
 .confetti {
   position: absolute;
   inset: 0;
@@ -335,6 +364,18 @@
 .results-panel[data-reveal-stage='complete'] .confetti,
 .scores-panel .confetti {
   opacity: 1;
+}
+
+.podium-title {
+  display: block;
+  color: var(--status-warning);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.share-card-button {
+  margin-top: var(--space-2);
+  min-height: 44px;
 }
 
 .confetti-piece {
@@ -468,6 +509,10 @@
 
   .display-grid-finalScores .podium-place {
     min-height: 96px;
+  }
+
+  .display-grid-finalScores .winner-callout h2 {
+    font-size: clamp(2rem, 4vw, 2.8rem);
   }
 }
 

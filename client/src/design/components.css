@@ -303,8 +303,10 @@
 }
 
 .action-hint {
-  color: var(--text-secondary);
   margin: 0 0 var(--space-4);
+  color: var(--text-secondary);
+  font-size: 0.98rem;
+  font-weight: 600;
 }
 
 .hero-panel h2 {
@@ -363,6 +365,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 
 .reaction-button {
@@ -371,7 +374,9 @@
   border-radius: var(--radius-pill);
   border: 1px solid var(--border-hairline);
   background: var(--surface-glass);
+  color: var(--text-primary);
   font-size: 1.35rem;
+  box-shadow: var(--shadow-soft);
 }
 
 .player-room-chip {
@@ -437,20 +442,26 @@
   padding: var(--space-3) var(--space-5);
   border-radius: var(--radius-pill);
   background: var(--surface-glass-strong);
-  border: 1px solid var(--border-hairline);
+  border: 1px solid var(--border-strong);
   backdrop-filter: blur(12px);
-  font-size: 1.25rem;
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  font-weight: 700;
   pointer-events: none;
-  animation: burst-rise var(--motion-slow) var(--ease-out) forwards;
+  animation: reaction-pop 1.5s var(--ease-out) both;
 }
 
-@keyframes burst-rise {
-  from {
+@keyframes reaction-pop {
+  0% {
     opacity: 0;
-    transform: translate(-50%, 12px);
+    transform: translateX(-50%) translateY(18px) scale(0.9);
   }
-  to {
+  18% {
     opacity: 1;
-    transform: translate(-50%, 0);
+    transform: translateX(-50%) translateY(0) scale(1.05);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-36px) scale(1);
   }
 }
