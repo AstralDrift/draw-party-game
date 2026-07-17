@@ -4,7 +4,7 @@ Draw Party v1 is an ephemeral party game: no user accounts, no database, and no 
 
 ## Reporting a vulnerability
 
-Please report security issues through [GitHub Security Advisories](https://github.com/astraldrift/draw-party-game/security/advisories/new) for this repository when available. Do not open a public issue for exploitable vulnerabilities.
+Please report security issues through [GitHub Security Advisories](https://github.com/AstralDrift/draw-party-game/security/advisories/new) for this repository when available. Do not open a public issue for exploitable vulnerabilities.
 
 Include:
 
