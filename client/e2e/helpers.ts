@@ -112,3 +112,10 @@ export async function waitForGuessers(players: Page[]): Promise<Page[]> {
     Math.max(0, players.length - 1)
   );
 }
+
+/** Host phone owns writable lobby settings (TV is read-only). */
+export async function hostSaveRounds(host: Page, rounds: string): Promise<void> {
+  await expect(host.locator('.settings-panel')).toBeVisible();
+  await host.locator('.settings-panel input').first().fill(rounds);
+  await host.getByRole('button', { name: 'Save Settings' }).click();
+}

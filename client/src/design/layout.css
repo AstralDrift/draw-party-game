@@ -112,6 +112,22 @@
   min-height: 38px;
 }
 
+.display-grid-lobby .settings-summary {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(128px, 0.55fr) minmax(0, 1fr);
+  gap: 8px 12px;
+}
+
+.display-grid-lobby .settings-summary > div {
+  display: contents;
+}
+
+.display-grid-lobby .settings-summary strong {
+  align-self: center;
+  font-size: 0.95rem;
+}
+
 .display-grid-voting {
   grid-template-columns: minmax(0, 0.95fr) minmax(0, 0.62fr) minmax(0, 0.43fr);
 }

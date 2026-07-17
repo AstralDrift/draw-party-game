@@ -6,10 +6,9 @@ import { Button } from '../../components/ui/Button';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { PlayerList } from '../../components/ui/PlayerList';
 import { QrCode } from '../../components/ui/QrCode';
-import { RoomSettingsPanel } from '../../components/ui/RoomSettingsPanel';
 
 export function DisplayLobby(): React.JSX.Element {
-  const { snapshot, send, updateSettings, soundOn, toggleSound } = useGame();
+  const { snapshot, send, soundOn, toggleSound } = useGame();
   if (!snapshot) {
     return <GlassPanel>Connecting…</GlassPanel>;
   }
@@ -19,6 +18,7 @@ export function DisplayLobby(): React.JSX.Element {
   const canStart = connectedPlayers.length >= snapshot.minPlayers;
   const host = roomHost(snapshot.players);
   const settings = snapshot.settings;
+  const packLabel = settings.promptPackId === 'party-chaos' ? 'Party Chaos' : 'Party Safe';
 
   return (
     <div className="display-grid display-grid-lobby">
@@ -60,11 +60,36 @@ export function DisplayLobby(): React.JSX.Element {
           <p className="muted players-count">{playerCountLabel(snapshot.players, snapshot.maxPlayers)}</p>
           <PlayerList players={snapshot.players} showScores />
         </GlassPanel>
-        <RoomSettingsPanel
-          settings={settings}
-          onSave={updateSettings}
-          subtitle="TV remote fallback — prefer the host phone."
-        />
+        <GlassPanel className="settings-panel settings-summary-panel" tone="soft">
+          <div className="panel-title">Room Settings</div>
+          <p className="muted panel-subtitle">Live values — change them on the host phone.</p>
+          <div className="settings-summary">
+            <div>
+              <span className="field-label">Rounds</span>
+              <strong>{settings.rounds}</strong>
+            </div>
+            <div>
+              <span className="field-label">Drawing</span>
+              <strong>{settings.drawSeconds}s</strong>
+            </div>
+            <div>
+              <span className="field-label">Guessing</span>
+              <strong>{settings.guessSeconds}s</strong>
+            </div>
+            <div>
+              <span className="field-label">Voting</span>
+              <strong>{settings.voteSeconds}s</strong>
+            </div>
+            <div>
+              <span className="field-label">Results</span>
+              <strong>{settings.resultsSeconds}s</strong>
+            </div>
+            <div>
+              <span className="field-label">Pack</span>
+              <strong>{packLabel}</strong>
+            </div>
+          </div>
+        </GlassPanel>
         <Button
           variant="secondary"
           wide

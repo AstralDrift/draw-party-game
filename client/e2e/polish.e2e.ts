@@ -2,6 +2,7 @@ import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import {
   createPlayers,
   drawStroke,
+  hostSaveRounds,
   makeAppUrl,
   waitForPagesWithVisibleLocatorCount,
   type PlayerViewport
@@ -252,10 +253,9 @@ test('solo drawing keeps live ink stable, ignores extra touches, and submits den
     await tv.goto(appUrl('/'));
     await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
     const roomCode = (await tv.locator('.room-code').innerText()).trim();
-    await tv.locator('.settings-panel input').first().fill('1');
-    await tv.getByRole('button', { name: 'Save Settings' }).click();
 
     const [player] = await createPlayers(browser, contexts, appUrl, roomCode, ['Solo']);
+    await hostSaveRounds(player, '1');
     await expect(tv.getByRole('button', { name: 'Start Game' })).toBeEnabled();
     await tv.getByRole('button', { name: 'Start Game' }).click();
 
@@ -429,9 +429,8 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
     await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
     const roomCode = (await tv.locator('.room-code').innerText()).trim();
 
-    await tv.locator('.settings-panel input').first().fill('1');
-    await tv.getByRole('button', { name: 'Save Settings' }).click();
     const players = await createPlayers(browser, contexts, appUrl, roomCode, ['Ava', 'Bo']);
+    await hostSaveRounds(players[0], '1');
 
     await tv.getByRole('button', { name: 'Start Game' }).click();
     for (const player of players) {
