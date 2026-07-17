@@ -25,7 +25,7 @@ test('one TV and three phones complete a full drawing round', async ({ baseURL, 
     }
 
     await tv.getByRole('button', { name: 'Start Game' }).click();
-    await expect(tv.getByText('Phones are drawing').or(tv.getByText('Phones are drawing'))).toBeVisible();
+    await expect(tv.getByText('Phones are drawing')).toBeVisible();
 
     for (const [index, player] of players.entries()) {
       await expect(player.page.locator('#prompt-text')).toContainText(/^Draw:/);

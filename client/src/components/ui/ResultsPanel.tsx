@@ -19,6 +19,12 @@ function stageClass(stage: RevealStage, target: RevealStage): string {
   return `reveal-stage reveal-stage-${target}${visible}`;
 }
 
+/** Hold beat is exclusive — hide once tally/correct starts so TV results stay readable. */
+function holdStageClass(stage: RevealStage): string {
+  const visible = stage === 'hold' ? ' is-visible' : '';
+  return `reveal-stage reveal-stage-hold${visible}`;
+}
+
 function drawingStageClass(stage: RevealStage): string {
   const visible = stageVisible(stage, 'hold') || stage === 'complete' ? ' is-visible' : '';
   return `reveal-stage reveal-stage-drawing${visible}`;
@@ -43,7 +49,7 @@ export function ResultsPanel({
     >
       {showConfetti ? <Confetti variant="result" /> : null}
       <p className="eyebrow">Drawing by {result.artistName}</p>
-      <div className={stageClass(stage, 'hold')}>
+      <div className={holdStageClass(stage)}>
         <p className="reveal-hold-line">{resultsHoldText()}</p>
       </div>
       <div className={`round-outcome ${stageClass(stage, 'correct')}`}>{roundOutcomeText(result)}</div>

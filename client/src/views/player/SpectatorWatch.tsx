@@ -28,7 +28,7 @@ export function SpectatorDrawing(): React.JSX.Element {
             <p className="eyebrow">
               Round {snapshot.currentRound} of {snapshot.totalRounds}
             </p>
-            <div className="prompt small">Players are drawing</div>
+            <div className="prompt small">Phones are drawing</div>
           </div>
           <Deadline />
         </div>

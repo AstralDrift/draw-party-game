@@ -175,29 +175,23 @@ async function drawStroke(page: Page): Promise<void> {
 }
 
 async function waitForGuessers(players: Page[]): Promise<Page[]> {
+  const expected = Math.max(0, players.length - 1);
+  await expect
+    .poll(async () => {
+      let count = 0;
+      for (const player of players) {
+        if (await player.getByPlaceholder('Something that sounds legit…').isVisible().catch(() => false)) {
+          count += 1;
+        }
+      }
+      return count;
+    })
+    .toBe(expected);
+
   const found: Page[] = [];
   for (const player of players) {
     if (await player.getByPlaceholder('Something that sounds legit…').isVisible().catch(() => false)) {
       found.push(player);
-    }
-  }
-  if (found.length === 0) {
-    // Poll briefly if pages are still resolving artist state.
-    await expect
-      .poll(async () => {
-        let count = 0;
-        for (const player of players) {
-          if (await player.getByPlaceholder('Something that sounds legit…').isVisible().catch(() => false)) {
-            count += 1;
-          }
-        }
-        return count;
-      })
-      .toBeGreaterThan(0);
-    for (const player of players) {
-      if (await player.getByPlaceholder('Something that sounds legit…').isVisible().catch(() => false)) {
-        found.push(player);
-      }
     }
   }
   return found;

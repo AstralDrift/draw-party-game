@@ -165,7 +165,7 @@ function SettingsPanel({
             drawSeconds: clamp(drawSeconds, 30, 180, settings.drawSeconds),
             guessSeconds: clamp(guessSeconds, 15, 120, settings.guessSeconds),
             voteSeconds: clamp(voteSeconds, 10, 90, settings.voteSeconds),
-            resultsSeconds: clamp(resultsSeconds, 5, 30, settings.resultsSeconds ?? 12),
+            resultsSeconds: clamp(resultsSeconds, 5, 30, settings.resultsSeconds ?? defaults.resultsSeconds),
             promptPackId: packId
           })
         }
