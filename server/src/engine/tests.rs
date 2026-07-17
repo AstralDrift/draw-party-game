@@ -78,7 +78,7 @@ fn starts_drawing_with_unique_prompts() {
     assert_eq!(room.phase, GamePhase::Drawing);
     assert_eq!(room.round.prompts.len(), 3);
     assert_eq!(room.round.order.len(), 3);
-    assert_eq!(room.deadline_ms, Some(100 + 90_000));
+    assert_eq!(room.deadline_ms, Some(100 + 75_000));
 }
 
 #[test]

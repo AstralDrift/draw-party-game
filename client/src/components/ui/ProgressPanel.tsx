@@ -38,6 +38,27 @@ function submissionStatusLabel(
   }
 }
 
+function progressWaitingText(phase: SubmissionPhase, waitingNames: string[]): string {
+  if (waitingNames.length === 0) {
+    switch (phase) {
+      case 'guessing':
+        return 'All the fakes are in.';
+      case 'voting':
+        return 'Every vote is locked.';
+      case 'drawing':
+        return 'Everyone is in.';
+      default: {
+        const _exhaustive: never = phase;
+        return _exhaustive;
+      }
+    }
+  }
+  if (phase === 'guessing') {
+    return `Still cooking: ${waitingNames.join(', ')}.`;
+  }
+  return `Waiting on ${waitingNames.join(', ')}.`;
+}
+
 export function ProgressPanel({
   title,
   snapshot,
@@ -64,9 +85,7 @@ export function ProgressPanel({
           {activeSubmittedIds.length}/{eligiblePlayers.length}
         </div>
       </div>
-      <p className="muted">
-        {waitingNames.length === 0 ? 'Everyone is in.' : `Waiting on ${waitingNames.join(', ')}.`}
-      </p>
+        <p className="muted">{progressWaitingText(phase, waitingNames)}</p>
       <div className="player-list submission-list">
         {players.map((player, index) => {
           const artist = phase !== 'drawing' && player.id === snapshot.currentArtistId;

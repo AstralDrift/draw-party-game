@@ -24,11 +24,11 @@ export function JoinScreen(): React.JSX.Element {
       <Shell title="Join Game">
         <GlassPanel className="narrow waiting-panel join-card">
           <p className="eyebrow">{pendingJoin.roomCode}</p>
-          <h2>Joining room</h2>
+          <h2>Almost in</h2>
           <p className="muted">
             {status === 'Connected'
-              ? 'Waiting for the TV to confirm your spot.'
-              : 'Reconnecting to the room.'}
+              ? 'Connected. Waiting for the TV to seat you…'
+              : 'Connection dropped — retrying automatically.'}
           </p>
           <Button variant="secondary" wide onClick={cancelJoin}>
             Change Room
@@ -53,11 +53,11 @@ export function JoinScreen(): React.JSX.Element {
     <Shell title="Join Game">
       <GlassPanel className="narrow join-card player-join-card">
         <p className="eyebrow">{initialRoomCode ? 'Room found' : 'Phone controller'}</p>
-        <h2>Join the party</h2>
+        <h2>Jump into the party</h2>
         <p className="muted join-note">
           {initialRoomCode
-            ? 'The code is loaded. Add your name and jump in.'
-            : 'Use the room code on the TV.'}
+            ? 'Name yourself and tap Join. The TV is waiting.'
+            : 'Type the 4-letter code on the TV, then your name.'}
         </p>
         <form
           className="join-form"
@@ -98,11 +98,11 @@ export function JoinScreen(): React.JSX.Element {
             />
           </Field>
           <Button wide type="submit">
-            Join
+            Join the Party
           </Button>
         </form>
         <p className="muted join-note fine-print">
-          Join before start to play. Mid-game joins watch as spectators.
+          Before start = full player. Mid-game = spectator until the next round.
         </p>
       </GlassPanel>
     </Shell>

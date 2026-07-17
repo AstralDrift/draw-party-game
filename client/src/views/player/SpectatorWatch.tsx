@@ -28,7 +28,7 @@ export function SpectatorDrawing(): React.JSX.Element {
             <p className="eyebrow">
               Round {snapshot.currentRound} of {snapshot.totalRounds}
             </p>
-            <div className="prompt small">Players are drawing</div>
+            <div className="prompt small">Phones are drawing</div>
           </div>
           <Deadline />
         </div>
@@ -70,7 +70,6 @@ export function SpectatorGuessing(): React.JSX.Element {
         <p className="action-hint">Watch the guesses roll in.</p>
         <DrawingCanvas drawing={snapshot.currentDrawing} className="reveal-canvas phone-canvas" />
         <ReactionBar />
-        <p className="muted reconnect-hint">Watch the guesses roll in.</p>
       </GlassPanel>
       <ReactionBursts />
     </Shell>
@@ -114,7 +113,6 @@ export function SpectatorVoting(): React.JSX.Element {
           ))}
         </div>
         <ReactionBar />
-        <p className="muted reconnect-hint">Watch the vote on the TV.</p>
       </GlassPanel>
       <ReactionBursts />
     </Shell>

@@ -1,4 +1,11 @@
-import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import {
+  createPlayers,
+  drawStroke,
+  makeAppUrl,
+  waitForPagesWithVisibleLocatorCount,
+  type PlayerViewport
+} from './helpers';
 
 test('staged results reveal enables Continue after the show beat', async ({ baseURL, browser }) => {
   const contexts: BrowserContext[] = [];
@@ -20,7 +27,7 @@ test('staged results reveal enables Continue after the show beat', async ({ base
     const player = await playerContext.newPage();
     await player.goto(appUrl(`/join/${roomCode}`));
     await player.getByPlaceholder('Your name').fill('Reveal');
-    await player.getByRole('button', { name: 'Join' }).click();
+    await player.getByRole('button', { name: 'Join the Party' }).click();
     await tv.getByRole('button', { name: 'Start Game' }).click();
     await expect(player.locator('canvas.draw-canvas')).toBeVisible();
     const canvas = player.locator('canvas.draw-canvas');
@@ -35,8 +42,9 @@ test('staged results reveal enables Continue after the show beat', async ({ base
     await player.getByRole('button', { name: 'Submit Drawing' }).click();
     await expect(tv.locator('#advance-button')).toBeVisible();
     await expect(tv.locator('#advance-button')).toBeDisabled();
-    await expect(tv.locator('#advance-button')).toBeEnabled({ timeout: 5000 });
+    await expect(tv.locator('#advance-button')).toBeEnabled({ timeout: 7000 });
     await expect(tv.locator('.results-panel')).toHaveAttribute('data-reveal-stage', 'complete');
+    await expect(tv.getByRole('button', { name: 'Continue' })).toBeVisible();
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }
@@ -53,7 +61,7 @@ test('phone join screen starts neutral and renders local validation errors', asy
 
   await page.locator('input.code-input').fill('AB');
   await page.getByPlaceholder('Your name').fill('Ava');
-  await page.getByRole('button', { name: 'Join' }).click();
+  await page.getByRole('button', { name: 'Join the Party' }).click();
   await expect(page.getByRole('alert')).toHaveText('Enter the four-letter room code from the TV.');
 
   await page.locator('input.code-input').fill('ABCD');
@@ -75,7 +83,7 @@ test('TV lobby gives room code and QR the showcase hierarchy', async ({ baseURL,
     await expect(page.locator('.room-code')).toHaveText(/[A-Z]{4}/);
     await expect(page.locator('.qr')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Start Game' })).toBeVisible();
-    await expect(page.getByText('Everybody draws. Everybody guesses.')).toBeVisible();
+    await expect(page.getByText('Everybody draws. Everybody lies.')).toBeVisible();
     await expect(page.locator('.settings-panel')).toBeVisible();
     await expectNoVerticalOverflow(page);
 
@@ -276,7 +284,7 @@ test('solo drawing keeps live ink stable, ignores extra touches, and submits den
 
     await expect(tv.getByText('The real prompt was')).toBeVisible();
     await expect(player.getByText('The real prompt was')).toBeVisible();
-    await expect(tv.getByRole('button', { name: 'Continue' })).toBeEnabled({ timeout: 5000 });
+    await expect(tv.getByRole('button', { name: 'Continue' })).toBeEnabled({ timeout: 7000 });
     await tv.getByRole('button', { name: 'Continue' }).click();
     await expect(tv.getByText('Final Podium')).toBeVisible();
     await expect(player.getByText('Final Podium')).toBeVisible();
@@ -304,14 +312,14 @@ test('phone vote selection stays confirmed while the table is still voting', asy
       await player.getByRole('button', { name: 'Submit Drawing' }).click();
     }
 
-    await expect(tv.getByText('What is this?')).toBeVisible();
-    const guessers = await waitForPagesWithVisibleLocatorCount(players, 'input[placeholder="Fake answer"]', 2);
+    await expect(tv.getByText('What did they draw?')).toBeVisible();
+    const guessers = await waitForPagesWithVisibleLocatorCount(players, 'input[placeholder="Something that sounds legit…"]', 2);
     for (const [index, guesser] of guessers.entries()) {
-      await guesser.getByPlaceholder('Fake answer').fill(`fake vote ${index}`);
-      await guesser.getByRole('button', { name: 'Submit Guess' }).click();
+      await guesser.getByPlaceholder('Something that sounds legit…').fill(`fake vote ${index}`);
+      await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
     }
 
-    await expect(tv.getByText('Vote for the real prompt')).toBeVisible();
+    await expect(tv.getByText('Which title is real?')).toBeVisible();
     const voters = await waitForPagesWithVisibleLocatorCount(players, 'button.vote-option:not([disabled])', 2);
     const voter = voters[0];
     await voter.locator('button.vote-option:not([disabled])').first().click();
@@ -339,7 +347,7 @@ test('TV progress names submitted players and who is still waiting', async ({ ba
     const players = await createPlayers(browser, contexts, appUrl, roomCode, names);
     const nameForPage = new Map<Page, string>(players.map((player, index) => [player, names[index]]));
     await tv.getByRole('button', { name: 'Start Game' }).click();
-    await expect(tv.getByText('Players are drawing')).toBeVisible();
+    await expect(tv.getByText('Phones are drawing')).toBeVisible();
 
     await drawStroke(players[0]);
     await players[0].getByRole('button', { name: 'Submit Drawing' }).click();
@@ -351,18 +359,18 @@ test('TV progress names submitted players and who is still waiting', async ({ ba
       await player.getByRole('button', { name: 'Submit Drawing' }).click();
     }
 
-    await expect(tv.getByText('What is this?')).toBeVisible();
-    const guessers = await waitForPagesWithVisibleLocatorCount(players, 'input[placeholder="Fake answer"]', 2);
+    await expect(tv.getByText('What did they draw?')).toBeVisible();
+    const guessers = await waitForPagesWithVisibleLocatorCount(players, 'input[placeholder="Something that sounds legit…"]', 2);
     const artist = players.find((player) => !guessers.includes(player));
     const firstGuesserName = nameForPage.get(guessers[0]) ?? '';
     const secondGuesserName = nameForPage.get(guessers[1]) ?? '';
     const artistName = artist ? (nameForPage.get(artist) ?? '') : '';
 
-    await guessers[0].getByPlaceholder('Fake answer').fill('first fake');
-    await guessers[0].getByRole('button', { name: 'Submit Guess' }).click();
+    await guessers[0].getByPlaceholder('Something that sounds legit…').fill('first fake');
+    await guessers[0].getByRole('button', { name: 'Submit Fake Title' }).click();
     await expectProgressSummary(
       tv,
-      'Guesses',
+      'Fake titles',
       '1/2',
       [firstGuesserName, 'guess in'],
       [secondGuesserName, 'waiting'],
@@ -370,10 +378,10 @@ test('TV progress names submitted players and who is still waiting', async ({ ba
     );
     await expectNoVerticalOverflow(tv);
 
-    await guessers[1].getByPlaceholder('Fake answer').fill('second fake');
-    await guessers[1].getByRole('button', { name: 'Submit Guess' }).click();
+    await guessers[1].getByPlaceholder('Something that sounds legit…').fill('second fake');
+    await guessers[1].getByRole('button', { name: 'Submit Fake Title' }).click();
 
-    await expect(tv.getByText('Vote for the real prompt')).toBeVisible();
+    await expect(tv.getByText('Which title is real?')).toBeVisible();
     const voters = await waitForPagesWithVisibleLocatorCount(players, 'button.vote-option:not([disabled])', 2);
     const firstVoterName = nameForPage.get(voters[0]) ?? '';
     const secondVoterName = nameForPage.get(voters[1]) ?? '';
@@ -419,25 +427,28 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
     }
 
     for (let turn = 0; turn < players.length; turn += 1) {
-      await expect(tv.getByText('What is this?')).toBeVisible();
-      const guessers = await waitForPagesWithVisibleLocator(players, 'input[placeholder="Fake answer"]');
+      await expect(tv.getByText('What did they draw?')).toBeVisible();
+      const guessers = await waitForPagesWithVisibleLocator(players, 'input[placeholder="Something that sounds legit…"]');
       for (const [index, guesser] of guessers.entries()) {
-        await guesser.getByPlaceholder('Fake answer').fill(`fake finale ${turn} ${index}`);
-        await guesser.getByRole('button', { name: 'Submit Guess' }).click();
+        await guesser.getByPlaceholder('Something that sounds legit…').fill(`fake finale ${turn} ${index}`);
+        await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
       }
 
-      await expect(tv.getByText('Vote for the real prompt')).toBeVisible();
+      await expect(tv.getByText('Which title is real?')).toBeVisible();
       const voters = await waitForPagesWithVisibleLocator(players, 'button.vote-option:not([disabled])');
       for (const voter of voters) {
         await voter.locator('button.vote-option:not([disabled])').first().click();
       }
 
       await expect(tv.getByText('The real prompt was')).toBeVisible();
-      await expect(tv.getByRole('button', { name: 'Continue' })).toBeEnabled({ timeout: 5000 });
+      await expect(tv.getByRole('button', { name: 'Continue' })).toBeEnabled({ timeout: 7000 });
       await tv.getByRole('button', { name: 'Continue' }).click();
     }
 
     await expect(tv.getByText('Final Podium')).toBeVisible();
+    await expect(tv.getByRole('button', { name: 'Play Again' })).toBeVisible();
+    await expect(tv.getByText('Don’t stop now')).toBeVisible();
+    await expect(tv.locator('.spotlight-button')).toBeVisible();
     await expect(tv.locator('.podium-place')).toHaveCount(2);
     await expect(tv.locator('.score-row')).toHaveCount(2);
 
@@ -463,48 +474,6 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
     await Promise.all(contexts.map((context) => context.close()));
   }
 });
-
-type PlayerViewport = {
-  width: number;
-  height: number;
-  isMobile?: boolean;
-};
-
-function makeAppUrl(baseURL: string | undefined): (path: string) => string {
-  if (!baseURL) {
-    throw new Error('Playwright baseURL is required for Draw Party e2e tests.');
-  }
-  return (path: string) => new URL(path, baseURL).toString();
-}
-
-async function createPlayers(
-  browser: Browser,
-  contexts: BrowserContext[],
-  appUrl: (path: string) => string,
-  roomCode: string,
-  names: string[],
-  viewports: PlayerViewport[] = names.map(() => ({ width: 390, height: 844, isMobile: true }))
-): Promise<Page[]> {
-  const pages: Page[] = [];
-  for (const [index, name] of names.entries()) {
-    const viewport = viewports[index] ?? viewports[0];
-    const context = await browser.newContext({
-      hasTouch: true,
-      isMobile: viewport.isMobile ?? viewport.width < 700,
-      viewport: { width: viewport.width, height: viewport.height }
-    });
-    contexts.push(context);
-
-    const page = await context.newPage();
-    await page.goto(appUrl(`/join/${roomCode}`));
-    await expect(page.locator('input.code-input')).toHaveValue(roomCode);
-    await page.getByPlaceholder('Your name').fill(name);
-    await page.getByRole('button', { name: 'Join' }).click();
-    await expect(page.locator('.app-shell.player .brand')).toHaveText('Lobby');
-    pages.push(page);
-  }
-  return pages;
-}
 
 async function expectProgressSummary(
   page: Page,
@@ -540,43 +509,6 @@ async function expectNoVerticalOverflow(page: Page): Promise<void> {
       })
     )
     .toBe(true);
-}
-
-async function drawStroke(page: Page): Promise<void> {
-  const canvas = page.locator('canvas.draw-canvas');
-  await expect(canvas).toBeVisible();
-  await expect
-    .poll(async () => {
-      const box = await canvas.boundingBox();
-      return Boolean(box && box.width >= 100 && box.height >= 75);
-    })
-    .toBe(true);
-
-  // hasTouch mobile contexts flake on CDP mouse→pointer synthesis; drive the pad
-  // with the same PointerEvent path production touch/pen input uses.
-  await canvas.evaluate((element: HTMLCanvasElement) => {
-    const rect = element.getBoundingClientRect();
-    const fire = (type: string, xRatio: number, yRatio: number, buttons = 1) => {
-      element.dispatchEvent(
-        new PointerEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          pointerId: 1,
-          pointerType: 'pen',
-          isPrimary: true,
-          buttons,
-          clientX: rect.left + rect.width * xRatio,
-          clientY: rect.top + rect.height * yRatio
-        })
-      );
-    };
-    fire('pointerdown', 0.2, 0.25);
-    fire('pointermove', 0.33, 0.36);
-    fire('pointermove', 0.46, 0.48);
-    fire('pointermove', 0.59, 0.38);
-    fire('pointermove', 0.72, 0.28);
-    fire('pointerup', 0.72, 0.28, 0);
-  });
 }
 
 async function hasCanvasInkNear(page: Page, xRatio: number, yRatio: number): Promise<boolean> {
@@ -666,17 +598,6 @@ async function waitForPagesWithVisibleLocator(pages: Page[], selector: string): 
       return matches.length;
     })
     .toBeGreaterThan(0);
-  return matches;
-}
-
-async function waitForPagesWithVisibleLocatorCount(pages: Page[], selector: string, count: number): Promise<Page[]> {
-  let matches: Page[] = [];
-  await expect
-    .poll(async () => {
-      matches = await pagesWithVisibleLocator(pages, selector);
-      return matches.length;
-    })
-    .toBe(count);
   return matches;
 }
 

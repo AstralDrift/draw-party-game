@@ -147,7 +147,7 @@ test('TV remote focus stays visible for TV Bro style navigation', async ({ baseU
     const player = await playerContext.newPage();
     await player.goto(appUrl(`/join/${roomCode}`));
     await player.getByPlaceholder('Your name').fill('Remote');
-    await player.getByRole('button', { name: 'Join' }).click();
+    await player.getByRole('button', { name: 'Join the Party' }).click();
 
     const startButton = tv.getByRole('button', { name: 'Start Game' });
     await expect(startButton).toBeEnabled();
@@ -200,7 +200,7 @@ test('TV guessing phase fits 720p without page scroll', async ({ baseURL, browse
       const player = await playerContext.newPage();
       await player.goto(appUrl(`/join/${roomCode}`));
       await player.getByPlaceholder('Your name').fill(name);
-      await player.getByRole('button', { name: 'Join' }).click();
+      await player.getByRole('button', { name: 'Join the Party' }).click();
       await expect(player.locator('.app-shell.player .brand')).toHaveText('Lobby');
       players.push(player);
     }
@@ -214,7 +214,7 @@ test('TV guessing phase fits 720p without page scroll', async ({ baseURL, browse
       await player.getByRole('button', { name: 'Submit Drawing' }).click();
     }
 
-    await expect(tv.getByText('What is this?')).toBeVisible();
+    await expect(tv.getByText('What did they draw?')).toBeVisible();
     await expectNoHorizontalOverflow(tv);
     await expectNoVerticalOverflow(tv);
     const revealBottom = await tv.evaluate(() => {
@@ -293,7 +293,7 @@ async function startSoloDrawing(
   const player = await playerContext.newPage();
   await player.goto(appUrl(`/join/${roomCode}`));
   await player.getByPlaceholder('Your name').fill(target.name);
-  await player.getByRole('button', { name: 'Join' }).click();
+  await player.getByRole('button', { name: 'Join the Party' }).click();
   await tv.getByRole('button', { name: 'Start Game' }).click();
   await expect(player.locator('canvas.draw-canvas')).toBeVisible();
   return { player, tv };

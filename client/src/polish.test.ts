@@ -4,12 +4,14 @@ import type { RoundResult, ScoreEntry } from './protocol';
 
 describe('party polish copy', () => {
   it('summarizes round outcomes from correct voters', () => {
-    expect(roundOutcomeText(roundResult([], ['Ava', 'Bo'], { nobodyFoundIt: true }))).toBe('No one found it');
-    expect(roundOutcomeText(roundResult(['Ava'], ['Ava', 'Bo']))).toBe('Ava found it');
-    expect(roundOutcomeText(roundResult(['Ava', 'Bo'], ['Ava', 'Bo'], { perfectTruth: true }))).toBe(
-      'Everyone found it — perfect!'
+    expect(roundOutcomeText(roundResult([], ['Ava', 'Bo'], { nobodyFoundIt: true }))).toBe(
+      'Nobody got it — artist wins the room'
     );
-    expect(roundOutcomeText(roundResult(['Ava', 'Bo'], ['Ava', 'Bo', 'Cy']))).toBe('Ava and Bo found it');
+    expect(roundOutcomeText(roundResult(['Ava'], ['Ava', 'Bo']))).toBe('Ava cracked it');
+    expect(roundOutcomeText(roundResult(['Ava', 'Bo'], ['Ava', 'Bo'], { perfectTruth: true }))).toBe(
+      'Everyone saw through it — perfect!'
+    );
+    expect(roundOutcomeText(roundResult(['Ava', 'Bo'], ['Ava', 'Bo', 'Cy']))).toBe('Ava and Bo cracked it');
   });
 
   it('summarizes final winners and ties', () => {

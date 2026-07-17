@@ -19,6 +19,17 @@ function stageClass(stage: RevealStage, target: RevealStage): string {
   return `reveal-stage reveal-stage-${target}${visible}`;
 }
 
+/** Hold beat is exclusive — hide once tally/correct starts so TV results stay readable. */
+function holdStageClass(stage: RevealStage): string {
+  const visible = stage === 'hold' ? ' is-visible' : '';
+  return `reveal-stage reveal-stage-hold${visible}`;
+}
+
+function drawingStageClass(stage: RevealStage): string {
+  const visible = stageVisible(stage, 'hold') || stage === 'complete' ? ' is-visible' : '';
+  return `reveal-stage reveal-stage-drawing${visible}`;
+}
+
 export function ResultsPanel({
   result,
   drawing,
@@ -27,6 +38,8 @@ export function ResultsPanel({
   showReactions = false
 }: ResultsPanelProps): React.JSX.Element {
   const activeDeltas = result.scoreDeltas.filter((delta) => delta.delta > 0);
+  const showConfetti =
+    includeDrawing && (stage === 'correct' || stage === 'deltas' || stage === 'complete');
 
   return (
     <GlassPanel
@@ -34,18 +47,18 @@ export function ResultsPanel({
       data-reveal-root="true"
       data-reveal-stage={stage}
     >
-      {includeDrawing ? <Confetti variant="result" /> : null}
+      {showConfetti ? <Confetti variant="result" /> : null}
       <p className="eyebrow">Drawing by {result.artistName}</p>
-      <div className={stageClass(stage, 'hold')}>
-        <p className="muted">Votes are in…</p>
+      <div className={holdStageClass(stage)}>
+        <p className="reveal-hold-line">Votes locked in…</p>
       </div>
       <div className={`round-outcome ${stageClass(stage, 'correct')}`}>{roundOutcomeText(result)}</div>
       <h2 className={stageClass(stage, 'correct')}>The real prompt was</h2>
-      <div className={`prompt ${stageClass(stage, 'correct')}`}>{result.correctAnswer}</div>
+      <div className={`prompt reveal-prompt ${stageClass(stage, 'correct')}`}>{result.correctAnswer}</div>
       {includeDrawing ? (
         <DrawingCanvas
           drawing={drawing}
-          className={`reveal-canvas result-canvas ${stageClass(stage, 'hold').replace('reveal-stage-hold', 'reveal-stage-drawing')}`}
+          className={`reveal-canvas result-canvas ${drawingStageClass(stage)}`}
         />
       ) : null}
       <div className={`${stageClass(stage, 'deltas')} score-deltas${activeDeltas.length === 0 ? ' muted' : ''}`}>
@@ -64,7 +77,7 @@ export function ResultsPanel({
               {item.isCorrect
                 ? 'Correct answer'
                 : item.authorName
-                  ? `Fake answer by ${item.authorName}`
+                  ? `Fake by ${item.authorName}`
                   : 'Fake answer'}
             </div>
             <div className="breakdown-answer">{item.optionText}</div>
