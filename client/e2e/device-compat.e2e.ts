@@ -59,43 +59,43 @@ const PLAYER_TARGETS: PlayerTarget[] = [
     name: 'fire-7-portrait',
     viewport: { width: 600, height: 960 },
     deviceScaleFactor: 1.5,
-    minCanvasWidth: 520
+    minCanvasWidth: 360
   },
   {
     name: 'fire-hd-8-portrait',
     viewport: { width: 800, height: 1280 },
     deviceScaleFactor: 1.5,
-    minCanvasWidth: 540
+    minCanvasWidth: 400
   },
   {
     name: 'fire-hd-10-portrait',
     viewport: { width: 1200, height: 1920 },
     deviceScaleFactor: 2,
-    minCanvasWidth: 780
+    minCanvasWidth: 520
   },
   {
     name: 'ipad-portrait',
     viewport: { width: 768, height: 1024 },
     deviceScaleFactor: 2,
-    minCanvasWidth: 480
+    minCanvasWidth: 460
   },
   {
     name: 'ipad-landscape',
     viewport: { width: 1024, height: 768 },
     deviceScaleFactor: 2,
-    minCanvasWidth: 620
+    minCanvasWidth: 560
   },
   {
     name: 'ipad-pro-portrait',
     viewport: { width: 1024, height: 1366 },
     deviceScaleFactor: 2,
-    minCanvasWidth: 720
+    minCanvasWidth: 640
   },
   {
     name: 'ipad-pro-landscape',
     viewport: { width: 1366, height: 1024 },
     deviceScaleFactor: 2,
-    minCanvasWidth: 840
+    minCanvasWidth: 720
   }
 ];
 
@@ -178,6 +178,58 @@ test('TV remote focus stays visible for TV Bro style navigation', async ({ baseU
   }
 });
 
+test('TV guessing phase fits 720p without page scroll', async ({ baseURL, browser }) => {
+  const appUrl = makeAppUrl(baseURL);
+  const contexts: BrowserContext[] = [];
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const players: Page[] = [];
+    for (const name of ['FitA', 'FitB']) {
+      const playerContext = await browser.newContext({
+        hasTouch: true,
+        isMobile: true,
+        viewport: { width: 390, height: 844 }
+      });
+      contexts.push(playerContext);
+      const player = await playerContext.newPage();
+      await player.goto(appUrl(`/join/${roomCode}`));
+      await player.getByPlaceholder('Your name').fill(name);
+      await player.getByRole('button', { name: 'Join' }).click();
+      await expect(player.locator('.app-shell.player .brand')).toHaveText('Lobby');
+      players.push(player);
+    }
+
+    await expect(tv.getByRole('button', { name: 'Start Game' })).toBeEnabled();
+    await tv.getByRole('button', { name: 'Start Game' }).click();
+    for (const player of players) {
+      await expect(player.locator('canvas.draw-canvas')).toBeVisible({ timeout: 15_000 });
+      await drawStroke(player);
+      await expect(player.getByRole('button', { name: 'Submit Drawing' })).toBeEnabled();
+      await player.getByRole('button', { name: 'Submit Drawing' }).click();
+    }
+
+    await expect(tv.getByText('What is this?')).toBeVisible();
+    await expectNoHorizontalOverflow(tv);
+    await expectNoVerticalOverflow(tv);
+    const revealBottom = await tv.evaluate(() => {
+      const canvas = document.querySelector('.reveal-canvas');
+      if (!canvas) {
+        throw new Error('Missing reveal canvas');
+      }
+      return canvas.getBoundingClientRect().bottom;
+    });
+    expect(revealBottom).toBeLessThanOrEqual(720 + 4);
+  } finally {
+    await Promise.all(contexts.map((context) => context.close()));
+  }
+});
+
 test('phone, Fire tablet, and iPad drawing layouts keep canvas and submit reachable', async ({ baseURL, browser }, testInfo) => {
   const appUrl = makeAppUrl(baseURL);
 
@@ -192,6 +244,9 @@ test('phone, Fire tablet, and iPad drawing layouts keep canvas and submit reacha
       expect(metrics.canvas.top).toBeLessThanOrEqual(metrics.submit.top);
       expect(metrics.submit.bottom).toBeLessThanOrEqual(target.viewport.height + 4);
       expect(metrics.tools.bottom).toBeLessThanOrEqual(target.viewport.height + 4);
+      const aspect = metrics.canvas.width / Math.max(1, metrics.canvas.height);
+      expect(aspect).toBeGreaterThan(4 / 3 - 0.08);
+      expect(aspect).toBeLessThan(4 / 3 + 0.08);
       if (target.minBackingRatio) {
         expect(metrics.backingRatio).toBeGreaterThanOrEqual(target.minBackingRatio);
       }
@@ -304,4 +359,17 @@ async function playerMetrics(page: Page): Promise<{
       tools: rect('.tools-drawer')
     };
   });
+}
+
+async function drawStroke(page: Page): Promise<void> {
+  const canvas = page.locator('canvas.draw-canvas');
+  await expect(canvas).toBeVisible();
+  const box = await canvas.boundingBox();
+  if (!box) {
+    throw new Error('Drawing canvas did not have a layout box.');
+  }
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.25);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.55, { steps: 8 });
+  await page.mouse.up();
 }

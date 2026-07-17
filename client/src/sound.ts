@@ -1,4 +1,4 @@
-type CueName = 'join' | 'phase' | 'submit' | 'results';
+type CueName = 'join' | 'phase' | 'submit' | 'results' | 'correct' | 'fooled' | 'podium' | 'tick';
 
 interface CueStep {
   frequency: number;
@@ -26,7 +26,24 @@ const CUE_PATTERNS: Record<CueName, CueStep[]> = {
     { frequency: 587, offset: 0, duration: 0.16, gain: 0.045, type: 'triangle' },
     { frequency: 740, offset: 0.08, duration: 0.18, gain: 0.05, type: 'triangle' },
     { frequency: 988, offset: 0.18, duration: 0.28, gain: 0.045, type: 'sine' }
-  ]
+  ],
+  correct: [
+    { frequency: 523, offset: 0, duration: 0.12, gain: 0.05, type: 'triangle' },
+    { frequency: 659, offset: 0.08, duration: 0.14, gain: 0.055, type: 'sine' },
+    { frequency: 784, offset: 0.16, duration: 0.22, gain: 0.05, type: 'triangle' }
+  ],
+  fooled: [
+    { frequency: 392, offset: 0, duration: 0.12, gain: 0.045, type: 'sawtooth' },
+    { frequency: 311, offset: 0.1, duration: 0.18, gain: 0.04, type: 'triangle' },
+    { frequency: 466, offset: 0.22, duration: 0.16, gain: 0.045, type: 'sine' }
+  ],
+  podium: [
+    { frequency: 523, offset: 0, duration: 0.14, gain: 0.05, type: 'triangle' },
+    { frequency: 659, offset: 0.1, duration: 0.16, gain: 0.05, type: 'sine' },
+    { frequency: 784, offset: 0.2, duration: 0.18, gain: 0.055, type: 'triangle' },
+    { frequency: 1046, offset: 0.34, duration: 0.28, gain: 0.05, type: 'sine' }
+  ],
+  tick: [{ frequency: 880, offset: 0, duration: 0.06, gain: 0.035, type: 'square' }]
 };
 
 let audioContext: AudioContext | null = null;

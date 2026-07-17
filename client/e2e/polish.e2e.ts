@@ -1,5 +1,47 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 
+test('staged results reveal enables Continue after the show beat', async ({ baseURL, browser }) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const playerContext = await browser.newContext({
+      hasTouch: true,
+      isMobile: true,
+      viewport: { width: 390, height: 844 }
+    });
+    contexts.push(playerContext);
+    const player = await playerContext.newPage();
+    await player.goto(appUrl(`/join/${roomCode}`));
+    await player.getByPlaceholder('Your name').fill('Reveal');
+    await player.getByRole('button', { name: 'Join' }).click();
+    await tv.getByRole('button', { name: 'Start Game' }).click();
+    await expect(player.locator('canvas.draw-canvas')).toBeVisible();
+    const canvas = player.locator('canvas.draw-canvas');
+    const box = await canvas.boundingBox();
+    if (!box) {
+      throw new Error('Missing canvas box');
+    }
+    await player.mouse.move(box.x + 40, box.y + 40);
+    await player.mouse.down();
+    await player.mouse.move(box.x + 120, box.y + 90, { steps: 6 });
+    await player.mouse.up();
+    await player.getByRole('button', { name: 'Submit Drawing' }).click();
+    await expect(tv.locator('#advance-button')).toBeVisible();
+    await expect(tv.locator('#advance-button')).toBeDisabled();
+    await expect(tv.locator('#advance-button')).toBeEnabled({ timeout: 5000 });
+    await expect(tv.locator('.results-panel')).toHaveAttribute('data-reveal-stage', 'complete');
+  } finally {
+    await Promise.all(contexts.map((context) => context.close()));
+  }
+});
+
 test('phone join screen starts neutral and renders local validation errors', async ({ baseURL, page }) => {
   const appUrl = makeAppUrl(baseURL);
 
@@ -220,6 +262,7 @@ test('solo drawing keeps live ink stable, ignores extra touches, and submits den
 
     await expect(tv.getByText('The real prompt was')).toBeVisible();
     await expect(player.getByText('The real prompt was')).toBeVisible();
+    await expect(tv.getByRole('button', { name: 'Continue' })).toBeEnabled({ timeout: 5000 });
     await tv.getByRole('button', { name: 'Continue' }).click();
     await expect(tv.getByText('Final Podium')).toBeVisible();
     await expect(player.getByText('Final Podium')).toBeVisible();
@@ -376,6 +419,7 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
       }
 
       await expect(tv.getByText('The real prompt was')).toBeVisible();
+      await expect(tv.getByRole('button', { name: 'Continue' })).toBeEnabled({ timeout: 5000 });
       await tv.getByRole('button', { name: 'Continue' }).click();
     }
 
@@ -387,7 +431,8 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
     if (!scoresPanel) {
       throw new Error('Scores panel must have a layout box.');
     }
-    expect(scoresPanel.y + scoresPanel.height).toBeLessThanOrEqual(720);
+    await expectNoVerticalOverflow(tv);
+    expect(scoresPanel.y).toBeGreaterThanOrEqual(0);
 
     for (const player of players) {
       await expect(player.locator('.scores-panel')).toBeVisible();

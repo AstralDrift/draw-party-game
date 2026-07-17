@@ -50,4 +50,14 @@ describe('viewKeyFor', () => {
       viewKeyFor({ role: 'display', clientId: 'tv', initialRoomCode: '', snapshot: second })
     );
   });
+
+  it('changes when resultsSeconds changes', () => {
+    const first = snapshot();
+    const second = snapshot();
+    second.settings.resultsSeconds = 20;
+
+    expect(viewKeyFor({ role: 'display', clientId: 'tv', initialRoomCode: '', snapshot: first })).not.toBe(
+      viewKeyFor({ role: 'display', clientId: 'tv', initialRoomCode: '', snapshot: second })
+    );
+  });
 });

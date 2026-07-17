@@ -20,6 +20,7 @@ export function viewKeyFor(state: ClientViewState): string {
     snapshot.settings.drawSeconds,
     snapshot.settings.guessSeconds,
     snapshot.settings.voteSeconds,
+    snapshot.settings.resultsSeconds,
     snapshot.settings.promptPackId
   ].join(':');
   const playersKey = snapshot.players

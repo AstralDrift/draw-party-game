@@ -1,20 +1,24 @@
 import QRCode from 'qrcode';
 import './style.css';
+import './styles/results-reveal.css';
+import './styles/reactions.css';
 import { button, clear, el } from './dom';
 import { DrawingPad, renderDrawing } from './drawing';
 import { GameSocket } from './net';
-import { finalWinnerText, roundOutcomeText } from './polish';
+import { playerActionHint, roundOutcomeText } from './polish';
 import {
-  defaultRoomSettings,
   phaseLabel,
-  type RoomSettings,
   type RoomSnapshot,
   type RoundResult,
   type ScoreEntry,
   type ServerMessage,
   type VotingOption
 } from './protocol';
-import { playCue, setSoundEnabled, soundEnabled } from './sound';
+import { renderReactionBar, showReactionBurst } from './reactions';
+import { bindAdvanceButton, isRevealComplete, resetReveal, scheduleReveal } from './reveal';
+import { renderScoresPanel } from './scores-panel';
+import { renderSettingsPanel } from './settings-panel';
+import { playCue } from './sound';
 import { viewKeyFor } from './store';
 import { formatDeadline, nowMs, syncServerClock } from './time';
 
@@ -43,6 +47,7 @@ let reconnectTimer = 0;
 let lastPhase = '';
 let lastPlayerCount = 0;
 let selectedVote: { turnToken: number; optionId: string } | null = null;
+let lastTickSecond = -1;
 
 function connect(roomCode?: string): void {
   socket?.close();
@@ -153,7 +158,11 @@ function handleServerMessage(message: ServerMessage): void {
       if (snapshot) {
         snapshot = { ...snapshot, finalScores: message.scores };
       }
+      playCue('podium');
       render();
+      break;
+    case 'reactionBurst':
+      showReactionBurst(document.querySelector('.app-shell') ?? app, message.name, message.emoji);
       break;
     case 'pong':
       render();
@@ -167,6 +176,11 @@ function handleServerMessage(message: ServerMessage): void {
       }
       render();
       break;
+    default: {
+      const _exhaustive: never = message;
+      void _exhaustive;
+      break;
+    }
   }
 }
 
@@ -177,7 +191,10 @@ function applySnapshot(nextSnapshot: RoomSnapshot): void {
     selectedVote = null;
   }
   if (phaseChanged) {
-    playCue(nextSnapshot.phase === 'results' ? 'results' : 'phase');
+    if (nextSnapshot.phase !== 'results') {
+      resetReveal();
+    }
+    playCue(nextSnapshot.phase === 'results' ? 'results' : nextSnapshot.phase === 'finalScores' ? 'podium' : 'phase');
   }
   if (nextSnapshot.players.length > lastPlayerCount) {
     playCue('join');
@@ -484,66 +501,16 @@ function playerCountLabel(room: RoomSnapshot): string {
 }
 
 function renderLobbySidePanel(): HTMLElement {
-  const wrapper = el('div', { class: 'lobby-side' }, renderPlayersPanel(true), renderSettingsPanel());
-  return wrapper;
-}
-
-function renderSettingsPanel(): HTMLElement {
-  const settings = snapshot?.settings ?? defaultRoomSettings();
-  const rounds = numberInput(settings.rounds, 1, 12);
-  const draw = numberInput(settings.drawSeconds, 30, 180);
-  const guess = numberInput(settings.guessSeconds, 15, 120);
-  const vote = numberInput(settings.voteSeconds, 10, 90);
-
-  const save = () => {
-    const nextSettings: RoomSettings = {
-      rounds: clampInput(rounds.value, 1, 12, settings.rounds),
-      drawSeconds: clampInput(draw.value, 30, 180, settings.drawSeconds),
-      guessSeconds: clampInput(guess.value, 15, 120, settings.guessSeconds),
-      voteSeconds: clampInput(vote.value, 10, 90, settings.voteSeconds),
-      promptPackId: 'safe-party'
-    };
-    send({ type: 'updateRoomSettings', settings: nextSettings });
-  };
-
   return el(
-    'section',
-    { class: 'panel settings-panel' },
-    el('div', { class: 'panel-title' }, 'Room Settings'),
-    el('p', { class: 'muted panel-subtitle' }, 'Keep it quick for a loud room.'),
-    el('label', { class: 'label' }, 'Rounds'),
-    rounds,
-    el('label', { class: 'label' }, 'Drawing seconds'),
-    draw,
-    el('label', { class: 'label' }, 'Guessing seconds'),
-    guess,
-    el('label', { class: 'label' }, 'Voting seconds'),
-    vote,
-    el('p', { class: 'muted' }, 'Prompt pack: Party Safe'),
-    button('Save Settings', 'primary wide', save),
-    button(soundEnabled() ? 'Sound On' : 'Sound Off', `tool-button wide sound-toggle ${soundEnabled() ? 'is-selected' : ''}`, () => {
-      setSoundEnabled(!soundEnabled());
-      render();
+    'div',
+    { class: 'lobby-side' },
+    renderPlayersPanel(true),
+    renderSettingsPanel({
+      snapshot,
+      onSave: (settings) => send({ type: 'updateRoomSettings', settings }),
+      onToggleSound: () => render()
     })
   );
-}
-
-function numberInput(value: number, min: number, max: number): HTMLInputElement {
-  return el('input', {
-    class: 'input compact-input',
-    type: 'number',
-    min,
-    max,
-    value
-  });
-}
-
-function clampInput(value: string, min: number, max: number, fallback: number): number {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  return Math.min(max, Math.max(min, parsed));
 }
 
 function renderDrawingTurn(): HTMLElement {
@@ -566,13 +533,14 @@ function renderDrawingTurn(): HTMLElement {
   );
 
   if (submitted) {
-    return el(
-      'section',
-      { class: 'panel play-panel player-turn-panel drawing-turn' },
-      heading,
-      el('div', { class: 'success-box' }, 'Drawing submitted. Watch the TV.')
-    );
-  }
+  return el(
+    'section',
+    { class: 'panel play-panel player-turn-panel drawing-turn' },
+    heading,
+    el('p', { class: 'action-hint' }, playerActionHint('drawing', false)),
+    el('div', { class: 'success-box' }, 'Drawing submitted. Watch the TV.')
+  );
+}
 
   const submitButton = button('Submit Drawing', 'primary wide', () => {
     if (!drawingPad?.hasInk()) {
@@ -600,6 +568,7 @@ function renderDrawingTurn(): HTMLElement {
     'section',
     { class: 'panel play-panel player-turn-panel drawing-turn' },
     heading,
+    el('p', { class: 'action-hint' }, playerActionHint('drawing', false)),
     drawingPad.root
   );
 }
@@ -625,7 +594,9 @@ function renderGuessingTurn(): HTMLElement {
         el('div', { class: 'turn-copy' }, el('p', { class: 'eyebrow' }, 'Your drawing'), el('div', { class: 'prompt small' }, 'Players are guessing')),
         el('div', { class: 'deadline', id: 'deadline-text' })
       ),
+      el('p', { class: 'action-hint' }, playerActionHint('guessing', true)),
       canvas,
+      playerReactionBar(),
       renderReconnectHint('You are the artist for this reveal. Other players are writing fake answers.'),
       el('div', { class: 'success-box' }, 'This is your drawing. Wait for guesses.')
     );
@@ -647,6 +618,7 @@ function renderGuessingTurn(): HTMLElement {
       el('div', { class: 'turn-copy' }, el('p', { class: 'eyebrow' }, 'Write a fake'), el('div', { class: 'prompt small' }, 'Make it believable')),
       el('div', { class: 'deadline', id: 'deadline-text' })
     ),
+    el('p', { class: 'action-hint' }, playerActionHint('guessing', false)),
     canvas,
     input,
     button('Submit Guess', 'primary wide', () => {
@@ -661,6 +633,7 @@ function renderGuessingTurn(): HTMLElement {
       hapticPulse(10);
       input.disabled = true;
     }, submitted),
+    playerReactionBar(),
     renderReconnectHint(submitted ? 'Your guess is in.' : 'Make a convincing fake answer.'),
     submitted ? el('p', { class: 'success-box' }, 'Guess submitted.') : null
   );
@@ -684,10 +657,12 @@ function renderVotingTurn(): HTMLElement {
       el('div', { class: 'turn-copy' }, el('p', { class: 'eyebrow' }, isArtist ? 'Your drawing' : 'Pick an answer'), el('div', { class: 'prompt small' }, isArtist ? 'Watch the vote' : 'Find the real prompt')),
       el('div', { class: 'deadline', id: 'deadline-text' })
     ),
+    el('p', { class: 'action-hint' }, playerActionHint('voting', isArtist)),
     canvas,
     isArtist
       ? el('div', { class: 'success-box' }, 'This is your drawing. Watch the vote.')
       : renderVotingOptions(snapshot.votingOptions, true, submitted),
+    playerReactionBar(),
     renderReconnectHint(submitted ? 'Your vote is in.' : isArtist ? 'You drew this one. Watch the votes come in.' : 'Choose the real prompt. You cannot vote for your own fake answer.')
   );
 }
@@ -834,7 +809,7 @@ function renderResults(result: RoundResult | null | undefined, includeDrawing: b
     return el('section', { class: 'panel' }, 'Waiting for results...');
   }
 
-  const breakdown = el('div', { class: 'breakdown' });
+  const breakdown = el('div', { class: 'breakdown reveal-stage reveal-stage-tally' });
   for (const item of result.breakdown) {
     breakdown.appendChild(
       el(
@@ -852,22 +827,30 @@ function renderResults(result: RoundResult | null | undefined, includeDrawing: b
   }
 
   const canvas = document.createElement('canvas');
-  canvas.className = 'reveal-canvas result-canvas';
+  canvas.className = 'reveal-canvas result-canvas reveal-stage reveal-stage-drawing';
   renderDrawing(canvas, snapshot?.currentDrawing);
   const deltas = renderScoreDeltas(result.scoreDeltas);
+  deltas.classList.add('reveal-stage', 'reveal-stage-deltas');
 
-  return el(
+  const panel = el(
     'section',
-    { class: `panel results-panel ${includeDrawing ? 'display-results' : 'player-results'}` },
+    {
+      class: `panel results-panel ${includeDrawing ? 'display-results' : 'player-results'}`,
+      'data-reveal-root': 'true'
+    },
     includeDrawing ? renderConfetti('result') : null,
     el('p', { class: 'eyebrow' }, `Drawing by ${result.artistName}`),
-    el('div', { class: 'round-outcome' }, roundOutcomeText(result)),
-    el('h2', {}, 'The real prompt was'),
-    el('div', { class: 'prompt' }, result.correctAnswer),
+    el('div', { class: 'reveal-stage reveal-stage-hold' }, el('p', { class: 'muted' }, 'Votes are in…')),
+    el('div', { class: 'round-outcome reveal-stage reveal-stage-correct' }, roundOutcomeText(result)),
+    el('h2', { class: 'reveal-stage reveal-stage-correct' }, 'The real prompt was'),
+    el('div', { class: 'prompt reveal-stage reveal-stage-correct' }, result.correctAnswer),
     includeDrawing ? canvas : null,
     deltas,
-    breakdown
+    breakdown,
+    role === 'player' ? playerReactionBar() : null
   );
+  scheduleReveal(panel, result, snapshot?.turnToken ?? 0);
+  return panel;
 }
 
 function renderVoterChips(names: string[]): HTMLElement {
@@ -882,7 +865,7 @@ function renderVoterChips(names: string[]): HTMLElement {
   );
 }
 
-function renderScoreDeltas(deltas: RoundResult['scoreDeltas']): HTMLElement | null {
+function renderScoreDeltas(deltas: RoundResult['scoreDeltas']): HTMLElement {
   const activeDeltas = deltas.filter((delta) => delta.delta > 0);
   if (activeDeltas.length === 0) {
     return el('div', { class: 'score-deltas muted' }, 'No points this reveal.');
@@ -895,56 +878,16 @@ function renderScoreDeltas(deltas: RoundResult['scoreDeltas']): HTMLElement | nu
 }
 
 function renderScores(scores: ScoreEntry[], podium: boolean): HTMLElement {
-  const topScores = podium ? scores.slice(0, 3) : [];
-  const winner = scores[0];
-  const listedScores = podium && role === 'player' ? scores.slice(3) : scores;
-  const rankOffset = podium && role === 'player' ? 3 : 0;
-  const list = el('div', { class: 'score-list' });
-  for (const [index, score] of listedScores.entries()) {
-    list.appendChild(
-      el(
-        'div',
-        { class: `score-row ${rankOffset + index === 0 ? 'winner' : ''}` },
-        el('span', {}, `${rankOffset + index + 1}. ${score.name}`),
-        el('span', { class: 'pill' }, `${score.score} pts`)
-      )
-    );
-  }
-  return el(
-    'section',
-    { class: 'panel scores-panel' },
-    podium ? renderConfetti('final') : null,
-    podium
-      ? el(
-          'div',
-          { class: 'winner-callout' },
-          role === 'player' ? el('p', { class: 'eyebrow' }, 'Champion') : null,
-          el('h2', {}, finalWinnerText(scores)),
-          role === 'player' && winner ? el('span', { class: 'pill' }, `${winner.score} pts`) : null
-        )
-      : null,
-    el('div', { class: 'panel-title' }, podium ? 'Final Podium' : 'Scores'),
-    podium
-      ? el(
-          'div',
-          { class: 'podium' },
-          ...topScores.map((score, index) =>
-            el(
-              'div',
-              { class: `podium-place place-${index + 1}` },
-              el('span', { class: 'podium-rank' }, podiumRank(index)),
-              el('strong', {}, score.name),
-              el('span', {}, `${score.score} pts`)
-            )
-          )
-        )
-      : null,
-    listedScores.length > 0 ? list : null
-  );
-}
-
-function podiumRank(index: number): string {
-  return ['1st', '2nd', '3rd'][index] ?? `${index + 1}th`;
+  return renderScoresPanel({
+    scores,
+    podium,
+    role,
+    onShareFailed: () => {
+      errorMessage = 'Could not export the podium card.';
+      render();
+    },
+    renderConfetti
+  });
 }
 
 function renderAdvancePanel(): HTMLElement {
@@ -952,11 +895,25 @@ function renderAdvancePanel(): HTMLElement {
     return el('section', { class: 'panel' }, el('p', { class: 'muted' }, 'Watch the TV for the next step.'));
   }
   const final = snapshot?.phase === 'finalScores';
+  const continueDisabled = !final && snapshot?.phase === 'results' && !isRevealComplete();
+  const advanceButton = button(
+    final ? 'Play Again' : 'Continue',
+    'primary wide spotlight-button',
+    () => send({ type: 'startGame' }),
+    continueDisabled
+  );
+  advanceButton.id = 'advance-button';
+  if (!final && snapshot?.phase === 'results') {
+    bindAdvanceButton(advanceButton);
+  }
   return el(
     'section',
     { class: 'panel advance-panel' },
     el('p', { class: 'eyebrow' }, final ? 'Encore?' : 'Next reveal'),
-    button(final ? 'Play Again' : 'Continue', 'primary wide spotlight-button', () => send({ type: 'startGame' }))
+    advanceButton,
+    !final && snapshot?.deadlineMs
+      ? el('p', { class: 'muted' }, 'Auto-continues when the timer hits zero.')
+      : null
   );
 }
 
@@ -1068,6 +1025,7 @@ function updatePromptText(): void {
 function updateDeadlineText(): void {
   const nodes = document.querySelectorAll('#deadline-text');
   if (!snapshot?.deadlineMs) {
+    lastTickSecond = -1;
     nodes.forEach((node) => {
       node.textContent = '';
       node.classList.remove('is-urgent');
@@ -1077,11 +1035,23 @@ function updateDeadlineText(): void {
   }
   const label = formatDeadline(snapshot);
   const remaining = Math.max(0, snapshot.deadlineMs - nowMs());
+  const remainingSeconds = Math.ceil(remaining / 1000);
   const urgent = remaining <= 10_000;
+  if (remaining > 0 && remaining <= 3000 && remainingSeconds !== lastTickSecond) {
+    lastTickSecond = remainingSeconds;
+    playCue('tick');
+  }
   nodes.forEach((node) => {
     node.textContent = label;
     node.classList.toggle('is-urgent', urgent);
     node.classList.toggle('deadline-warn', urgent);
+  });
+}
+
+function playerReactionBar(): HTMLElement {
+  return renderReactionBar((emoji) => {
+    send({ type: 'sendReaction', emoji });
+    hapticPulse(8);
   });
 }
 
