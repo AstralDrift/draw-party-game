@@ -30,7 +30,7 @@ export function DisplayResults(): React.JSX.Element {
         <p className="eyebrow">Next reveal</p>
         <Button
           id="advance-button"
-          className="primary spotlight-button"
+          className="spotlight-button"
           wide
           disabled={Boolean(result) && !complete}
           onClick={() => send({ type: 'startGame' })}
@@ -63,7 +63,7 @@ export function DisplayFinal(): React.JSX.Element {
         <p className="eyebrow">Encore?</p>
         <Button
           id="advance-button"
-          className="primary spotlight-button"
+          className="spotlight-button"
           wide
           onClick={() => send({ type: 'startGame' })}
         >

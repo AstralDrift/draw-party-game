@@ -76,7 +76,7 @@
   padding: 6px 10px;
 }
 
-.display-grid-lobby .settings-panel .primary {
+.display-grid-lobby .settings-panel .btn--primary {
   grid-column: 1;
   min-height: 38px;
 }

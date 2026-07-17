@@ -12,7 +12,7 @@ React + TypeScript Apple-glass UI is the sole client entry. All phases are imple
 4. **Results** — staged reveal (hold → tally → correct → deltas → complete) + Continue gate
 5. **Final Scores** — podium, titles, share card
 
-Legacy `main.ts` / monolithic `style.css` / `main.legacy.ts` are removed.
+Legacy `main.ts` / monolithic `style.css` / DOM dual-stack are removed.
 
 ## Architecture
 
@@ -23,10 +23,10 @@ client/src/
   app/GameProvider.tsx     # WebSocket + room state (server-authoritative)
   design/                  # Tokens + base + layout + motion + drawing styles
   components/ui/           # Glass primitives + results/scores/progress
-  hooks/useRevealStage.ts  # Results reveal staging for React
+  hooks/useRevealStage.ts  # Results reveal staging timing + React hook
   views/display|player/    # Phase screens
   # shared contracts:
-  protocol.ts, net.ts, drawing.ts, time.ts, store.ts, polish.ts, sound.ts, reveal.ts
+  protocol.ts, net.ts, drawing.ts, time.ts, polish.ts, sound.ts, share-card.ts
 ```
 
 ## Non-negotiables (preserved)
@@ -40,10 +40,14 @@ client/src/
 ## Design system
 
 See root `DESIGN.md`. CSS is split under `design/` plus `styles/results-reveal.css` and `styles/reactions.css`.
+Buttons use `btn` / `btn--primary|secondary|ghost` / `btn--wide` only.
 
 ## Validation
 
 ```bash
+cargo fmt --check --manifest-path server/Cargo.toml
+cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path server/Cargo.toml
 npm --prefix client run typecheck
 npm --prefix client test -- --run
 npm --prefix client run build

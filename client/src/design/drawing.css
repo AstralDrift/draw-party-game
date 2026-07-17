@@ -112,8 +112,7 @@
   color: var(--text-secondary);
 }
 
-.drawing-turn .primary,
-.submit-dock .primary,
+.drawing-turn .btn--primary,
 .submit-dock .btn--primary {
   min-height: var(--touch);
 }

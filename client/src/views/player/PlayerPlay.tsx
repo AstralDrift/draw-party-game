@@ -51,10 +51,7 @@ export function PlayerGuessing(): React.JSX.Element {
                 onChange={(event) => setGuess(event.target.value)}
               />
             </Field>
-            <Button
-              wide
-              className="primary"
-              disabled={submitted}
+            <Button wide disabled={submitted}
               onClick={() => {
                 const next = guess.trim();
                 if (!next) {
