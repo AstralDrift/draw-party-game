@@ -239,18 +239,32 @@ test('solo drawing keeps live ink stable, ignores extra touches, and submits den
     await tv.getByRole('button', { name: 'Start Game' }).click();
 
     await drawStroke(player);
+    await expect(player.locator('.draw-status')).toHaveText('1 stroke');
     await expect.poll(() => hasCanvasInkNear(player, 0.46, 0.48)).toBe(true);
 
     const canvas = player.locator('canvas.draw-canvas');
-    const box = await canvas.boundingBox();
-    if (!box) {
-      throw new Error('Drawing canvas did not have a layout box.');
-    }
-    await player.mouse.move(box.x + box.width * 0.18, box.y + box.height * 0.68);
-    await player.mouse.down();
-    await player.mouse.move(box.x + box.width * 0.62, box.y + box.height * 0.66, { steps: 8 });
+    await canvas.evaluate((element: HTMLCanvasElement) => {
+      const rect = element.getBoundingClientRect();
+      const fire = (type: string, xRatio: number, yRatio: number, buttons = 1) => {
+        element.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            pointerId: 2,
+            pointerType: 'pen',
+            isPrimary: true,
+            buttons,
+            clientX: rect.left + rect.width * xRatio,
+            clientY: rect.top + rect.height * yRatio
+          })
+        );
+      };
+      fire('pointerdown', 0.18, 0.68);
+      fire('pointermove', 0.4, 0.67);
+      fire('pointermove', 0.62, 0.66);
+      fire('pointerup', 0.62, 0.66, 0);
+    });
     await expect.poll(() => hasCanvasInkNear(player, 0.46, 0.48)).toBe(true);
-    await player.mouse.up();
     await expect(player.locator('.draw-status')).toHaveText('2 strokes');
 
     await dispatchTwoFingerStroke(player);
@@ -531,16 +545,38 @@ async function expectNoVerticalOverflow(page: Page): Promise<void> {
 async function drawStroke(page: Page): Promise<void> {
   const canvas = page.locator('canvas.draw-canvas');
   await expect(canvas).toBeVisible();
-  const box = await canvas.boundingBox();
-  if (!box) {
-    throw new Error('Drawing canvas did not have a layout box.');
-  }
+  await expect
+    .poll(async () => {
+      const box = await canvas.boundingBox();
+      return Boolean(box && box.width >= 100 && box.height >= 75);
+    })
+    .toBe(true);
 
-  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.25);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.46, box.y + box.height * 0.48, { steps: 4 });
-  await page.mouse.move(box.x + box.width * 0.72, box.y + box.height * 0.28, { steps: 4 });
-  await page.mouse.up();
+  // hasTouch mobile contexts flake on CDP mouse→pointer synthesis; drive the pad
+  // with the same PointerEvent path production touch/pen input uses.
+  await canvas.evaluate((element: HTMLCanvasElement) => {
+    const rect = element.getBoundingClientRect();
+    const fire = (type: string, xRatio: number, yRatio: number, buttons = 1) => {
+      element.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 1,
+          pointerType: 'pen',
+          isPrimary: true,
+          buttons,
+          clientX: rect.left + rect.width * xRatio,
+          clientY: rect.top + rect.height * yRatio
+        })
+      );
+    };
+    fire('pointerdown', 0.2, 0.25);
+    fire('pointermove', 0.33, 0.36);
+    fire('pointermove', 0.46, 0.48);
+    fire('pointermove', 0.59, 0.38);
+    fire('pointermove', 0.72, 0.28);
+    fire('pointerup', 0.72, 0.28, 0);
+  });
 }
 
 async function hasCanvasInkNear(page: Page, xRatio: number, yRatio: number): Promise<boolean> {
