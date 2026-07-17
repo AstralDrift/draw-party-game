@@ -28,7 +28,7 @@
     "happy-dom": "^20.10.6",
     "react-grab": "^0.1.48",
     "react-scan": "^0.5.7",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vite": "^8.1.5",
     "vitest": "^4.1.10"
   }
