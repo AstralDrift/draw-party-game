@@ -1,5 +1,5 @@
-use super::helpers::*;
 use super::super::*;
+use super::helpers::*;
 use std::collections::BTreeMap;
 
 #[test]
@@ -35,10 +35,20 @@ fn nobody_found_it_awards_artist_bonus() {
     let voters = reach_voting(&mut room, 100);
     let artist = room.round.current_artist_id.clone().unwrap();
     let token = room.turn_token;
-    room.submit_vote(&voters[0], token, fake_option_id_for(&room, &voters[1]), 400)
-        .unwrap();
-    room.submit_vote(&voters[1], token, fake_option_id_for(&room, &voters[0]), 401)
-        .unwrap();
+    room.submit_vote(
+        &voters[0],
+        token,
+        fake_option_id_for(&room, &voters[1]),
+        400,
+    )
+    .unwrap();
+    room.submit_vote(
+        &voters[1],
+        token,
+        fake_option_id_for(&room, &voters[0]),
+        401,
+    )
+    .unwrap();
 
     let result = room.round.result.as_ref().unwrap();
     assert!(result.nobody_found_it);

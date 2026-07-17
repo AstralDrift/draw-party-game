@@ -1,5 +1,5 @@
-use super::helpers::*;
 use super::super::*;
+use super::helpers::*;
 use crate::protocol::PARTY_CHAOS_PROMPT_PACK_ID;
 
 #[test]

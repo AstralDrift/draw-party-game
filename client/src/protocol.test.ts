@@ -71,7 +71,7 @@ describe('protocol helpers', () => {
     expect(
       isServerMessage({
         type: 'playerListChanged',
-        players: [{ id: 'a', name: 'A', score: 0, connected: true, spectator: false }]
+        players: [{ id: 'a', name: 'A', score: 0, connected: true, spectator: false, isHost: true }]
       })
     ).toBe(true);
     expect(
