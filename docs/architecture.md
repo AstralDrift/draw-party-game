@@ -15,7 +15,7 @@ See also: [protocol.md](protocol.md) for the wire contract.
 | WebSocket auth, static serving, `/api/health` | Server (`server/src/main.rs`) |
 | TV/phone rendering and drawing input | Client |
 | Protocol guards (reject unknown/malformed) | Client (`client/src/protocol.ts`) |
-| Results reveal staging (votes → correct → deltas) | Client (`client/src/hooks/useRevealStage.ts`, `polish.ts`) |
+| Results reveal staging (votes → correct → deltas) | Client (`client/src/hooks/useRevealStage.ts`, `client/src/polish.ts`) |
 | PWA shell cache (not `/api/*` or `/ws`) | Client (`client/public/sw.js`) |
 
 Do not reintroduce peer-to-peer room authority or client-owned phase transitions. The display may request Continue early during Results; the engine still owns whether and when the phase advances.
@@ -32,7 +32,7 @@ stateDiagram-v2
   Results --> Guessing: next artist turn
   Results --> Drawing: next round
   Results --> FinalScores: rounds complete
-  FinalScores --> Lobby: play again
+  FinalScores --> Drawing: play again
 ```
 
 1. **Lobby** — display creates room + QR/code; phones join; display adjusts timers/rounds/prompt pack; start when ready.
