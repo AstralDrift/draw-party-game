@@ -18,6 +18,8 @@ pub struct Player {
     pub score: i32,
     pub connected: bool,
     pub spectator: bool,
+    #[serde(default)]
+    pub is_host: bool,
     #[serde(default, skip)]
     pub last_reaction_ms: u64,
 }
@@ -138,8 +140,10 @@ impl Room {
                 score: 0,
                 connected: true,
                 spectator: joining_as_spectator,
+                is_host: false,
                 last_reaction_ms: 0,
             });
+        self.ensure_host();
 
         Ok(())
     }
@@ -177,6 +181,48 @@ impl Room {
         if let Some(player) = self.players.get_mut(client_id) {
             player.connected = false;
         }
+        self.ensure_host();
+    }
+
+    /// Keep exactly one connected host phone when possible (first active, else any connected).
+    pub fn ensure_host(&mut self) {
+        if self
+            .players
+            .values()
+            .any(|player| player.is_host && player.connected)
+        {
+            return;
+        }
+
+        for player in self.players.values_mut() {
+            player.is_host = false;
+        }
+
+        let next_host_id = self
+            .players
+            .values()
+            .filter(|player| player.connected && !player.spectator)
+            .map(|player| player.id.clone())
+            .next()
+            .or_else(|| {
+                self.players
+                    .values()
+                    .filter(|player| player.connected)
+                    .map(|player| player.id.clone())
+                    .next()
+            });
+
+        if let Some(player_id) = next_host_id {
+            if let Some(player) = self.players.get_mut(&player_id) {
+                player.is_host = true;
+            }
+        }
+    }
+
+    pub fn player_can_control(&self, player_id: &str) -> bool {
+        self.players
+            .get(player_id)
+            .is_some_and(|player| player.is_host && player.connected)
     }
 
     pub fn handle_start_or_advance(&mut self, now_ms: u64) -> EngineResult<EngineEvent> {
@@ -879,6 +925,7 @@ impl Room {
                 score: player.score,
                 connected: player.connected,
                 spectator: player.spectator,
+                is_host: player.is_host,
             })
             .collect()
     }

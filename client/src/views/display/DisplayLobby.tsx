@@ -1,26 +1,11 @@
-import { useMemo, useState } from 'react';
 import { useGame } from '../../app/GameProvider';
 import { displayLobbyStartNote } from '../../polish';
-import {
-  defaultRoomSettings,
-  isPromptPackId,
-  type PromptPackId,
-  type RoomSettings
-} from '../../protocol';
 import { activePlayers, playerCountLabel } from '../../spectator';
 import { Button } from '../../components/ui/Button';
-import { Field, TextInput, TextSelect } from '../../components/ui/Field';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { PlayerList } from '../../components/ui/PlayerList';
 import { QrCode } from '../../components/ui/QrCode';
-
-function clamp(value: string, min: number, max: number, fallback: number): number {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  return Math.min(max, Math.max(min, parsed));
-}
+import { RoomSettingsPanel } from '../../components/ui/RoomSettingsPanel';
 
 export function DisplayLobby(): React.JSX.Element {
   const { snapshot, send, updateSettings, soundOn, toggleSound } = useGame();
@@ -31,6 +16,7 @@ export function DisplayLobby(): React.JSX.Element {
   const joinUrl = `${window.location.origin}/join/${snapshot.roomCode}`;
   const connectedPlayers = activePlayers(snapshot.players);
   const canStart = connectedPlayers.length >= snapshot.minPlayers;
+  const host = snapshot.players.find((player) => player.isHost);
   const settings = snapshot.settings;
 
   return (
@@ -39,7 +25,9 @@ export function DisplayLobby(): React.JSX.Element {
         <div className="room-hero-copy">
           <p className="eyebrow">Scan to play</p>
           <h2>Everybody draws. Everybody guesses.</h2>
-          <p className="muted room-hero-sub">Phones scan the QR or type the code.</p>
+          <p className="muted room-hero-sub">
+            Phones scan the QR or type the code. The first phone runs the lobby — no TV remote needed.
+          </p>
         </div>
         <div className="room-code-wrap">
           <span className="room-code-label">Room Code</span>
@@ -58,7 +46,9 @@ export function DisplayLobby(): React.JSX.Element {
           Start Game
         </Button>
         <p className={canStart ? 'start-note ready' : 'start-note'}>
-          {displayLobbyStartNote(connectedPlayers.length, snapshot.minPlayers)}
+          {host
+            ? `${displayLobbyStartNote(connectedPlayers.length, snapshot.minPlayers)} Host phone: ${host.name}.`
+            : displayLobbyStartNote(connectedPlayers.length, snapshot.minPlayers)}
         </p>
       </GlassPanel>
 
@@ -68,115 +58,14 @@ export function DisplayLobby(): React.JSX.Element {
           <p className="muted players-count">{playerCountLabel(snapshot.players, snapshot.maxPlayers)}</p>
           <PlayerList players={snapshot.players} showScores />
         </GlassPanel>
-        <SettingsPanel settings={settings} onSave={updateSettings} soundOn={soundOn} onToggleSound={toggleSound} />
+        <RoomSettingsPanel
+          settings={settings}
+          onSave={updateSettings}
+          soundOn={soundOn}
+          onToggleSound={toggleSound}
+          subtitle="Optional on TV — the host phone can change these too."
+        />
       </div>
     </div>
-  );
-}
-
-function SettingsPanel({
-  settings,
-  onSave,
-  soundOn,
-  onToggleSound
-}: {
-  settings: RoomSettings;
-  onSave: (settings: RoomSettings) => void;
-  soundOn: boolean;
-  onToggleSound: () => void;
-}): React.JSX.Element {
-  const defaults = useMemo(() => defaultRoomSettings(), []);
-  const [rounds, setRounds] = useState(String(settings.rounds));
-  const [drawSeconds, setDrawSeconds] = useState(String(settings.drawSeconds));
-  const [guessSeconds, setGuessSeconds] = useState(String(settings.guessSeconds));
-  const [voteSeconds, setVoteSeconds] = useState(String(settings.voteSeconds));
-  const [resultsSeconds, setResultsSeconds] = useState(String(settings.resultsSeconds ?? defaults.resultsSeconds));
-  const [packId, setPackId] = useState<PromptPackId>(settings.promptPackId);
-
-  return (
-    <GlassPanel className="settings-panel" tone="soft">
-      <div className="panel-title">Room Settings</div>
-      <p className="muted panel-subtitle">Keep it quick for a loud room.</p>
-      <Field label="Rounds">
-        <TextInput
-          className="compact-input"
-          type="number"
-          min={1}
-          max={12}
-          value={rounds}
-          onChange={(event) => setRounds(event.target.value)}
-        />
-      </Field>
-      <Field label="Drawing seconds">
-        <TextInput
-          className="compact-input"
-          type="number"
-          min={30}
-          max={180}
-          value={drawSeconds}
-          onChange={(event) => setDrawSeconds(event.target.value)}
-        />
-      </Field>
-      <Field label="Guessing seconds">
-        <TextInput
-          className="compact-input"
-          type="number"
-          min={15}
-          max={120}
-          value={guessSeconds}
-          onChange={(event) => setGuessSeconds(event.target.value)}
-        />
-      </Field>
-      <Field label="Voting seconds">
-        <TextInput
-          className="compact-input"
-          type="number"
-          min={10}
-          max={90}
-          value={voteSeconds}
-          onChange={(event) => setVoteSeconds(event.target.value)}
-        />
-      </Field>
-      <Field label="Results seconds">
-        <TextInput
-          className="compact-input"
-          type="number"
-          min={5}
-          max={30}
-          value={resultsSeconds}
-          onChange={(event) => setResultsSeconds(event.target.value)}
-        />
-      </Field>
-      <Field label="Prompt pack">
-        <TextSelect value={packId} onChange={(event) => setPackId(isPromptPackId(event.target.value) ? event.target.value : 'safe-party')}>
-          <option value="safe-party">Party Safe</option>
-          <option value="party-chaos">Party Chaos</option>
-        </TextSelect>
-      </Field>
-      <Button
-        wide
-        onClick={() =>
-          onSave({
-            rounds: clamp(rounds, 1, 12, settings.rounds),
-            drawSeconds: clamp(drawSeconds, 30, 180, settings.drawSeconds),
-            guessSeconds: clamp(guessSeconds, 15, 120, settings.guessSeconds),
-            voteSeconds: clamp(voteSeconds, 10, 90, settings.voteSeconds),
-            resultsSeconds: clamp(resultsSeconds, 5, 30, settings.resultsSeconds ?? defaults.resultsSeconds),
-            promptPackId: packId
-          })
-        }
-      >
-        Save Settings
-      </Button>
-      <Button
-        variant="secondary"
-        wide
-        className={`sound-toggle ${soundOn ? 'is-selected' : ''}`}
-        aria-pressed={soundOn}
-        onClick={onToggleSound}
-      >
-        {soundOn ? 'Sound On' : 'Sound Off'}
-      </Button>
-    </GlassPanel>
   );
 }

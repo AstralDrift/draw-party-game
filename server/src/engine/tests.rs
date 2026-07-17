@@ -37,6 +37,31 @@ fn room_with_players() -> Room {
     room
 }
 
+#[test]
+fn first_player_becomes_host_and_reassigns_on_disconnect() {
+    let mut room = Room::new(
+        "HOST".to_string(),
+        "display".to_string(),
+        "host-token".to_string(),
+        0,
+    );
+    room.upsert_player("p1".to_string(), "Ada".to_string(), 1)
+        .unwrap();
+    assert!(room.players["p1"].is_host);
+    assert!(room.player_can_control("p1"));
+
+    room.upsert_player("p2".to_string(), "Grace".to_string(), 2)
+        .unwrap();
+    assert!(room.players["p1"].is_host);
+    assert!(!room.players["p2"].is_host);
+    assert!(!room.player_can_control("p2"));
+
+    room.mark_disconnected("p1", 3);
+    assert!(!room.players["p1"].is_host);
+    assert!(room.players["p2"].is_host);
+    assert!(room.player_can_control("p2"));
+}
+
 fn custom_settings() -> RoomSettings {
     RoomSettings {
         rounds: 2,

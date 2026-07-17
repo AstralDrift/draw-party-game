@@ -6,11 +6,12 @@ import { Button } from '../../components/ui/Button';
 import { Field, TextInput } from '../../components/ui/Field';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { PlayerList } from '../../components/ui/PlayerList';
+import { RoomSettingsPanel } from '../../components/ui/RoomSettingsPanel';
 import { Shell } from '../../components/ui/Shell';
 import { SpectatorBanner } from '../../components/ui/SpectatorBanner';
 
 export function PlayerLobby(): React.JSX.Element {
-  const { snapshot, clientId, setName } = useGame();
+  const { snapshot, clientId, setName, send, updateSettings } = useGame();
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
 
@@ -26,7 +27,9 @@ export function PlayerLobby(): React.JSX.Element {
   const neededPlayers = Math.max(0, snapshot.minPlayers - connectedPlayers.length);
   const self = snapshot.players.find((player) => player.id === clientId);
   const spectating = Boolean(self?.spectator);
+  const isHost = Boolean(self?.isHost);
   const ready = neededPlayers === 0;
+  const canStart = connectedPlayers.length >= snapshot.minPlayers;
   const displayName = self?.name ?? 'Player';
 
   const startRename = () => {
@@ -51,9 +54,17 @@ export function PlayerLobby(): React.JSX.Element {
       <div className="player-stack lobby-player-stack">
         <GlassPanel className={`player-lobby-card ${ready && !spectating ? 'is-ready' : ''}`}>
           {spectating ? <SpectatorBanner /> : null}
-          <p className="eyebrow">{self ? `${displayName}, you're in` : "You're in"}</p>
+          <p className="eyebrow">
+            {isHost ? `${displayName}, you're the host` : self ? `${displayName}, you're in` : "You're in"}
+          </p>
           <h2>
-            {spectating ? 'Watching the lobby' : ready ? 'Party is ready' : 'Waiting for players'}
+            {spectating
+              ? 'Watching the lobby'
+              : ready
+                ? isHost
+                  ? 'Ready when you are'
+                  : 'Party is ready'
+                : 'Waiting for players'}
           </h2>
           {!editingName ? (
             <div className="lobby-name-row">
@@ -103,12 +114,35 @@ export function PlayerLobby(): React.JSX.Element {
                 : playerLobbyReadyNote(connectedPlayers.length, snapshot.minPlayers)}
             </span>
           </div>
-          <p className="muted">
-            {spectating
-              ? 'You’re watching for now. You’ll draw next round.'
-              : 'Watch the TV. Your phone is the controller once the round starts.'}
-          </p>
+          {isHost ? (
+            <>
+              <Button
+                className="spotlight-button"
+                wide
+                disabled={!canStart}
+                onClick={() => send({ type: 'startGame' })}
+              >
+                Start Game
+              </Button>
+              <p className="muted">
+                You’re running the lobby from this phone. The TV just shows the room.
+              </p>
+            </>
+          ) : (
+            <p className="muted">
+              {spectating
+                ? 'You’re watching for now. You’ll draw next round.'
+                : 'Watch the TV. The host phone starts the game.'}
+            </p>
+          )}
         </GlassPanel>
+        {isHost ? (
+          <RoomSettingsPanel
+            settings={snapshot.settings}
+            onSave={updateSettings}
+            subtitle="Timers and packs for this room."
+          />
+        ) : null}
         <GlassPanel className="players-panel" tone="soft">
           <div className="panel-title">Players</div>
           <PlayerList players={snapshot.players} />

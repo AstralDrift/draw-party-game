@@ -39,9 +39,11 @@ export function DisplayResults(): React.JSX.Element {
           >
             Continue
           </Button>
-          {snapshot.deadlineMs ? (
-            <p className="muted">Auto-continues when the timer hits zero.</p>
-          ) : null}
+          <p className="muted">
+            {snapshot.deadlineMs
+              ? 'Host phone can Continue early, or the TV auto-continues at zero.'
+              : 'Continue from the host phone when you’re ready.'}
+          </p>
         </GlassPanel>
       </div>
       <ReactionBursts />
@@ -75,7 +77,7 @@ export function DisplayFinal(): React.JSX.Element {
           >
             Play Again
           </Button>
-          <p className="muted">Same room. Same phones. Fresh prompts.</p>
+          <p className="muted">Play Again from the host phone — or here if you have a remote.</p>
         </GlassPanel>
       </div>
       <ReactionBursts />
