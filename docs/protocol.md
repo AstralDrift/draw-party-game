@@ -48,6 +48,7 @@ Important fields:
 - `turnToken` — submissions must match the current turn
 - `deadlineMs` / `serverNowMs` — client syncs countdowns to server time
 - `players[].spectator` — mid-game watchers until promoted
+- `players[].isHost` — derived badge for the room host phone (sticky while connected; on disconnect, earliest joined connected non-spectator, else earliest joined connected)
 
 ## Client → server (`ClientMessage`)
 
@@ -56,8 +57,8 @@ Important fields:
 | `createRoom` | Display creates a room |
 | `joinRoom` | Player joins with `roomCode` + `name` |
 | `setName` | Rename player (no server phase gate; client exposes rename in lobby) |
-| `updateRoomSettings` | Display updates timers/rounds/pack (lobby only) |
-| `startGame` | Display starts the game, Continues after results, or Play Again from final scores |
+| `updateRoomSettings` | Display or host phone updates timers/rounds/pack (lobby only) |
+| `startGame` | Display or host phone starts the game, Continues after results, or Play Again from final scores |
 | `submitDrawing` | `turnToken` + `drawing` |
 | `submitGuess` | `turnToken` + `guess` |
 | `submitVote` | `turnToken` + `optionId` |

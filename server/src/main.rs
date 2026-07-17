@@ -449,12 +449,12 @@ async fn set_name(state: &AppState, client_id: &str, name: String) {
 }
 
 async fn update_room_settings(state: &AppState, client_id: &str, settings: RoomSettings) {
-    let Some(room_code) = authorized_display_room_code(state, client_id).await else {
+    let Some(room_code) = authorized_controller_room_code(state, client_id).await else {
         send_error(
             state,
             client_id,
-            "display_only",
-            "Only the TV display can change room settings.",
+            "not_authorized",
+            "Only the TV display or the host phone can change room settings.",
         )
         .await;
         return;
@@ -466,12 +466,12 @@ async fn update_room_settings(state: &AppState, client_id: &str, settings: RoomS
 }
 
 async fn start_or_advance(state: &AppState, client_id: &str) {
-    let Some(room_code) = authorized_display_room_code(state, client_id).await else {
+    let Some(room_code) = authorized_controller_room_code(state, client_id).await else {
         send_error(
             state,
             client_id,
-            "display_only",
-            "Only the TV display can advance the game.",
+            "not_authorized",
+            "Only the TV display or the host phone can advance the game.",
         )
         .await;
         return;
@@ -811,18 +811,26 @@ fn send_many(messages: Vec<(mpsc::UnboundedSender<ServerMessage>, ServerMessage)
     }
 }
 
-async fn authorized_display_room_code(state: &AppState, client_id: &str) -> Option<String> {
+async fn authorized_controller_room_code(state: &AppState, client_id: &str) -> Option<String> {
     let inner = state.inner.lock().await;
     let conn = inner.connections.get(client_id)?;
-    if conn.role != Role::Display {
-        return None;
-    }
     let room_code = conn.room_code.as_ref()?;
     let room = inner.rooms.get(room_code)?;
-    if room.displays.contains(client_id) {
-        Some(room_code.clone())
-    } else {
-        None
+    match conn.role {
+        Role::Display => {
+            if room.displays.contains(client_id) {
+                Some(room_code.clone())
+            } else {
+                None
+            }
+        }
+        Role::Player => {
+            if room.player_can_control(client_id) {
+                Some(room_code.clone())
+            } else {
+                None
+            }
+        }
     }
 }
 
@@ -1081,7 +1089,13 @@ mod tests {
             })))
             .await
             .unwrap();
-        let _ = read_until_type(&mut player, "roomSnapshot").await;
+        let joined = read_until_type(&mut player, "roomSnapshot").await;
+        let host_flag = joined
+            .pointer("/snapshot/players/0/isHost")
+            .and_then(Value::as_bool);
+        assert_eq!(host_flag, Some(true));
+
+        // Host phone can update settings.
         player
             .send(text_message(json!({
                 "type": "updateRoomSettings",
@@ -1096,10 +1110,45 @@ mod tests {
             })))
             .await
             .unwrap();
-        let error = read_until_type(&mut player, "error").await;
+        let host_updated = read_until_settings_rounds(&mut player, 4).await;
+        assert_eq!(
+            host_updated
+                .pointer("/snapshot/settings/rounds")
+                .and_then(Value::as_u64),
+            Some(4)
+        );
+
+        let (mut guest, _) =
+            connect_async(format!("{url}?role=player&room={room_code}&clientId=p2"))
+                .await
+                .unwrap();
+        guest
+            .send(text_message(json!({
+                "type": "joinRoom",
+                "roomCode": room_code,
+                "name": "Grace"
+            })))
+            .await
+            .unwrap();
+        let _ = read_until_type(&mut guest, "roomSnapshot").await;
+        guest
+            .send(text_message(json!({
+                "type": "updateRoomSettings",
+                "settings": {
+                    "rounds": 2,
+                    "drawSeconds": 30,
+                    "guessSeconds": 20,
+                    "voteSeconds": 15,
+                    "resultsSeconds": 12,
+                    "promptPackId": "safe-party"
+                }
+            })))
+            .await
+            .unwrap();
+        let error = read_until_type(&mut guest, "error").await;
         assert_eq!(
             error.get("code").and_then(Value::as_str),
-            Some("display_only")
+            Some("not_authorized")
         );
     }
 
@@ -1130,7 +1179,7 @@ mod tests {
         let error = read_until_type(&mut unauthorized, "error").await;
         assert_eq!(
             error.get("code").and_then(Value::as_str),
-            Some("display_only")
+            Some("not_authorized")
         );
 
         let (mut authorized, _) = connect_async(format!(

@@ -2,6 +2,7 @@ import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import {
   createPlayers,
   drawStroke,
+  hostSaveRounds,
   makeAppUrl,
   waitForPagesWithVisibleLocatorCount,
   type PlayerViewport
@@ -120,20 +121,22 @@ test('large-phone lobby presents player-ready hierarchy without clipping', async
 
     await expect(ava.locator('.player-lobby-card')).toBeVisible();
     await expect(ava.locator('.mini-room-code')).toHaveText(roomCode);
-    await expect(ava.getByText('Party is ready')).toBeVisible();
+    await expect(ava.getByText('Ready when you are')).toBeVisible();
+    await expect(ava.getByRole('button', { name: 'Start Game' })).toBeVisible();
     await expect(ava.getByText('Invite 1 more for better voting.')).toBeVisible();
     await expect(ava.getByRole('button', { name: 'Edit name' })).toBeVisible();
     await expect(ava.locator('.players-panel')).toBeVisible();
     await expect(bo.locator('.player-lobby-card')).toBeVisible();
+    await expect(bo.getByText('Party is ready')).toBeVisible();
     await expect(tv.getByRole('button', { name: 'Start Game' })).toBeEnabled();
-    await expect(tv.getByText('2 ready — playable now, best with 3+ for votes and fakes.')).toBeVisible();
+    await expect(tv.getByText(/2 ready — playable now/)).toBeVisible();
     await expectNoHorizontalOverflow(ava);
 
     await ava.getByRole('button', { name: 'Edit name' }).click();
     await ava.getByLabel('Your name').fill('Ava Renamed');
     await ava.getByRole('button', { name: 'Save name' }).click();
-    await expect(ava.getByText("Ava Renamed, you're in")).toBeVisible();
-    await expect(tv.getByText('Ava Renamed')).toBeVisible();
+    await expect(ava.getByText("Ava Renamed, you're the host")).toBeVisible();
+    await expect(tv.locator('.player-name', { hasText: 'Ava Renamed' })).toBeVisible();
 
     const lobbyBox = await ava.locator('.player-lobby-card').boundingBox();
     const playersBox = await ava.locator('.players-panel').boundingBox();
@@ -252,10 +255,9 @@ test('solo drawing keeps live ink stable, ignores extra touches, and submits den
     await tv.goto(appUrl('/'));
     await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
     const roomCode = (await tv.locator('.room-code').innerText()).trim();
-    await tv.locator('.settings-panel input').first().fill('1');
-    await tv.getByRole('button', { name: 'Save Settings' }).click();
 
     const [player] = await createPlayers(browser, contexts, appUrl, roomCode, ['Solo']);
+    await hostSaveRounds(player, '1');
     await expect(tv.getByRole('button', { name: 'Start Game' })).toBeEnabled();
     await tv.getByRole('button', { name: 'Start Game' }).click();
 
@@ -429,9 +431,8 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
     await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
     const roomCode = (await tv.locator('.room-code').innerText()).trim();
 
-    await tv.locator('.settings-panel input').first().fill('1');
-    await tv.getByRole('button', { name: 'Save Settings' }).click();
     const players = await createPlayers(browser, contexts, appUrl, roomCode, ['Ava', 'Bo']);
+    await hostSaveRounds(players[0], '1');
 
     await tv.getByRole('button', { name: 'Start Game' }).click();
     for (const player of players) {
@@ -461,7 +462,8 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
     await expect(tv.getByText('Final Podium')).toBeVisible();
     await expect(tv.getByRole('button', { name: 'Play Again' })).toBeVisible();
     await expect(tv.getByText('Don’t stop now')).toBeVisible();
-    await expect(tv.locator('.spotlight-button')).toBeVisible();
+    // Host phone keeps the spotlight CTA; TV Play Again stays secondary.
+    await expect(players[0].locator('.spotlight-button')).toBeVisible();
     await expect(tv.getByRole('button', { name: /Podium/ })).toBeVisible();
     await expect(tv.locator('.podium-place')).toHaveCount(2);
     await expect(tv.locator('.score-row')).toHaveCount(2);

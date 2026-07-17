@@ -1,5 +1,5 @@
-use super::helpers::*;
 use super::super::*;
+use super::helpers::*;
 
 #[test]
 fn submit_reaction_rules_and_cooldown() {
@@ -8,15 +8,11 @@ fn submit_reaction_rules_and_cooldown() {
 
     reach_guessing(&mut room, 100);
     assert_eq!(
-        room.submit_reaction("p1", "🙂", 300)
-            .unwrap_err()
-            .code,
+        room.submit_reaction("p1", "🙂", 300).unwrap_err().code,
         "invalid_reaction"
     );
     assert_eq!(
-        room.submit_reaction("missing", "😂", 301)
-            .unwrap_err()
-            .code,
+        room.submit_reaction("missing", "😂", 301).unwrap_err().code,
         "not_joined"
     );
 

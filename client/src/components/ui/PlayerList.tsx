@@ -24,14 +24,19 @@ export function PlayerList({ players, showScores = false }: PlayerListProps): Re
           : showScores
             ? `${player.score} pts`
             : player.connected
-              ? 'online'
+              ? player.isHost
+                ? 'host'
+                : 'online'
               : 'offline';
         return (
           <div
             key={player.id}
-            className={`player-row ${player.connected ? 'online' : 'offline'}${player.spectator ? ' is-spectator' : ''}`}
+            className={`player-row ${player.connected ? 'online' : 'offline'}${player.spectator ? ' is-spectator' : ''}${player.isHost ? ' is-host' : ''}`}
           >
-            <span className="player-name">{player.name}</span>
+            <span className="player-name">
+              {player.name}
+              {player.isHost ? <span className="host-badge">Host</span> : null}
+            </span>
             <span className={`pill${player.spectator ? ' spectator-pill' : ''}`}>{statusPill}</span>
           </div>
         );

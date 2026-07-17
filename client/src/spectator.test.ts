@@ -15,6 +15,7 @@ function player(partial: Partial<PlayerPublic> & Pick<PlayerPublic, 'id'>): Play
     score: partial.score ?? 0,
     connected: partial.connected ?? true,
     spectator: partial.spectator ?? false,
+    isHost: partial.isHost ?? false,
     ...partial
   };
 }

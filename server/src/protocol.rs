@@ -105,6 +105,8 @@ pub struct PlayerPublic {
     pub score: i32,
     pub connected: bool,
     pub spectator: bool,
+    /// First connected phone that can drive lobby settings / start / continue.
+    pub is_host: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

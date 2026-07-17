@@ -1,5 +1,5 @@
-use super::helpers::*;
 use super::super::*;
+use super::helpers::*;
 
 #[test]
 fn rejects_stale_guess_in_drawing_phase() {
@@ -53,9 +53,14 @@ fn vote_rejects_unknown_option_id() {
     let mut room = room_with_players();
     let voters = reach_voting(&mut room, 100);
     assert_eq!(
-        room.submit_vote(&voters[0], room.turn_token, "missing-option".to_string(), 402)
-            .unwrap_err()
-            .code,
+        room.submit_vote(
+            &voters[0],
+            room.turn_token,
+            "missing-option".to_string(),
+            402
+        )
+        .unwrap_err()
+        .code,
         "invalid_vote"
     );
 }

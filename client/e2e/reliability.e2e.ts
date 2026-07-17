@@ -1,5 +1,5 @@
 import { expect, test, type BrowserContext } from '@playwright/test';
-import { createPlayers, drawStroke, makeAppUrl, waitForGuessers } from './helpers';
+import { createPlayers, drawStroke, hostSaveRounds, makeAppUrl, waitForGuessers } from './helpers';
 
 test('late join mid-drawing becomes spectator and promotes next round', async ({ baseURL, browser }) => {
   const contexts: BrowserContext[] = [];
@@ -13,10 +13,8 @@ test('late join mid-drawing becomes spectator and promotes next round', async ({
     await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
     const roomCode = (await tv.locator('.room-code').innerText()).trim();
 
-    await tv.locator('.settings-panel input').first().fill('2');
-    await tv.getByRole('button', { name: 'Save Settings' }).click();
-
     const players = await createPlayers(browser, contexts, appUrl, roomCode, ['Ava', 'Bo']);
+    await hostSaveRounds(players[0], '2');
     await tv.getByRole('button', { name: 'Start Game' }).click();
     await expect(tv.getByText('Phones are drawing')).toBeVisible();
 

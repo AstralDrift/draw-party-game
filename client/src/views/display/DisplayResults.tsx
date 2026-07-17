@@ -32,16 +32,18 @@ export function DisplayResults(): React.JSX.Element {
           <p className="eyebrow">Keep it moving</p>
           <Button
             id="advance-button"
-            className="spotlight-button"
+            variant="secondary"
             wide
             disabled={Boolean(result) && !complete}
             onClick={() => send({ type: 'startGame' })}
           >
             Continue
           </Button>
-          {snapshot.deadlineMs ? (
-            <p className="muted">Auto-continues when the timer hits zero.</p>
-          ) : null}
+          <p className="muted">
+            {snapshot.deadlineMs
+              ? 'Host phone can Continue early, or the TV auto-continues at zero.'
+              : 'Continue from the host phone when you’re ready.'}
+          </p>
         </GlassPanel>
       </div>
       <ReactionBursts />
@@ -69,13 +71,13 @@ export function DisplayFinal(): React.JSX.Element {
           <h2 className="encore-title">Don’t stop now</h2>
           <Button
             id="advance-button"
-            className="spotlight-button"
+            variant="secondary"
             wide
             onClick={() => send({ type: 'startGame' })}
           >
             Play Again
           </Button>
-          <p className="muted">Same room. Same phones. Fresh prompts.</p>
+          <p className="muted">Play Again from the host phone — or here if you have a remote.</p>
         </GlassPanel>
       </div>
       <ReactionBursts />

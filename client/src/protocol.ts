@@ -34,6 +34,8 @@ export interface PlayerPublic {
   score: number;
   connected: boolean;
   spectator: boolean;
+  /** First connected phone that can drive lobby settings / start / continue. */
+  isHost: boolean;
 }
 
 export interface RoomSettings {
@@ -265,7 +267,8 @@ function isPlayer(value: unknown): value is PlayerPublic {
     typeof value.name === 'string' &&
     isFiniteNumber(value.score) &&
     typeof value.connected === 'boolean' &&
-    typeof value.spectator === 'boolean'
+    typeof value.spectator === 'boolean' &&
+    typeof value.isHost === 'boolean'
   );
 }
 

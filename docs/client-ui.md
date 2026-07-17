@@ -6,7 +6,7 @@ See [design.md](design.md) for the visual system and [architecture.md](architect
 
 ## Phase coverage
 
-1. **Lobby** — TV create/QR/settings/start + phone join/wait
+1. **Lobby** — TV create/QR (read-only settings summary) + host phone settings/start + phone join/wait
 2. **Drawing** — phone stroke pad + TV progress
 3. **Guessing / Voting** — reveal canvas, fake answers, vote options, reactions
 4. **Results** — staged reveal (hold → tally → correct → deltas → complete) + Continue gate
