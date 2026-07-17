@@ -86,6 +86,10 @@ function storeHostToken(roomCode: string, hostToken: string): void {
   localStorage.setItem(hostTokenKey(roomCode), hostToken);
 }
 
+function clearStoredHostToken(roomCode: string): void {
+  localStorage.removeItem(hostTokenKey(roomCode));
+}
+
 function detectRole(): { role: ClientRole; initialRoomCode: string } {
   const joinMatch = window.location.pathname.match(/^\/join\/([A-Z0-9]{4})/i);
   return {
@@ -103,6 +107,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   const lastTickSecondRef = useRef(-1);
   const pendingJoinRef = useRef<PendingJoin | null>(null);
   const snapshotRef = useRef<RoomSnapshot | null>(null);
+  const connectRef = useRef<(roomCode?: string) => void>(() => {});
   const burstIdRef = useRef(0);
 
   const [snapshot, setSnapshot] = useState<RoomSnapshot | null>(null);
@@ -216,6 +221,22 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
         case 'pong':
           break;
         case 'error':
+          if (
+            boot.role === 'display' &&
+            (message.code === 'room_not_found' || message.code === 'unauthorized_display')
+          ) {
+            const deadCode = snapshotRef.current?.roomCode;
+            if (deadCode) {
+              clearStoredHostToken(deadCode);
+            }
+            setSnapshot(null);
+            snapshotRef.current = null;
+            setErrorMessage('That room expired. Creating a fresh lobby…');
+            window.setTimeout(() => {
+              connectRef.current();
+            }, 100);
+            break;
+          }
           setErrorMessage(message.message);
           if (['room_not_found', 'room_full'].includes(message.code)) {
             setPendingJoin(null);
@@ -230,7 +251,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
         }
       }
     },
-    [applySnapshot]
+    [applySnapshot, boot.role]
   );
 
   const connect = useCallback(
@@ -281,6 +302,10 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
     },
     [boot.role, clientId, handleServerMessage]
   );
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     if (boot.role === 'display') {

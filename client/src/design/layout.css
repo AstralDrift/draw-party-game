@@ -10,9 +10,7 @@
   overflow: hidden;
 }
 
-.app-shell.display > .display-grid,
-.app-shell.display > .connection-banner,
-.app-shell.display > .error {
+.app-shell.display > .display-grid {
   position: relative;
   z-index: 1;
   min-height: 0;
@@ -159,16 +157,26 @@
 }
 
 .qr-stage {
-  width: auto;
+  width: min(220px, 22vh, 18vw);
+  max-width: 100%;
   padding: 8px;
   margin: 0 auto;
   flex: 0 1 auto;
   min-height: 0;
+  overflow: hidden;
+}
+
+@supports (height: 1svh) {
+  .qr-stage {
+    width: min(220px, 22svh, 18vw);
+  }
 }
 
 .qr {
-  width: min(220px, 26svh, 18vw) !important;
-  height: min(220px, 26svh, 18vw) !important;
+  display: block;
+  width: 100% !important;
+  height: auto !important;
+  max-width: 100%;
 }
 
 .brand {
@@ -668,9 +676,14 @@
 
 /* Large TVs: scale with viewport height so hero + QR + CTA stay in one frame. */
 @media (min-width: 1800px) and (min-height: 1000px) {
-  .qr {
-    width: min(320px, 28svh, 14vw) !important;
-    height: min(320px, 28svh, 14vw) !important;
+  .qr-stage {
+    width: min(320px, 24vh, 14vw);
+  }
+
+  @supports (height: 1svh) {
+    .qr-stage {
+      width: min(320px, 24svh, 14vw);
+    }
   }
 
   .room-code {
@@ -696,9 +709,14 @@
 }
 
 @media (min-width: 3200px) and (min-height: 1800px) {
-  .qr {
-    width: min(420px, 26svh, 12vw) !important;
-    height: min(420px, 26svh, 12vw) !important;
+  .qr-stage {
+    width: min(420px, 22vh, 12vw);
+  }
+
+  @supports (height: 1svh) {
+    .qr-stage {
+      width: min(420px, 22svh, 12vw);
+    }
   }
 
   .room-code {

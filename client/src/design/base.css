@@ -86,6 +86,21 @@ button:disabled {
   overflow: hidden;
 }
 
+.app-shell.display > .shell-chrome {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+}
+
+.app-shell.display > .shell-chrome .topbar {
+  margin-bottom: var(--space-3);
+}
+
+.app-shell.display > .shell-chrome .error,
+.app-shell.display > .shell-chrome .connection-banner {
+  margin-bottom: var(--space-4);
+}
+
 .app-shell.player {
   max-width: 680px;
   margin: 0 auto;

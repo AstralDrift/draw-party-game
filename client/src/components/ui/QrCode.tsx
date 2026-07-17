@@ -14,12 +14,13 @@ export function QrCode({ url }: QrCodeProps): React.JSX.Element {
       return;
     }
     void QRCode.toCanvas(canvas, url, {
-      width: 640,
+      width: 256,
       margin: 1,
       color: { dark: '#1d1d1f', light: '#ffffff' }
     }).then(() => {
-      canvas.style.width = '';
-      canvas.style.height = '';
+      // Keep display size CSS-driven; avoid 640px intrinsic blow-ups on TV WebViews.
+      canvas.style.width = '100%';
+      canvas.style.height = 'auto';
     });
   }, [url]);
 

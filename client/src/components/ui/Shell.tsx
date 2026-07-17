@@ -20,27 +20,30 @@ export function Shell({ title, children }: ShellProps): React.JSX.Element {
 
   const waitingToJoin = role === 'player' && !pendingJoin && !snapshot;
   const connection = waitingToJoin ? 'Ready to join' : status;
+  const showConnectionBanner = status !== 'Connected' && Boolean(snapshot) && !errorMessage;
+  const statusStrip = errorMessage ? (
+    <div className="error" role="alert">
+      {errorMessage}
+    </div>
+  ) : showConnectionBanner ? (
+    <div className="connection-banner">{status}</div>
+  ) : null;
 
   return (
     <div className={`app-shell ${role} ${phaseClass}`}>
       <Atmosphere />
-      <header className="topbar">
-        <div>
-          <div className="brand">{title}</div>
-          {snapshot ? <div className="phase">{phaseLabel(snapshot.phase)}</div> : null}
-        </div>
-        <div className="connection connection-text" id="connection-text">
-          {connection}
-        </div>
-      </header>
-      {status !== 'Connected' && snapshot ? (
-        <div className="connection-banner">{status}</div>
-      ) : null}
-      {errorMessage ? (
-        <div className="error" role="alert">
-          {errorMessage}
-        </div>
-      ) : null}
+      <div className="shell-chrome">
+        <header className="topbar">
+          <div>
+            <div className="brand">{title}</div>
+            {snapshot ? <div className="phase">{phaseLabel(snapshot.phase)}</div> : null}
+          </div>
+          <div className="connection connection-text" id="connection-text">
+            {connection}
+          </div>
+        </header>
+        {statusStrip}
+      </div>
       {children}
     </div>
   );
