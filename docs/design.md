@@ -92,6 +92,8 @@ TV shell: centered, max ~2520px, one composition per phase. Phone shell: max 680
 | Glass base | `.glass-panel`: `backdrop-filter: blur(var(--blur-glass)) saturate(140%)`, hairline border, inset highlight |
 | Soft / strong | `.glass-panel--soft` / `--strong` change fill opacity only; same blur |
 
+TV display shell uses opaque glass fills (no `backdrop-filter`) and skips enter transforms — TV Bro / living-room WebViews otherwise ghost or clip lobby type.
+
 Shadows are soft and short (`0 12px 40px rgba(0,0,0,0.35)`), never hard pixel-offset arcade shadows.
 
 ## 6. Motion

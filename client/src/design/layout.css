@@ -30,27 +30,52 @@
 .display-grid-lobby .lobby-side {
   min-height: 0;
   overflow: hidden;
-  grid-template-rows: minmax(142px, 0.58fr) auto;
+  /* Players flexes; settings sizes to content so the roster never collapses. */
+  grid-template-rows: minmax(160px, 1fr) auto;
 }
 
 .display-grid-lobby .players-panel {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
   min-height: 0;
-  padding: 22px;
+  overflow: hidden;
+  padding: clamp(16px, 1.6vw, 24px);
+}
+
+.display-grid-lobby .players-panel .panel-title,
+.display-grid-lobby .players-panel .players-count {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.display-grid-lobby .players-panel .players-count {
+  line-height: 1.35;
 }
 
 .display-grid-lobby .players-panel .player-list {
-  min-height: 0;
+  flex: 1 1 auto;
+  min-height: 3.5rem;
   overflow: auto;
   scrollbar-width: thin;
 }
 
+.display-grid-lobby .players-panel .player-list--empty {
+  display: flex;
+  align-items: center;
+}
+
+.display-grid-lobby .players-panel .empty-state {
+  padding: var(--space-2) 0;
+  margin: 0;
+  line-height: 1.4;
+}
+
 .display-grid-lobby .settings-panel {
   display: grid;
-  grid-template-columns: minmax(112px, 0.52fr) minmax(0, 1fr);
-  gap: 4px 10px;
-  padding: 14px 18px;
+  grid-template-columns: minmax(128px, 0.55fr) minmax(0, 1fr);
+  gap: 8px 12px;
+  padding: 16px 18px;
   align-content: start;
 }
 
@@ -111,25 +136,39 @@
 .room-panel {
   min-height: 0;
   height: 100%;
-  align-content: center;
-  gap: 9px;
+  /* Start-aligned so oversized QR/code never clips the hero into the top edge. */
+  align-content: start;
+  justify-content: center;
+  gap: clamp(8px, 1.2vh, 14px);
   padding: clamp(16px, 2vw, 28px);
+  overflow: hidden;
+}
+
+.room-panel .room-hero-copy {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.room-panel .room-hero-copy h2 {
+  text-wrap: balance;
 }
 
 .room-code {
-  font-size: clamp(2.6rem, 6vw, 5.2rem);
-  line-height: 0.9;
+  font-size: clamp(2.4rem, 5.2vw, 4.8rem);
+  line-height: 1;
 }
 
 .qr-stage {
   width: auto;
   padding: 8px;
   margin: 0 auto;
+  flex: 0 1 auto;
+  min-height: 0;
 }
 
 .qr {
-  width: min(220px, 28svh, 18vw) !important;
-  height: min(220px, 28svh, 18vw) !important;
+  width: min(220px, 26svh, 18vw) !important;
+  height: min(220px, 26svh, 18vw) !important;
 }
 
 .brand {
@@ -627,25 +666,47 @@
   }
 }
 
+/* Large TVs: scale with viewport height so hero + QR + CTA stay in one frame. */
 @media (min-width: 1800px) and (min-height: 1000px) {
   .qr {
-    width: 360px !important;
-    height: 360px !important;
+    width: min(320px, 28svh, 14vw) !important;
+    height: min(320px, 28svh, 14vw) !important;
   }
 
   .room-code {
-    font-size: 8.4rem;
+    font-size: clamp(3.5rem, 7.5vh, 6.5rem);
+  }
+
+  .room-hero-copy h2 {
+    font-size: clamp(1.85rem, 3.2vh, 2.6rem);
+  }
+
+  .display-grid-lobby .settings-panel {
+    gap: 10px 14px;
+    padding: 18px 22px;
+  }
+
+  .display-grid-lobby .settings-panel .field-label {
+    font-size: 0.95rem;
+  }
+
+  .display-grid-lobby .settings-panel .input {
+    min-height: 40px;
   }
 }
 
 @media (min-width: 3200px) and (min-height: 1800px) {
   .qr {
-    width: 580px !important;
-    height: 580px !important;
+    width: min(420px, 26svh, 12vw) !important;
+    height: min(420px, 26svh, 12vw) !important;
   }
 
   .room-code {
-    font-size: 13.4rem;
+    font-size: clamp(4.5rem, 8vh, 8rem);
+  }
+
+  .room-hero-copy h2 {
+    font-size: clamp(2.1rem, 3.4vh, 3rem);
   }
 }
 

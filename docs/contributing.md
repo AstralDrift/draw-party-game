@@ -52,11 +52,23 @@ Match blast radius for narrow PRs:
 | WebSocket / reconnect / health / static | `cargo test` (incl. `main.rs` tests) |
 | Client logic / protocol | `npm --prefix client test -- --run` + typecheck |
 | UI / layout / touch | Relevant Playwright e2e (include mobile phone contexts) |
+| TV / display layout | `npm run e2e:tv` (required for lobby/display CSS). Optional human glance: `npm run review:tv` then open `client/artifacts/tv-review/index.html` |
 | Protocol constants/messages | Both Rust and TS sides + tests above |
 | Docs only | Link walk + constant accuracy vs code |
 
 `npm run e2e` builds the client, starts the Rust server on `127.0.0.1:3100`, and runs Playwright. Set `E2E_PORT` or `E2E_BASE_URL` as needed.
 
+### TV layout gate (living-room / TV Bro)
+
+Geometric Playwright checks catch the failure modes that pixel snapshots miss on glass UI: clipped hero type, overlapping Players copy, oversized QR/code, and mid-game panels that force page scroll.
+
+```bash
+npm run e2e:tv          # empty + populated lobby + drawing/guessing across TV sizes
+npm run review:tv       # same gate, also writes client/artifacts/tv-review/index.html
+open client/artifacts/tv-review/index.html
+```
+
+CI runs the full e2e suite with `TV_REVIEW=1` and uploads the gallery as the `tv-layout-review` artifact.
 ## Design and protocol
 
 - UI work: follow [design.md](design.md) and [client-ui.md](client-ui.md). CSS belongs under `client/src/design/`.

@@ -1,3 +1,4 @@
+/* Opacity-only: transform + backdrop-filter ghosts text on TV Bro / old WebViews. */
 .fade-rise {
   animation: fade-rise var(--motion-med) var(--ease-out) both;
 }
@@ -5,12 +6,15 @@
 @keyframes fade-rise {
   from {
     opacity: 0;
-    transform: translateY(10px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
+}
+
+.app-shell.display .fade-rise {
+  animation: none;
+  opacity: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {

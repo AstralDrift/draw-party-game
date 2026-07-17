@@ -7,7 +7,11 @@ interface PlayerListProps {
 
 export function PlayerList({ players, showScores = false }: PlayerListProps): React.JSX.Element {
   if (players.length === 0) {
-    return <div className="empty-state">Waiting for phones to join.</div>;
+    return (
+      <div className="player-list player-list--empty">
+        <div className="empty-state">Waiting for phones to join.</div>
+      </div>
+    );
   }
 
   return (

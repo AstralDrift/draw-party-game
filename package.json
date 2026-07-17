@@ -9,6 +9,8 @@
     "client:test": "npm --prefix client test -- --run",
     "client:typecheck": "npm --prefix client run typecheck",
     "e2e": "npm --prefix client run e2e --",
+    "e2e:tv": "npm --prefix client run e2e:tv --",
+    "review:tv": "npm --prefix client run review:tv --",
     "server:dev": "cargo run --manifest-path server/Cargo.toml",
     "server:test": "cargo test --manifest-path server/Cargo.toml",
     "test": "npm --prefix client test -- --run && npm --prefix client run typecheck && cargo test --manifest-path server/Cargo.toml"
