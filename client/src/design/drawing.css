@@ -1,3 +1,11 @@
+.drawing-pad-host {
+  min-width: 0;
+}
+
+.submit-slot-host {
+  display: contents;
+}
+
 .drawing-pad {
   display: grid;
   gap: var(--space-3);

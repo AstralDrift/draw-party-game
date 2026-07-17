@@ -24,7 +24,9 @@ Draw Party is an open-source Drawful-style party game for a TV/display browser a
 - `server/src/engine.rs`: room state, phase progression, scoring, prompt assignment, settings validation, reconnect/dropout rules, and engine unit tests.
 - `server/src/main.rs`: HTTP/WebSocket routes, connection authorization, static serving/cache headers, health response, room maintenance, and integration-style WebSocket tests.
 - `server/src/protocol.rs`: Rust protocol types and gameplay constants.
-- `client/src/main.ts`: TV/player rendering, room joining, reconnect behavior, turn submission, voting, and dynamic status text.
+- `client/src/main.tsx`: React entry for TV/player rendering, room joining, reconnect behavior, turn submission, voting, and dynamic status text.
+- `client/src/app/`: GameProvider (WebSocket/state) and phase router.
+- `client/src/views/`: Display and player phase screens.
 - `client/src/protocol.ts`: TypeScript protocol types and runtime guards for server messages.
 - `client/src/drawing.ts`: drawing pad, stroke capture, stroke simplification, canvas rendering, and drawing limits.
 - `client/e2e/`: Playwright coverage for full rounds, device compatibility, polish, and PWA cache behavior.

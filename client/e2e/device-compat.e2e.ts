@@ -241,7 +241,12 @@ test('phone, Fire tablet, and iPad drawing layouts keep canvas and submit reacha
 
       expect(metrics.scrollWidth).toBeLessThanOrEqual(target.viewport.width + 1);
       expect(metrics.canvas.width).toBeGreaterThanOrEqual(target.minCanvasWidth);
-      expect(metrics.canvas.top).toBeLessThanOrEqual(metrics.submit.top);
+      // Phones stack canvas above submit; tablets place them side-by-side (same row top).
+      if (target.viewport.width < 700) {
+        expect(metrics.canvas.top).toBeLessThanOrEqual(metrics.submit.top);
+      } else {
+        expect(Math.abs(metrics.canvas.top - metrics.submit.top)).toBeLessThanOrEqual(4);
+      }
       expect(metrics.submit.bottom).toBeLessThanOrEqual(target.viewport.height + 4);
       expect(metrics.tools.bottom).toBeLessThanOrEqual(target.viewport.height + 4);
       const aspect = metrics.canvas.width / Math.max(1, metrics.canvas.height);

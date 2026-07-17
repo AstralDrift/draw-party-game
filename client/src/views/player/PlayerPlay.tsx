@@ -53,6 +53,7 @@ export function PlayerGuessing(): React.JSX.Element {
             </Field>
             <Button
               wide
+              className="primary"
               disabled={submitted}
               onClick={() => {
                 const next = guess.trim();
@@ -91,6 +92,7 @@ export function PlayerVoting(): React.JSX.Element {
   const isArtist = snapshot.currentArtistId === clientId;
   const submitted = snapshot.voteSubmittedIds.includes(clientId);
   const turnToken = snapshot.turnToken;
+  const selectedVoteForTurn = selectedVote?.turnToken === turnToken ? selectedVote : null;
 
   return (
     <Shell title="Vote">
@@ -107,15 +109,19 @@ export function PlayerVoting(): React.JSX.Element {
         {isArtist ? (
           <div className="success-box">This is your drawing. Watch the vote.</div>
         ) : (
-          <div className="vote-grid">
-            {snapshot.votingOptions.map((option) => {
-              const selected = selectedVote?.optionId === option.id;
+          <div className="vote-list compact player-vote-list">
+            {snapshot.votingOptions.map((option, index) => {
+              const ownGuess = option.authorPlayerId === clientId;
+              const selected = selectedVoteForTurn?.optionId === option.id;
+              const waitingForVoteAck = Boolean(selectedVoteForTurn);
+              const disabled = submitted || ownGuess || waitingForVoteAck;
               return (
                 <button
                   key={option.id}
                   type="button"
-                  className={`vote-option${selected ? ' is-selected' : ''}`}
-                  disabled={submitted}
+                  className={`${disabled ? 'vote-option disabled' : 'vote-option'}${selected ? ' is-selected' : ''}`}
+                  disabled={disabled}
+                  style={{ ['--row-index' as string]: index }}
                   onClick={() => {
                     setSelectedVote({ turnToken, optionId: option.id });
                     send({ type: 'submitVote', turnToken, optionId: option.id });
@@ -123,7 +129,12 @@ export function PlayerVoting(): React.JSX.Element {
                     haptic(10);
                   }}
                 >
-                  {option.text}
+                  <span className="vote-answer">{option.text}</span>
+                  {selected ? <span className="vote-reason">Your vote</span> : null}
+                  {ownGuess ? <span className="vote-reason">Your fake answer</span> : null}
+                  {submitted && !ownGuess && !selected ? (
+                    <span className="vote-reason">Vote submitted</span>
+                  ) : null}
                 </button>
               );
             })}

@@ -57,27 +57,27 @@ export function PlayerDrawing(): React.JSX.Element {
       <GlassPanel className="play-panel player-turn-panel drawing-turn">
         {heading}
         <p className="action-hint">{playerActionHint('drawing', false)}</p>
-        <DrawingPadHost padRef={padRef} onReadyChange={onReadyChange} />
-        <div className={`submit-dock${ready ? ' is-ready' : ''}`}>
-          <Button
-            className="primary"
-            wide
-            disabled={!ready}
-            onClick={() => {
-              const pad = padRef.current;
-              if (!pad?.hasInk()) {
-                setErrorMessage('Draw at least one stroke before submitting.');
-                return;
-              }
-              send({ type: 'submitDrawing', turnToken, drawing: pad.getDrawing() });
-              playCue('submit');
-              haptic(12);
-            }}
-          >
-            Submit Drawing
-          </Button>
-          <p className="submit-help">{ready ? 'Ready when you are.' : 'Draw one stroke to unlock submit.'}</p>
-        </div>
+        <DrawingPadHost padRef={padRef} onReadyChange={onReadyChange}>
+          <div className={`submit-dock${ready ? ' is-ready' : ''}`}>
+            <Button
+              wide
+              disabled={!ready}
+              onClick={() => {
+                const pad = padRef.current;
+                if (!pad?.hasInk()) {
+                  setErrorMessage('Draw at least one stroke before submitting.');
+                  return;
+                }
+                send({ type: 'submitDrawing', turnToken, drawing: pad.getDrawing() });
+                playCue('submit');
+                haptic(12);
+              }}
+            >
+              Submit Drawing
+            </Button>
+            <p className="submit-help">{ready ? 'Ready when you are.' : 'Draw one stroke to unlock submit.'}</p>
+          </div>
+        </DrawingPadHost>
       </GlassPanel>
     </Shell>
   );

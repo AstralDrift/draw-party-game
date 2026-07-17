@@ -40,7 +40,7 @@ export function PlayerLobby(): React.JSX.Element {
           </div>
           <p className="muted">Watch the TV. Your device becomes the controller when each round starts.</p>
         </GlassPanel>
-        <GlassPanel tone="soft">
+        <GlassPanel className="players-panel" tone="soft">
           <div className="panel-title">Players</div>
           <PlayerList players={snapshot.players} />
         </GlassPanel>

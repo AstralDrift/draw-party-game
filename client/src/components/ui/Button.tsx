@@ -15,7 +15,13 @@ export function Button({
   children,
   ...rest
 }: ButtonProps): React.JSX.Element {
-  const classes = ['btn', `btn--${variant}`, wide ? 'btn--wide' : '', className]
+  const classes = [
+    'btn',
+    `btn--${variant}`,
+    variant === 'primary' ? 'primary' : '',
+    wide ? 'btn--wide wide' : '',
+    className
+  ]
     .filter(Boolean)
     .join(' ');
   return (

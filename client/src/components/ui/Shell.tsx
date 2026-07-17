@@ -18,18 +18,19 @@ export function Shell({ title, children }: ShellProps): React.JSX.Element {
       ? 'phase-final-scores'
       : `phase-${snapshot.phase}`;
 
-  const connection =
-    role === 'player' && !pendingJoin && !snapshot ? 'Ready to join' : status;
+  const waitingToJoin = role === 'player' && !pendingJoin && !snapshot;
+  const connection = waitingToJoin ? 'Ready to join' : status;
 
   return (
     <div className={`app-shell ${role} ${phaseClass}`}>
       <Atmosphere />
       <header className="topbar">
-        <div className="brand-mark">
-          Draw Party {title !== 'Draw Party' ? <span>· {title}</span> : null}
+        <div>
+          <div className="brand">{title}</div>
+          {snapshot ? <div className="phase">{phaseLabel(snapshot.phase)}</div> : null}
         </div>
-        <div className="connection-text" id="connection-text">
-          {snapshot ? phaseLabel(snapshot.phase) : connection}
+        <div className="connection connection-text" id="connection-text">
+          {connection}
         </div>
       </header>
       {status !== 'Connected' && snapshot ? (
