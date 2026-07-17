@@ -4,5 +4,6 @@ client/dist/
 client/test-results/
 client/playwright-report/
 client/artifacts/
+scripts/tvbro-device/.cache/
 .DS_Store
 *.log

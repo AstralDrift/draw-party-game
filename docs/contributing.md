@@ -52,7 +52,7 @@ Match blast radius for narrow PRs:
 | WebSocket / reconnect / health / static | `cargo test` (incl. `main.rs` tests) |
 | Client logic / protocol | `npm --prefix client test -- --run` + typecheck |
 | UI / layout / touch | Relevant Playwright e2e (include mobile phone contexts) |
-| TV / display layout | `npm run e2e:tv` (required for lobby/display CSS). Optional human glance: `npm run review:tv` then open `client/artifacts/tv-review/index.html` |
+| TV / display layout | `npm run e2e:tv` (geometry) + `npm run e2e:tvbro` (WebView-shaped pixel baselines). Optional: `npm run review:tv` / `review:tvbro` galleries; local APK truth via `npm run review:tvbro:device` |
 | Protocol constants/messages | Both Rust and TS sides + tests above |
 | Docs only | Link walk + constant accuracy vs code |
 
@@ -62,13 +62,31 @@ Match blast radius for narrow PRs:
 
 Geometric Playwright checks catch the failure modes that pixel snapshots miss on glass UI: clipped hero type, overlapping Players copy, oversized QR/code, and mid-game panels that force page scroll.
 
+A separate **TV Bro pixel preview** suite runs Chromium profiled like TV Bro’s default Android System WebView (Blink) — 4K included — and asserts against committed Linux screenshot baselines. That is WebView-shaped CI preview, **not** the TV Bro APK. For APK truth, use the local Android TV emulator harness.
+
 ```bash
-npm run e2e:tv          # empty + populated lobby + drawing/guessing across TV sizes
-npm run review:tv       # same gate, also writes client/artifacts/tv-review/index.html
+npm run e2e:tv              # geometric empty + populated lobby + drawing/guessing
+npm run e2e:tvbro           # WebView-shaped pixel baselines (incl. 4K)
+npm run review:tv           # geometry + client/artifacts/tv-review/index.html
+npm run review:tvbro        # pixels + same gallery path when TV_REVIEW=1
 open client/artifacts/tv-review/index.html
+
+# Optional local APK preview (Android SDK + Android TV AVD required; not CI / not a git hook):
+npm run review:tvbro:device
+open client/artifacts/tvbro-device/index.html
 ```
 
-CI runs the full e2e suite with `TV_REVIEW=1` and uploads the gallery as the `tv-layout-review` artifact.
+Regenerate Linux pixel baselines after intentional display CSS changes:
+
+```bash
+npm run e2e:tvbro -- --update-snapshots
+```
+
+Commit only Linux (`*-chromium-linux.png`) baselines — they are what CI compares. macOS local runs may differ; do not commit macOS snapshots as CI truth.
+
+CI runs the full e2e suite (geometry + pixel preview) with `TV_REVIEW=1` and uploads the gallery as the `tv-layout-review` artifact.
+
+Device harness setup: [`scripts/tvbro-device/README.md`](../scripts/tvbro-device/README.md).
 ## Design and protocol
 
 - UI work: follow [design.md](design.md) and [client-ui.md](client-ui.md). CSS belongs under `client/src/design/`.
