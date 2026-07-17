@@ -82,7 +82,7 @@ Regenerate Linux pixel baselines after intentional display CSS changes:
 npm run e2e:tvbro -- --update-snapshots
 ```
 
-Commit only Linux (`*-chromium-linux.png`) baselines — they are what CI compares. macOS local runs may differ; do not commit macOS snapshots as CI truth.
+Commit only Linux (`*-chromium-linux.png`) baselines — they are what CI compares. If local Linux still drifts from `ubuntu-latest`, download `playwright-test-results` from a failing CI run and replace the mismatched `*-actual.png` files into `client/e2e/tv-bro-visual.e2e.ts-snapshots/` (rename to `*-chromium-linux.png`). Do not commit macOS snapshots as CI truth.
 
 CI runs the full e2e suite (geometry + pixel preview) with `TV_REVIEW=1` and uploads the gallery as the `tv-layout-review` artifact.
 
