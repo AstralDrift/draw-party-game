@@ -169,7 +169,7 @@ export function isServerMessage(value: unknown): value is ServerMessage {
     case 'reactionBurst':
       return isReactionBurst(value);
     case 'pong':
-      return typeof (value as { nowMs?: unknown }).nowMs === 'number';
+      return isFiniteNumber((value as { nowMs?: unknown }).nowMs);
     case 'error':
       return (
         typeof (value as { code?: unknown }).code === 'string' &&
@@ -220,6 +220,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object';
 }
 
+/** Reject NaN/Infinity so hostile payloads cannot poison clocks, scores, or coords. */
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
@@ -250,7 +255,7 @@ function isRoomSettings(value: unknown): value is RoomSettings {
 }
 
 function isPositiveInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value > 0;
+  return isFiniteNumber(value) && Number.isInteger(value) && value > 0;
 }
 
 function isPlayer(value: unknown): value is PlayerPublic {
@@ -260,7 +265,7 @@ function isPlayer(value: unknown): value is PlayerPublic {
   return (
     typeof value.id === 'string' &&
     typeof value.name === 'string' &&
-    typeof value.score === 'number' &&
+    isFiniteNumber(value.score) &&
     typeof value.connected === 'boolean' &&
     typeof value.spectator === 'boolean' &&
     typeof value.isHost === 'boolean'
@@ -272,14 +277,14 @@ function isPlayerList(value: unknown): value is PlayerPublic[] {
 }
 
 function isPoint(value: unknown): value is Point {
-  return isRecord(value) && typeof value.x === 'number' && typeof value.y === 'number';
+  return isRecord(value) && isFiniteNumber(value.x) && isFiniteNumber(value.y);
 }
 
 function isStroke(value: unknown): value is Stroke {
   return (
     isRecord(value) &&
     typeof value.color === 'string' &&
-    typeof value.size === 'number' &&
+    isFiniteNumber(value.size) &&
     Array.isArray(value.points) &&
     value.points.every(isPoint)
   );
@@ -288,8 +293,8 @@ function isStroke(value: unknown): value is Stroke {
 function isDrawingDoc(value: unknown): value is DrawingDoc {
   return (
     isRecord(value) &&
-    typeof value.width === 'number' &&
-    typeof value.height === 'number' &&
+    isFiniteNumber(value.width) &&
+    isFiniteNumber(value.height) &&
     Array.isArray(value.strokes) &&
     value.strokes.every(isStroke)
   );
@@ -330,7 +335,7 @@ function isScoreEntry(value: unknown): value is ScoreEntry {
     isRecord(value) &&
     typeof value.playerId === 'string' &&
     typeof value.name === 'string' &&
-    typeof value.score === 'number'
+    isFiniteNumber(value.score)
   );
 }
 
@@ -339,7 +344,7 @@ function isScoreDelta(value: unknown): value is ScoreDelta {
     isRecord(value) &&
     typeof value.playerId === 'string' &&
     typeof value.name === 'string' &&
-    typeof value.delta === 'number'
+    isFiniteNumber(value.delta)
   );
 }
 
@@ -376,7 +381,7 @@ function isReactionBurst(value: unknown): boolean {
     typeof value.playerId === 'string' &&
     typeof value.name === 'string' &&
     isReactionEmoji(value.emoji) &&
-    typeof value.atMs === 'number'
+    isFiniteNumber(value.atMs)
   );
 }
 
@@ -388,14 +393,16 @@ function isRoomSnapshot(value: unknown): value is RoomSnapshot {
     typeof value.roomCode === 'string' &&
     isGamePhase(value.phase) &&
     isPlayerList(value.players) &&
-    typeof value.minPlayers === 'number' &&
-    typeof value.maxPlayers === 'number' &&
-    typeof value.currentRound === 'number' &&
-    typeof value.totalRounds === 'number' &&
+    isFiniteNumber(value.minPlayers) &&
+    isFiniteNumber(value.maxPlayers) &&
+    isFiniteNumber(value.currentRound) &&
+    isFiniteNumber(value.totalRounds) &&
     isRoomSettings(value.settings) &&
-    typeof value.turnToken === 'number' &&
-    typeof value.serverNowMs === 'number' &&
-    (value.deadlineMs === undefined || value.deadlineMs === null || typeof value.deadlineMs === 'number') &&
+    isFiniteNumber(value.turnToken) &&
+    isFiniteNumber(value.serverNowMs) &&
+    (value.deadlineMs === undefined ||
+      value.deadlineMs === null ||
+      isFiniteNumber(value.deadlineMs)) &&
     (value.currentArtistId === undefined || value.currentArtistId === null || typeof value.currentArtistId === 'string') &&
     (value.currentArtistName === undefined || value.currentArtistName === null || typeof value.currentArtistName === 'string') &&
     (value.currentDrawing === undefined || value.currentDrawing === null || isDrawingDoc(value.currentDrawing)) &&

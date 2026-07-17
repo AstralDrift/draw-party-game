@@ -13,13 +13,11 @@ export function QrCode({ url }: QrCodeProps): React.JSX.Element {
     if (!canvas) {
       return;
     }
+    // Intrinsic 256px; `.qr` in CSS scales display size for TV WebViews.
     void QRCode.toCanvas(canvas, url, {
-      width: 640,
+      width: 256,
       margin: 1,
       color: { dark: '#1d1d1f', light: '#ffffff' }
-    }).then(() => {
-      canvas.style.width = '';
-      canvas.style.height = '';
     });
   }, [url]);
 

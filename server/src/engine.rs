@@ -438,7 +438,10 @@ impl Room {
         if !player.connected {
             return Ok(None);
         }
-        if now_ms.saturating_sub(player.last_reaction_ms) < REACTION_COOLDOWN_MS {
+        // `last_reaction_ms == 0` means never reacted; do not treat epoch as a prior reaction.
+        if player.last_reaction_ms > 0
+            && now_ms.saturating_sub(player.last_reaction_ms) < REACTION_COOLDOWN_MS
+        {
             return Ok(None);
         }
         player.last_reaction_ms = now_ms;
@@ -1135,5 +1138,4 @@ fn normalize_text(text: &str) -> String {
 }
 
 #[cfg(test)]
-#[path = "engine/tests.rs"]
 mod tests;

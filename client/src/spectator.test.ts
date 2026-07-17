@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   activePlayers,
   connectedSpectators,
+  isSpectator,
   participationMode,
   playerCountLabel,
   playingPlayers
@@ -29,6 +30,8 @@ describe('spectator helpers', () => {
 
   it('activePlayers keeps connected non-spectators only', () => {
     expect(activePlayers(roster).map((entry) => entry.id)).toEqual(['a']);
+    expect(activePlayers([])).toEqual([]);
+    expect(activePlayers([player({ id: 'x', connected: false })])).toEqual([]);
   });
 
   it('playingPlayers excludes spectators regardless of connection', () => {
@@ -39,13 +42,23 @@ describe('spectator helpers', () => {
     expect(connectedSpectators(roster).map((entry) => entry.id)).toEqual(['c']);
   });
 
-  it('participationMode derives play vs watch', () => {
+  it('participationMode and isSpectator treat missing ids as non-spectators', () => {
     expect(participationMode(roster, 'a')).toBe('play');
     expect(participationMode(roster, 'c')).toBe('watch');
+    // Unknown client id is not treated as spectator (avoids locking joiners into watch UI).
     expect(participationMode(roster, 'missing')).toBe('play');
+    expect(isSpectator(roster, 'c')).toBe(true);
+    expect(isSpectator(roster, 'missing')).toBe(false);
   });
 
-  it('playerCountLabel summarizes occupancy', () => {
+  it('playerCountLabel summarizes occupancy including empty and zero-spectator rooms', () => {
     expect(playerCountLabel(roster, 8)).toBe('1 connected · 2/8 playing · 1 spectating');
+    expect(playerCountLabel([], 8)).toBe('0 connected · 0/8 playing');
+    expect(playerCountLabel([player({ id: 'c', spectator: true })], 8)).toBe(
+      '0 connected · 0/8 playing · 1 spectating'
+    );
+    expect(playerCountLabel([player({ id: 'a' }), player({ id: 'b' })], 8)).toBe(
+      '2 connected · 2/8 playing'
+    );
   });
 });

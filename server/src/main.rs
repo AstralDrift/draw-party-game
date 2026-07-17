@@ -270,7 +270,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, query: WsQuery) {
         while let Some(message) = rx.recv().await {
             match serde_json::to_string(&message) {
                 Ok(text) => {
-                    if ws_sender.send(Message::Text(text)).await.is_err() {
+                    if ws_sender.send(Message::Text(text.into())).await.is_err() {
                         break;
                     }
                 }
@@ -284,7 +284,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, query: WsQuery) {
 
     while let Some(message) = ws_receiver.next().await {
         match message {
-            Ok(Message::Text(text)) => match serde_json::from_str::<ClientMessage>(&text) {
+            Ok(Message::Text(text)) => match serde_json::from_str::<ClientMessage>(text.as_str()) {
                 Ok(client_message) => {
                     handle_client_message(&state, &client_id, client_message).await;
                 }
@@ -880,7 +880,7 @@ mod tests {
                 .expect("websocket closed")
                 .expect("websocket error");
             if let WsMessage::Text(text) = message {
-                return serde_json::from_str(&text).unwrap();
+                return serde_json::from_str(text.as_str()).unwrap();
             }
         }
     }
@@ -911,7 +911,7 @@ mod tests {
     }
 
     fn text_message(value: Value) -> WsMessage {
-        WsMessage::Text(value.to_string())
+        WsMessage::Text(value.to_string().into())
     }
 
     fn drawing_value() -> Value {

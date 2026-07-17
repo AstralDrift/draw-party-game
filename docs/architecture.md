@@ -61,6 +61,7 @@ Spectators are not eligible voters. The artist is never an eligible voter for th
 - Progress does not wait forever on disconnected players: once all **connected** eligible players have submitted (draw / guess / vote), the engine can advance.
 - Player re-join sets `connected: true`; display re-attach re-registers the display via host token. Heartbeats are keepalive only (`Pong`); they do not flip `connected`.
 - The first connected phone is the room host (`players[].isHost`) and may change lobby settings, start the game, Continue results, or Play Again. Host is sticky while that player stays connected; if they disconnect, the engine promotes the earliest-joined connected non-spectator, otherwise the earliest-joined connected player. The TV display remains authorized too (optional remote / e2e), but party play should not require a TV remote after the room code appears.
+- If a display reconnects to an expired room (`room_not_found`), the client clears the stale host token and creates a fresh lobby.
 
 ## Spectators and seat limits
 
