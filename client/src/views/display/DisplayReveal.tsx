@@ -63,8 +63,8 @@ export function DisplayVoting(): React.JSX.Element {
         </GlassPanel>
         <GlassPanel className="vote-list panel" tone="soft">
           <div className="panel-title">On the phones</div>
-          {snapshot.votingOptions.map((option, index) => (
-            <div key={option.id} className="vote-option" style={{ ['--row-index' as string]: index }}>
+          {snapshot.votingOptions.map((option) => (
+            <div key={option.id} className="vote-option">
               <span className="vote-answer">{option.text}</span>
             </div>
           ))}

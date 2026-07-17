@@ -107,7 +107,7 @@ export function PlayerVoting(): React.JSX.Element {
           <div className="success-box">You’re the artist. Watch who takes the bait.</div>
         ) : (
           <div className="vote-list compact player-vote-list">
-            {snapshot.votingOptions.map((option, index) => {
+            {snapshot.votingOptions.map((option) => {
               const ownGuess = option.authorPlayerId === clientId;
               const selected = selectedVoteForTurn?.optionId === option.id;
               const waitingForVoteAck = Boolean(selectedVoteForTurn);
@@ -118,7 +118,6 @@ export function PlayerVoting(): React.JSX.Element {
                   type="button"
                   className={`${disabled ? 'vote-option disabled' : 'vote-option'}${selected ? ' is-selected' : ''}`}
                   disabled={disabled}
-                  style={{ ['--row-index' as string]: index }}
                   onClick={() => {
                     setSelectedVote({ turnToken, optionId: option.id });
                     send({ type: 'submitVote', turnToken, optionId: option.id });

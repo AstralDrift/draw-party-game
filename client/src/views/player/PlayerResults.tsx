@@ -30,12 +30,17 @@ export function PlayerResults(): React.JSX.Element {
 }
 
 export function PlayerFinal(): React.JSX.Element {
-  const { snapshot } = useGame();
+  const { snapshot, setErrorMessage } = useGame();
   const scores = snapshot?.finalScores ?? [];
 
   return (
     <Shell title="Final Scores">
-      <ScoresPanel scores={scores} podium role="player" />
+      <ScoresPanel
+        scores={scores}
+        podium
+        role="player"
+        onShareFailed={() => setErrorMessage('Could not export the podium card.')}
+      />
     </Shell>
   );
 }

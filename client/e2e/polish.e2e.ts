@@ -121,10 +121,19 @@ test('large-phone lobby presents player-ready hierarchy without clipping', async
     await expect(ava.locator('.player-lobby-card')).toBeVisible();
     await expect(ava.locator('.mini-room-code')).toHaveText(roomCode);
     await expect(ava.getByText('Party is ready')).toBeVisible();
+    await expect(ava.getByText('Invite 1 more for better voting.')).toBeVisible();
+    await expect(ava.getByRole('button', { name: 'Edit name' })).toBeVisible();
     await expect(ava.locator('.players-panel')).toBeVisible();
     await expect(bo.locator('.player-lobby-card')).toBeVisible();
     await expect(tv.getByRole('button', { name: 'Start Game' })).toBeEnabled();
+    await expect(tv.getByText('2 ready — playable now, best with 3+ for votes and fakes.')).toBeVisible();
     await expectNoHorizontalOverflow(ava);
+
+    await ava.getByRole('button', { name: 'Edit name' }).click();
+    await ava.getByLabel('Your name').fill('Ava Renamed');
+    await ava.getByRole('button', { name: 'Save name' }).click();
+    await expect(ava.getByText("Ava Renamed, you're in")).toBeVisible();
+    await expect(tv.getByText('Ava Renamed')).toBeVisible();
 
     const lobbyBox = await ava.locator('.player-lobby-card').boundingBox();
     const playersBox = await ava.locator('.players-panel').boundingBox();
@@ -177,6 +186,10 @@ test('phone drawing screen prioritizes canvas before controls on mobile', async 
     await expect(ava.locator('.submit-help')).toHaveText('Ready when you are.');
     await ava.locator('.tools-summary').click();
     await expect(ava.locator('.draw-toolbar')).toBeVisible();
+    await expect(ava.getByRole('button', { name: /eraser/i })).toBeVisible();
+    await ava.getByRole('button', { name: 'Clear drawing' }).click();
+    await expect(ava.getByRole('button', { name: 'Tap again to clear drawing' })).toBeVisible();
+    await expect(ava.locator('.draw-status')).toHaveText('Tap clear again to erase everything.');
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }
@@ -449,6 +462,7 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
     await expect(tv.getByRole('button', { name: 'Play Again' })).toBeVisible();
     await expect(tv.getByText('Don’t stop now')).toBeVisible();
     await expect(tv.locator('.spotlight-button')).toBeVisible();
+    await expect(tv.getByRole('button', { name: /Podium/ })).toBeVisible();
     await expect(tv.locator('.podium-place')).toHaveCount(2);
     await expect(tv.locator('.score-row')).toHaveCount(2);
 
@@ -463,6 +477,7 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
       await expect(player.locator('.scores-panel')).toBeVisible();
       await expect(player.locator('.winner-callout')).toBeVisible();
       await expect(player.locator('.podium-place')).toHaveCount(2);
+      await expect(player.getByRole('button', { name: /Podium/ })).toBeVisible();
       await expectNoHorizontalOverflow(player);
       const playerScoresPanel = await player.locator('.scores-panel').boundingBox();
       if (!playerScoresPanel) {

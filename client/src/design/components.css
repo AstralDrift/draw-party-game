@@ -122,8 +122,7 @@
   text-align: center;
 }
 
-.pill,
-.badge {
+.pill {
   display: inline-flex;
   align-items: center;
   min-height: 28px;
@@ -437,6 +436,35 @@
   font-family: var(--font-display);
   font-size: 1.5rem;
   font-weight: 700;
+}
+
+.lobby-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+}
+
+.lobby-rename-button {
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 0 var(--space-3);
+}
+
+.lobby-rename-form {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+}
+
+.lobby-rename-actions {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.player-lobby-card.is-ready {
+  border-color: rgba(48, 209, 88, 0.35);
 }
 
 .score-row,

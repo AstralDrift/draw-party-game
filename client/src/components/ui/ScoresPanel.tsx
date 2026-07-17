@@ -1,7 +1,7 @@
 import { finalWinnerText, podiumTitles } from '../../polish';
 import type { ClientRole } from '../../app/GameProvider';
 import type { ScoreEntry } from '../../protocol';
-import { exportShareCard } from '../../share-card';
+import { exportShareCard, podiumShareLabel } from '../../share-card';
 import { Button } from './Button';
 import { Confetti } from './Confetti';
 import { GlassPanel } from './GlassPanel';
@@ -28,6 +28,7 @@ export function ScoresPanel({
   const listedScores = podium && role === 'player' ? scores.slice(3) : scores;
   const rankOffset = podium && role === 'player' ? 3 : 0;
   const titles = new Map(podiumTitles(scores).map((entry) => [entry.playerId, entry.title]));
+  const shareLabel = podiumShareLabel();
 
   return (
     <GlassPanel className="scores-panel" id="scores-panel">
@@ -71,7 +72,7 @@ export function ScoresPanel({
           })}
         </div>
       ) : null}
-      {podium && role === 'display' ? (
+      {podium ? (
         <Button
           variant="secondary"
           wide
@@ -84,7 +85,7 @@ export function ScoresPanel({
             });
           }}
         >
-          Share Podium Card
+          {shareLabel}
         </Button>
       ) : null}
     </GlassPanel>

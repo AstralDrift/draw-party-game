@@ -1,8 +1,9 @@
-import { Trash2, Undo2, createElement as createIconElement, type IconNode } from 'lucide';
+import { Eraser, Trash2, Undo2, createElement as createIconElement, type IconNode } from 'lucide';
 import { CANVAS_HEIGHT, CANVAS_WIDTH, type DrawingDoc, type Point, type Stroke } from './protocol';
 
 const COLORS = ['#111111', '#ff595e', '#ffca3a', '#34d399', '#1982c4', '#6a4c93', '#f957a8', '#ffffff'];
 const SIZES = [3, 6, 10, 16];
+const ERASER_COLOR = '#ffffff';
 const COLOR_LABELS: Record<string, string> = {
   '#111111': 'black ink',
   '#ff595e': 'red ink',
@@ -26,6 +27,7 @@ const SUMMARY_COLOR_LABELS: Record<string, string> = {
 const MAX_STROKES = 220;
 const MAX_POINTS_PER_STROKE = 180;
 const POINT_DISTANCE_THRESHOLD = 4;
+const CLEAR_ARM_MS = 3000;
 
 export function createEmptyDrawing(): DrawingDoc {
   return {
@@ -70,6 +72,8 @@ export class DrawingPad {
   private readonly sizeButtons = new Map<number, HTMLButtonElement>();
   private readonly undoButton: HTMLButtonElement;
   private readonly clearButton: HTMLButtonElement;
+  private clearArmed = false;
+  private clearArmTimer: number | null = null;
 
   constructor(onChange: () => void, submitSlot?: HTMLElement) {
     this.onChange = onChange;
@@ -101,12 +105,22 @@ export class DrawingPad {
     for (const color of COLORS) {
       const swatch = document.createElement('button');
       swatch.type = 'button';
-      swatch.className = 'swatch';
+      swatch.className = color === ERASER_COLOR ? 'swatch swatch-eraser' : 'swatch';
       swatch.style.background = color;
       swatch.title = `Use ${COLOR_LABELS[color] ?? color}`;
       swatch.setAttribute('aria-label', swatch.title);
+      if (color === ERASER_COLOR) {
+        const eraserIcon = createIconElement(Eraser, {
+          class: 'swatch-eraser-icon',
+          'aria-hidden': 'true',
+          width: 18,
+          height: 18
+        });
+        swatch.appendChild(eraserIcon);
+      }
       swatch.addEventListener('click', () => {
         this.color = color;
+        this.disarmClear();
         this.updateStatus();
       });
       this.colorButtons.set(color, swatch);
@@ -121,6 +135,7 @@ export class DrawingPad {
       sizeButton.title = `Use ${size}px brush`;
       sizeButton.addEventListener('click', () => {
         this.size = size;
+        this.disarmClear();
         this.updateStatus();
       });
       this.sizeButtons.set(size, sizeButton);
@@ -129,6 +144,7 @@ export class DrawingPad {
 
     this.undoButton = iconButton(Undo2, 'Undo last stroke', 'tool-button icon-button');
     this.undoButton.addEventListener('click', () => {
+      this.disarmClear();
       this.drawing.strokes.pop();
       this.limitMessage = '';
       this.redraw();
@@ -139,9 +155,14 @@ export class DrawingPad {
 
     this.clearButton = iconButton(Trash2, 'Clear drawing', 'tool-button icon-button danger');
     this.clearButton.addEventListener('click', () => {
-      if (!this.hasInk() || !window.confirm('Clear your drawing?')) {
+      if (!this.hasInk()) {
         return;
       }
+      if (!this.clearArmed) {
+        this.armClear();
+        return;
+      }
+      this.disarmClear();
       this.drawing.strokes.length = 0;
       this.limitMessage = '';
       this.redraw();
@@ -197,6 +218,7 @@ export class DrawingPad {
         this.updateStatus();
         return;
       }
+      this.disarmClear();
       this.activePointerId = event.pointerId;
       safelySetPointerCapture(this.canvas, event.pointerId);
       const point = this.getPoint(event);
@@ -283,7 +305,43 @@ export class DrawingPad {
       `${this.drawing.strokes.length} ${this.drawing.strokes.length === 1 ? 'stroke' : 'strokes'}`;
     this.undoButton.disabled = !this.hasInk();
     this.clearButton.disabled = !this.hasInk();
+    if (!this.hasInk() && this.clearArmed) {
+      this.disarmClear();
+    }
     this.updateToolState();
+  }
+
+  private armClear(): void {
+    this.clearArmed = true;
+    this.clearButton.classList.add('is-armed');
+    this.clearButton.title = 'Tap again to clear drawing';
+    this.clearButton.setAttribute('aria-label', 'Tap again to clear drawing');
+    this.limitMessage = 'Tap clear again to erase everything.';
+    if (this.clearArmTimer !== null) {
+      window.clearTimeout(this.clearArmTimer);
+    }
+    this.clearArmTimer = window.setTimeout(() => {
+      this.disarmClear();
+      this.updateStatus();
+    }, CLEAR_ARM_MS);
+    this.updateStatus();
+  }
+
+  private disarmClear(): void {
+    if (!this.clearArmed && this.clearArmTimer === null) {
+      return;
+    }
+    this.clearArmed = false;
+    this.clearButton.classList.remove('is-armed');
+    this.clearButton.title = 'Clear drawing';
+    this.clearButton.setAttribute('aria-label', 'Clear drawing');
+    if (this.clearArmTimer !== null) {
+      window.clearTimeout(this.clearArmTimer);
+      this.clearArmTimer = null;
+    }
+    if (this.limitMessage === 'Tap clear again to erase everything.') {
+      this.limitMessage = '';
+    }
   }
 
   private updateToolState(): void {
