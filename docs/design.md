@@ -21,6 +21,9 @@ Party play is dark-first (TV living rooms). Tokens below are the product palette
 | Surface glass | `--surface-glass` | `rgba(255, 255, 255, 0.08)` | Panels |
 | Surface glass strong | `--surface-glass-strong` | `rgba(255, 255, 255, 0.12)` | Elevated panels |
 | Surface glass soft | `--surface-glass-soft` | `rgba(255, 255, 255, 0.05)` | Nested wells |
+| Surface TV | `--surface-tv` | `rgba(12, 14, 22, 0.88)` | Display shell opaque glass |
+| Surface TV soft | `--surface-tv-soft` | `rgba(12, 14, 22, 0.78)` | Display soft panels |
+| Surface TV strong | `--surface-tv-strong` | `rgba(16, 18, 28, 0.92)` | Display elevated panels |
 | Border hairline | `--border-hairline` | `rgba(255, 255, 255, 0.16)` | Glass edges |
 | Border strong | `--border-strong` | `rgba(255, 255, 255, 0.28)` | Focused containment |
 | Text primary | `--text-primary` | `#f5f5f7` | Headlines, body |
@@ -90,7 +93,7 @@ TV shell: centered, max ~2520px, one composition per phase. Phone shell: max 680
 |-------|-----------|
 | Atmosphere | Radial glows on deep black |
 | Glass base | `.glass-panel`: `backdrop-filter: blur(var(--blur-glass)) saturate(140%)`, hairline border, inset highlight |
-| Soft / strong | `.glass-panel--soft` / `--strong` change fill opacity only; same blur |
+| Soft / strong | Phone/controller: fill opacity only, same blur. Display shell: use `--surface-tv*` opaque fills with blur disabled |
 
 TV display shell uses opaque glass fills (no `backdrop-filter`) and skips enter transforms — TV Bro / living-room WebViews otherwise ghost or clip lobby type.
 

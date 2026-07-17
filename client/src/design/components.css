@@ -14,17 +14,17 @@
 
 /* TV Bro / older WebViews: opaque fill so frosted glass never paints twice. */
 .app-shell.display .glass-panel {
-  background: rgba(12, 14, 22, 0.88);
+  background: var(--surface-tv);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
 
 .app-shell.display .glass-panel--soft {
-  background: rgba(12, 14, 22, 0.78);
+  background: var(--surface-tv-soft);
 }
 
 .app-shell.display .glass-panel--strong {
-  background: rgba(16, 18, 28, 0.92);
+  background: var(--surface-tv-strong);
 }
 
 .glass-panel--soft {

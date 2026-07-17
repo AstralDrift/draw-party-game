@@ -48,16 +48,6 @@ export function boxesOverlap(a: Box, b: Box, slack = 1): boolean {
   );
 }
 
-export async function rectOf(page: Page, selector: string): Promise<Box> {
-  return page.evaluate((sel) => {
-    const element = document.querySelector(sel);
-    if (!element) {
-      throw new Error(`Missing ${sel}`);
-    }
-    return element.getBoundingClientRect().toJSON();
-  }, selector);
-}
-
 export async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   await expect
     .poll(async () =>
