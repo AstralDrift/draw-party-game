@@ -157,9 +157,10 @@
 }
 
 .qr-stage {
-  width: min(220px, 22vh, 18vw);
+  --qr-size: min(220px, 22vh, 18vw);
+  /* ~180px QR after 8px stage padding (see e2e/tv-layout.ts). */
+  width: max(196px, var(--qr-size));
   max-width: 100%;
-  padding: 8px;
   margin: 0 auto;
   flex: 0 1 auto;
   min-height: 0;
@@ -168,15 +169,8 @@
 
 @supports (height: 1svh) {
   .qr-stage {
-    width: min(220px, 22svh, 18vw);
+    --qr-size: min(220px, 22svh, 18vw);
   }
-}
-
-.qr {
-  display: block;
-  width: 100% !important;
-  height: auto !important;
-  max-width: 100%;
 }
 
 .brand {
@@ -677,12 +671,12 @@
 /* Large TVs: scale with viewport height so hero + QR + CTA stay in one frame. */
 @media (min-width: 1800px) and (min-height: 1000px) {
   .qr-stage {
-    width: min(320px, 24vh, 14vw);
+    --qr-size: min(320px, 27vh, 14vw);
   }
 
   @supports (height: 1svh) {
     .qr-stage {
-      width: min(320px, 24svh, 14vw);
+      --qr-size: min(320px, 27svh, 14vw);
     }
   }
 
@@ -710,12 +704,12 @@
 
 @media (min-width: 3200px) and (min-height: 1800px) {
   .qr-stage {
-    width: min(420px, 22vh, 12vw);
+    --qr-size: min(420px, 22vh, 12vw);
   }
 
   @supports (height: 1svh) {
     .qr-stage {
-      width: min(420px, 22svh, 12vw);
+      --qr-size: min(420px, 22svh, 12vw);
     }
   }
 

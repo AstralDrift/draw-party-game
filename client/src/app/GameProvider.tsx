@@ -107,7 +107,6 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   const lastTickSecondRef = useRef(-1);
   const pendingJoinRef = useRef<PendingJoin | null>(null);
   const snapshotRef = useRef<RoomSnapshot | null>(null);
-  const connectRef = useRef<(roomCode?: string) => void>(() => {});
   const burstIdRef = useRef(0);
 
   const [snapshot, setSnapshot] = useState<RoomSnapshot | null>(null);
@@ -231,10 +230,8 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
             }
             setSnapshot(null);
             snapshotRef.current = null;
-            setErrorMessage('That room expired. Creating a fresh lobby…');
-            window.setTimeout(() => {
-              connectRef.current();
-            }, 100);
+            setErrorMessage("Couldn't reattach to that room. Creating a fresh lobby…");
+            socketRef.current?.send({ type: 'createRoom' });
             break;
           }
           setErrorMessage(message.message);
@@ -302,10 +299,6 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
     },
     [boot.role, clientId, handleServerMessage]
   );
-
-  useEffect(() => {
-    connectRef.current = connect;
-  }, [connect]);
 
   useEffect(() => {
     if (boot.role === 'display') {
