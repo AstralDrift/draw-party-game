@@ -24,7 +24,7 @@ test('one TV and three phones complete a full drawing round', async ({ baseURL, 
     const players: TestPlayer[] = pages.map((page, index) => ({ name: names[index], page }));
     await expect(tv.locator('.player-row')).toHaveCount(players.length);
     for (const player of players) {
-      await expect(tv.getByText(player.name, { exact: true })).toBeVisible();
+      await expect(tv.locator('.player-name', { hasText: player.name })).toBeVisible();
     }
 
     await tv.getByRole('button', { name: 'Start Game' }).click();
