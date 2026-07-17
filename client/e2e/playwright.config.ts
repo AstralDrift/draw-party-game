@@ -11,7 +11,13 @@ export default defineConfig({
   testMatch: '**/*.e2e.ts',
   timeout: 90_000,
   expect: {
-    timeout: 10_000
+    timeout: 10_000,
+    toHaveScreenshot: {
+      animations: 'disabled',
+      caret: 'hide',
+      // ubuntu-latest vs local Linux glass/font AA routinely lands ~5%; keep headroom.
+      maxDiffPixelRatio: 0.08
+    }
   },
   fullyParallel: false,
   workers: 1,
@@ -29,6 +35,9 @@ export default defineConfig({
       }
     }
   ],
+  // Linux CI baselines are canonical. Regenerate with:
+  //   npm run e2e:tvbro -- --update-snapshots
+  snapshotPathTemplate: '{testDir}/{testFileDir}/{testFileName}-snapshots/{arg}-{projectName}-{platform}{ext}',
   webServer: process.env.E2E_BASE_URL
     ? undefined
     : {

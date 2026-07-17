@@ -9,7 +9,10 @@
     "e2e": "playwright test -c e2e/playwright.config.ts",
     "e2e:install": "playwright install chromium",
     "e2e:tv": "playwright test -c e2e/playwright.config.ts --grep \"TV layout gate\"",
+    "e2e:tvbro": "playwright test -c e2e/playwright.config.ts --grep \"TV Bro pixel preview\"",
     "review:tv": "TV_REVIEW=1 playwright test -c e2e/playwright.config.ts --grep \"TV layout gate\"",
+    "review:tvbro": "TV_REVIEW=1 playwright test -c e2e/playwright.config.ts --grep \"TV Bro pixel preview\"",
+    "review:tvbro:device": "bash ../scripts/tvbro-device/run.sh",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest"
   },

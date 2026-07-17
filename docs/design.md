@@ -95,7 +95,7 @@ TV shell: centered, max ~2520px, one composition per phase. Phone shell: max 680
 | Glass base | `.glass-panel`: `backdrop-filter: blur(var(--blur-glass)) saturate(140%)`, hairline border, inset highlight |
 | Soft / strong | Phone/controller: fill opacity only, same blur. Display shell: use `--surface-tv*` opaque fills with blur disabled |
 
-TV display shell uses opaque glass fills (no `backdrop-filter`) and skips enter transforms — TV Bro / living-room WebViews otherwise ghost or clip lobby type. QR sizing is stage-driven (`vh` with `svh` progressive enhancement) so canvases never keep a 640px intrinsic size that overlaps the join URL / Start CTA.
+TV display shell uses opaque glass fills (no `backdrop-filter`) and skips enter transforms — TV Bro / living-room WebViews otherwise ghost or clip lobby type. QR sizing is stage-driven (`vh` with `svh` progressive enhancement) so canvases never keep a 640px intrinsic size that overlaps the join URL / Start CTA. Validate display CSS with `npm run e2e:tv` (geometry) and `npm run e2e:tvbro` (WebView-shaped pixel baselines); optional real-APK glance: `npm run review:tvbro:device` (see [contributing.md](contributing.md#tv-layout-gate-living-room--tv-bro)).
 
 Shadows are soft and short (`0 12px 40px rgba(0,0,0,0.35)`), never hard pixel-offset arcade shadows.
 

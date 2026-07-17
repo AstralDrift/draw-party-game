@@ -204,7 +204,7 @@ export async function writeTvReviewIndex(entries: Array<{ title: string; file: s
 </head>
 <body>
   <h1>Draw Party TV layout review</h1>
-  <p>Geometric e2e already asserted non-clip / non-overlap. Glance these shots before shipping living-room UI.</p>
+  <p>Glance these shots before shipping living-room UI. CI also asserts geometry (clip/overlap) and WebView-shaped pixel baselines.</p>
   <main>
 ${cards}
   </main>
