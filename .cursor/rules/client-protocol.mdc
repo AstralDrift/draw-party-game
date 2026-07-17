@@ -1,0 +1,13 @@
+---
+description: Dual-update protocol contract
+globs: client/src/protocol.ts,server/src/protocol.rs
+alwaysApply: false
+---
+
+Protocol types and gameplay constants are shared across Rust and TypeScript.
+
+- Edit `server/src/protocol.rs` and `client/src/protocol.ts` together.
+- Keep JSON `camelCase` and tagged `type` discriminators consistent.
+- Client guards must reject unknown or malformed server messages without mutating UI state.
+- Update `docs/protocol.md` when constants, messages, or limits change.
+- Validate with `cargo test --manifest-path server/Cargo.toml`, `npm --prefix client test -- --run`, and `npm --prefix client run typecheck`.
