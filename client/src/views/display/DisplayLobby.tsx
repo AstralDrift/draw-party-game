@@ -38,8 +38,8 @@ export function DisplayLobby(): React.JSX.Element {
       <GlassPanel className="room-panel">
         <div className="room-hero-copy">
           <p className="eyebrow">Scan to play</p>
-          <h2>Everybody draws. Everybody lies.</h2>
-          <p className="muted room-hero-sub">Phones scan the QR or type the code. First laugh in under a minute.</p>
+          <h2>Everybody draws. Everybody guesses.</h2>
+          <p className="muted room-hero-sub">Phones scan the QR or type the code.</p>
         </div>
         <div className="room-code-wrap">
           <span className="room-code-label">Room Code</span>

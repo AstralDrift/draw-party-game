@@ -83,7 +83,7 @@ test('TV lobby gives room code and QR the showcase hierarchy', async ({ baseURL,
     await expect(page.locator('.room-code')).toHaveText(/[A-Z]{4}/);
     await expect(page.locator('.qr')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Start Game' })).toBeVisible();
-    await expect(page.getByText('Everybody draws. Everybody lies.')).toBeVisible();
+    await expect(page.getByText('Everybody draws. Everybody guesses.')).toBeVisible();
     await expect(page.locator('.settings-panel')).toBeVisible();
     await expectNoVerticalOverflow(page);
 
