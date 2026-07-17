@@ -69,29 +69,19 @@ Scoring values and reconnect rules: [docs/architecture.md](docs/architecture.md)
 | Design tokens or glass rules | `client/src/design/**`, `docs/design.md` |
 | Client phase ownership or routes | `docs/client-ui.md` (do not move phase authority to the client) |
 | Env / deploy / PWA cache | `docs/deployment.md`, README deploy section if the quick start changes |
-| Validation commands | `docs/contributing.md`, `AGENTS.md`, CI |
+| Validation commands | `docs/contributing.md` only (README/AGENTS link there) |
 
 ## Validation
 
-Use the repo scripts and direct toolchain commands already documented in `README.md` and CI:
+Canonical command list and blast-radius matrix: [docs/contributing.md](docs/contributing.md#validation).
 
-```bash
-cargo fmt --check --manifest-path server/Cargo.toml
-cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path server/Cargo.toml
-npm --prefix client run typecheck
-npm --prefix client test -- --run
-npm --prefix client run build
-npm run e2e
-```
+Narrow change tips (see contributing for the full matrix):
 
-For narrow changes, match validation to blast radius:
-
-- Engine or scoring changes: `cargo test --manifest-path server/Cargo.toml`, plus targeted tests in `server/src/engine/tests.rs`.
-- WebSocket, reconnect, health, or static-serving changes: `cargo test --manifest-path server/Cargo.toml`, plus relevant tests in `server/src/main.rs`.
-- Client logic or protocol changes: `npm --prefix client test -- --run` and `npm --prefix client run typecheck`.
-- UI/layout/touch changes: relevant Playwright e2e coverage, including mobile-sized phone contexts.
-- Release/deployment verification: check `/api/health` for the expected deployed commit, then run `E2E_BASE_URL=<deployment-url> npm run e2e` when practical.
+- Engine / scoring: `cargo test --manifest-path server/Cargo.toml` (+ `server/src/engine/tests.rs`)
+- WebSocket / reconnect / health / static: `cargo test` including `main.rs` tests
+- Client logic / protocol: `npm --prefix client test -- --run` + typecheck
+- UI / layout / touch: relevant Playwright e2e (include mobile phone contexts)
+- Release verification: `/api/health` commit check, then `E2E_BASE_URL=<url> npm run e2e` when practical
 
 ## Development Guidance
 

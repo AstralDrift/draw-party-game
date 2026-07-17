@@ -57,7 +57,7 @@ Important fields:
 | `joinRoom` | Player joins with `roomCode` + `name` |
 | `setName` | Rename in lobby |
 | `updateRoomSettings` | Display updates timers/rounds/pack |
-| `startGame` | Display starts |
+| `startGame` | Display starts the game, Continues after results, or Play Again from final scores |
 | `submitDrawing` | `turnToken` + `drawing` |
 | `submitGuess` | `turnToken` + `guess` |
 | `submitVote` | `turnToken` + `optionId` |
