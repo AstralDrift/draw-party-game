@@ -426,11 +426,12 @@
 }
 
 .drawing-turn .canvas-stage {
+  /* Reserve chrome for prompt/hint/submit/tools so short phones keep tools in-viewport. */
   width: min(
     100%,
-    calc(min(70svh, calc(100svh - 150px - var(--safe-top) - var(--safe-bottom))) * 4 / 3)
+    calc(min(70svh, calc(100svh - 162px - var(--safe-top) - var(--safe-bottom))) * 4 / 3)
   );
-  max-height: min(70svh, calc(100svh - 150px - var(--safe-top) - var(--safe-bottom)));
+  max-height: min(70svh, calc(100svh - 162px - var(--safe-top) - var(--safe-bottom)));
   margin: 0 auto;
 }
 
@@ -494,6 +495,28 @@
 
   .player.phase-drawing .deadline {
     font-size: 1.65rem;
+  }
+
+  /* Reclaim vertical chrome so tools stay in the SE viewport. */
+  .player.phase-drawing .action-hint {
+    display: none;
+  }
+
+  .player.phase-drawing .player-turn-panel {
+    gap: 6px;
+  }
+
+  .drawing-turn .drawing-pad {
+    gap: 8px;
+  }
+
+  .drawing-turn .tools-drawer,
+  .drawing-turn .submit-dock {
+    padding: var(--space-2);
+  }
+
+  .drawing-turn .submit-help {
+    display: none;
   }
 }
 

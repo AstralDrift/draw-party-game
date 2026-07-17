@@ -10,6 +10,8 @@ import { PlayerLobby } from '../views/player/PlayerLobby';
 import { PlayerDrawing } from '../views/player/PlayerDrawing';
 import { PlayerGuessing, PlayerVoting } from '../views/player/PlayerPlay';
 import { PlayerFinal, PlayerResults } from '../views/player/PlayerResults';
+import { SpectatorPhase } from '../views/player/SpectatorWatch';
+import { isSpectator } from '../spectator';
 
 function DisplayApp(): React.JSX.Element {
   const { snapshot, status } = useGame();
@@ -55,9 +57,13 @@ function DisplayApp(): React.JSX.Element {
 }
 
 function PlayerApp(): React.JSX.Element {
-  const { snapshot } = useGame();
+  const { snapshot, clientId } = useGame();
   if (!snapshot) {
     return <JoinScreen />;
+  }
+
+  if (isSpectator(snapshot.players, clientId)) {
+    return <SpectatorPhase />;
   }
 
   switch (snapshot.phase) {

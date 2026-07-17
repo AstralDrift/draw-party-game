@@ -101,7 +101,9 @@ export function JoinScreen(): React.JSX.Element {
             Join
           </Button>
         </form>
-        <p className="muted join-note fine-print">Phones, tablets, and iPads all work as controllers.</p>
+        <p className="muted join-note fine-print">
+          Join before start to play. Mid-game joins watch as spectators.
+        </p>
       </GlassPanel>
     </Shell>
   );

@@ -1,4 +1,5 @@
 import type { GamePhase, RoomSnapshot } from '../../protocol';
+import { playingPlayers } from '../../spectator';
 import { GlassPanel } from './GlassPanel';
 
 type SubmissionPhase = Extract<GamePhase, 'drawing' | 'guessing' | 'voting'>;
@@ -43,7 +44,7 @@ export function ProgressPanel({
   submittedIds,
   phase
 }: ProgressPanelProps): React.JSX.Element {
-  const players = snapshot.players;
+  const players = playingPlayers(snapshot.players);
   const connectedPlayers = players.filter((player) => player.connected);
   const eligiblePlayers = connectedPlayers.filter(
     (player) => phase === 'drawing' || player.id !== snapshot.currentArtistId

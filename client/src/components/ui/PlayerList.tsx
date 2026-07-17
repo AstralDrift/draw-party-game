@@ -12,16 +12,27 @@ export function PlayerList({ players, showScores = false }: PlayerListProps): Re
 
   return (
     <div className="player-list">
-      {players.map((player, index) => (
-        <div
-          key={player.id}
-          className={`player-row ${player.connected ? 'online' : 'offline'}`}
-          style={{ ['--row-index' as string]: index }}
-        >
-          <span className="player-name">{player.name}</span>
-          <span className="pill">{showScores ? `${player.score} pts` : player.connected ? 'online' : 'offline'}</span>
-        </div>
-      ))}
+      {players.map((player, index) => {
+        const statusPill = player.spectator
+          ? player.connected
+            ? 'spectating'
+            : 'spectator offline'
+          : showScores
+            ? `${player.score} pts`
+            : player.connected
+              ? 'online'
+              : 'offline';
+        return (
+          <div
+            key={player.id}
+            className={`player-row ${player.connected ? 'online' : 'offline'}${player.spectator ? ' is-spectator' : ''}`}
+            style={{ ['--row-index' as string]: index }}
+          >
+            <span className="player-name">{player.name}</span>
+            <span className={`pill${player.spectator ? ' spectator-pill' : ''}`}>{statusPill}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -216,7 +216,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
           break;
         case 'error':
           setErrorMessage(message.message);
-          if (['room_not_found', 'game_in_progress', 'room_full'].includes(message.code)) {
+          if (['room_not_found', 'room_full'].includes(message.code)) {
             setPendingJoin(null);
             setStatus('Ready to join');
             socketRef.current?.close();

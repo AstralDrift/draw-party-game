@@ -6,6 +6,7 @@ import {
   type PromptPackId,
   type RoomSettings
 } from '../../protocol';
+import { activePlayers, playerCountLabel } from '../../spectator';
 import { Button } from '../../components/ui/Button';
 import { Field, TextInput, TextSelect } from '../../components/ui/Field';
 import { GlassPanel } from '../../components/ui/GlassPanel';
@@ -27,7 +28,7 @@ export function DisplayLobby(): React.JSX.Element {
   }
 
   const joinUrl = `${window.location.origin}/join/${snapshot.roomCode}`;
-  const connectedPlayers = snapshot.players.filter((player) => player.connected);
+  const connectedPlayers = activePlayers(snapshot.players);
   const canStart = connectedPlayers.length >= snapshot.minPlayers;
   const neededPlayers = Math.max(0, snapshot.minPlayers - connectedPlayers.length);
   const settings = snapshot.settings;
@@ -68,9 +69,7 @@ export function DisplayLobby(): React.JSX.Element {
         <GlassPanel className="players-panel" tone="soft">
           <div className="panel-title">Players</div>
           <PlayerList players={snapshot.players} showScores />
-          <p className="muted">
-            {connectedPlayers.length} connected · {snapshot.players.length}/{snapshot.maxPlayers} joined
-          </p>
+          <p className="muted">{playerCountLabel(snapshot.players, snapshot.maxPlayers)}</p>
         </GlassPanel>
         <SettingsPanel settings={settings} onSave={updateSettings} soundOn={soundOn} onToggleSound={toggleSound} />
       </div>

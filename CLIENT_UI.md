@@ -24,10 +24,13 @@ client/src/
   design/                  # Tokens + base + layout + motion + drawing styles
   components/ui/           # Glass primitives + results/scores/progress
   hooks/useRevealStage.ts  # Results reveal staging timing + React hook
-  views/display|player/    # Phase screens
+  spectator.ts             # Active/playing/spectator roster helpers
+  views/player/SpectatorWatch.tsx  # Mid-game watch-only phone UI
   # shared contracts:
   protocol.ts, net.ts, drawing.ts, time.ts, polish.ts, sound.ts, share-card.ts
 ```
+
+Mid-game joiners become `PlayerPublic.spectator` until the next drawing round (server promotes). Lobby readiness and progress panels count active (non-spectator) players only.
 
 ## Non-negotiables (preserved)
 

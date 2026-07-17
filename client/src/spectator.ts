@@ -1,4 +1,3 @@
-import { el } from './dom';
 import type { PlayerPublic } from './protocol';
 
 export type ParticipationMode = 'play' | 'watch';
@@ -24,19 +23,7 @@ export function participationMode(players: PlayerPublic[], clientId: string): Pa
   return isSpectator(players, clientId) ? 'watch' : 'play';
 }
 
-export function spectatorBanner(): HTMLElement {
-  return el(
-    'div',
-    { class: 'spectator-banner' },
-    el('span', { class: 'pill spectator-pill' }, 'Spectating'),
-    el('p', { class: 'muted' }, 'Watch-only for now. You join as a player on the next drawing round.')
-  );
-}
-
-export function playerCountLabel(
-  players: PlayerPublic[],
-  maxPlayers: number
-): string {
+export function playerCountLabel(players: PlayerPublic[], maxPlayers: number): string {
   const connected = activePlayers(players).length;
   const spectators = connectedSpectators(players).length;
   const spectatorNote = spectators > 0 ? ` · ${spectators} spectating` : '';

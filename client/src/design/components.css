@@ -162,6 +162,27 @@
   opacity: 0.55;
 }
 
+.player-row.is-spectator .player-name {
+  opacity: 0.78;
+}
+
+.spectator-banner {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.spectator-pill,
+.pill.spectator-pill {
+  background: var(--surface-glass-strong);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.spectator-turn .vote-option.disabled {
+  opacity: 0.85;
+}
+
 .player-name {
   font-weight: 600;
 }
