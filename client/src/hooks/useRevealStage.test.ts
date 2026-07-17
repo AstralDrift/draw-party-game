@@ -11,16 +11,19 @@ vi.mock('../sound', () => ({
 describe('stageVisible', () => {
   const stages: RevealStage[] = ['hold', 'tally', 'correct', 'deltas', 'complete'];
 
-  it('shows earlier stages once a later stage is active', () => {
-    expect(stageVisible('correct', 'hold')).toBe(true);
-    expect(stageVisible('correct', 'tally')).toBe(true);
-    expect(stageVisible('correct', 'correct')).toBe(true);
-    expect(stageVisible('correct', 'deltas')).toBe(false);
-  });
+  it('exposes a full progressive visibility matrix', () => {
+    const expected: Record<RevealStage, RevealStage[]> = {
+      hold: ['hold'],
+      tally: ['hold', 'tally'],
+      correct: ['hold', 'tally', 'correct'],
+      deltas: ['hold', 'tally', 'correct', 'deltas'],
+      complete: stages
+    };
 
-  it('shows every stage when complete', () => {
-    for (const target of stages) {
-      expect(stageVisible('complete', target)).toBe(true);
+    for (const current of stages) {
+      for (const target of stages) {
+        expect(stageVisible(current, target)).toBe(expected[current].includes(target));
+      }
     }
   });
 });
