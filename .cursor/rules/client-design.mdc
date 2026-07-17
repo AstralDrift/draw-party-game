@@ -7,7 +7,7 @@ alwaysApply: false
 Follow `docs/design.md`. Product UI is dark-first apple-glass; that overrides generic “avoid dark mode” style biases for this repo.
 
 - Keep CSS under `client/src/design/` (tokens, base, components, drawing, layout, motion).
-- Use existing button classes: `btn` / `btn--primary|secondary|ghost` / `btn--wide`.
+- Primary actions use `btn` / `btn--primary|secondary|ghost` / `btn--wide`; modifiers like `spotlight-button`, `tool-button`, and `reaction-button` are allowed.
 - Accent is for interactive actions only — no purple, neon arcade, or cream/terracotta brand fills.
 - Animate `transform` and `opacity` only; honor `prefers-reduced-motion`.
 - When tokens or component rules change, update both CSS and `docs/design.md`.

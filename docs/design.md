@@ -89,9 +89,8 @@ TV shell: centered, max ~2520px, one composition per phase. Phone shell: max 680
 | Level | Treatment |
 |-------|-----------|
 | Atmosphere | Radial glows on deep black |
-| Glass 0 | Soft fill, no blur (scrolling content) |
-| Glass 1 | `backdrop-filter: blur(18px) saturate(140%)`, hairline border, inset highlight |
-| Glass 2 | Stronger fill + blur for sticky bars / modals |
+| Glass base | `.glass-panel`: `backdrop-filter: blur(var(--blur-glass)) saturate(140%)`, hairline border, inset highlight |
+| Soft / strong | `.glass-panel--soft` / `--strong` change fill opacity only; same blur |
 
 Shadows are soft and short (`0 12px 40px rgba(0,0,0,0.35)`), never hard pixel-offset arcade shadows.
 
@@ -116,7 +115,7 @@ Animate only `transform` and `opacity`. Honor `prefers-reduced-motion: reduce` b
 | `Button` | Pill CTA / glass secondary / quiet tool |
 | `Field` | Glass input + label |
 | `Badge` / `Pill` | Online, score, status chips |
-| `BrandMark` | Wordmark treatment |
+| Shell brand | Wordmark via Shell / `.brand` (`.brand-mark` CSS exists but is unused) |
 | `PlayerList` | Couch-readable roster rows (`.player-row`) |
 | `Deadline` | Large countdown (`#deadline-text`) |
 | `QrCode` | Join QR |

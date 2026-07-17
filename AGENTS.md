@@ -45,7 +45,9 @@ Draw Party is an open-source Drawful-style party game for a TV/display browser a
 - `client/src/views/`: display and player phase screens (including spectator watch).
 - `client/src/protocol.ts`: TypeScript protocol types and runtime guards for server messages.
 - `client/src/drawing.ts`: drawing pad, stroke capture, simplification, rendering, limits.
-- `client/src/spectator.ts`, `polish.ts`, `hooks/useRevealStage.ts`: spectator helpers and results reveal staging.
+- `client/src/spectator.ts`: active/spectator roster helpers.
+- `client/src/hooks/useRevealStage.ts`: results reveal staging timing (hold → tally → correct → deltas → complete).
+- `client/src/polish.ts`: outcome copy, podium titles, and action hints.
 - `client/src/design/`: CSS tokens and glass styles (see `docs/design.md`).
 - `client/e2e/`: Playwright coverage for full rounds, device compatibility, polish, and PWA cache behavior.
 
@@ -55,7 +57,7 @@ Draw Party is an open-source Drawful-style party game for a TV/display browser a
 2. Drawing: all connected players draw their assigned prompts and submit once they have ink.
 3. Guessing: each drawing is revealed in turn; non-artist players submit fake answers. Phones may send ephemeral reactions.
 4. Voting: non-artist players choose the real prompt while the artist watches. Reactions remain available.
-5. Results: the client stages the reveal (votes → correct answer → deltas); the engine auto-advances after `resultsSeconds` unless the display Continues early. Scoring includes nobody-found and perfect-truth bonuses.
+5. Results: the client stages the reveal (hold → tally → correct → deltas → complete); the engine auto-advances after `resultsSeconds` unless the display Continues early. Scoring includes nobody-found and perfect-truth bonuses.
 6. Final Scores: after the configured round count, the display shows the podium (with titles) and can start again or export a share card.
 
 Scoring values and reconnect rules: [docs/architecture.md](docs/architecture.md).

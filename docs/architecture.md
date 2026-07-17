@@ -15,7 +15,7 @@ See also: [protocol.md](protocol.md) for the wire contract.
 | WebSocket auth, static serving, `/api/health` | Server (`server/src/main.rs`) |
 | TV/phone rendering and drawing input | Client |
 | Protocol guards (reject unknown/malformed) | Client (`client/src/protocol.ts`) |
-| Results reveal staging (votes → correct → deltas) | Client (`client/src/hooks/useRevealStage.ts`, `client/src/polish.ts`) |
+| Results reveal staging (hold → tally → correct → deltas → complete) | Client (`client/src/hooks/useRevealStage.ts`) |
 | PWA shell cache (not `/api/*` or `/ws`) | Client (`client/public/sw.js`) |
 
 Do not reintroduce peer-to-peer room authority or client-owned phase transitions. The display may request Continue early during Results; the engine still owns whether and when the phase advances.
@@ -59,7 +59,7 @@ Spectators are not eligible voters. The artist is never an eligible voter for th
 
 - Disconnected players remain on the roster with `connected: false`.
 - Progress does not wait forever on disconnected players: once all **connected** eligible players have submitted (draw / guess / vote), the engine can advance.
-- Heartbeats and WebSocket reconnect restore `connected` without resetting room authority.
+- WebSocket re-join / display re-attach restores `connected` without resetting room authority. Heartbeats are keepalive only (`Pong`); they do not flip `connected`.
 
 ## Spectators and seat limits
 
@@ -71,8 +71,8 @@ Spectators are not eligible voters. The artist is never an eligible voter for th
 
 The server decides scores and when Results ends. The client only stages presentation:
 
-- Hold → tally (votes) → correct answer → score deltas → complete
-- Timing helpers: `client/src/hooks/useRevealStage.ts` and `client/src/polish.ts`
+- Hold → tally (votes) → correct answer → score deltas → complete via `client/src/hooks/useRevealStage.ts`
+- Outcome copy, podium titles, and action hints live in `client/src/polish.ts` (not reveal timing)
 
 Changing reveal theater does not change scoring; changing scoring requires engine + tests updates and usually a docs touch here.
 

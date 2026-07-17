@@ -55,14 +55,14 @@ Important fields:
 |------|---------|
 | `createRoom` | Display creates a room |
 | `joinRoom` | Player joins with `roomCode` + `name` |
-| `setName` | Rename in lobby |
-| `updateRoomSettings` | Display updates timers/rounds/pack |
+| `setName` | Rename player (no phase gate; UI is typically lobby) |
+| `updateRoomSettings` | Display updates timers/rounds/pack (lobby only) |
 | `startGame` | Display starts the game, Continues after results, or Play Again from final scores |
 | `submitDrawing` | `turnToken` + `drawing` |
 | `submitGuess` | `turnToken` + `guess` |
 | `submitVote` | `turnToken` + `optionId` |
 | `sendReaction` | `emoji` (allowlisted) |
-| `heartbeat` | Keepalive / time sync |
+| `heartbeat` | Keepalive |
 | `leaveRoom` | Leave |
 
 ## Server → client (`ServerMessage`)
@@ -79,7 +79,7 @@ Important fields:
 | `roundResult` | Scores and breakdown |
 | `finalScores` | End-of-game podium data |
 | `reactionBurst` | Ephemeral reaction |
-| `pong` | Heartbeat reply with `nowMs` |
+| `pong` | Heartbeat reply (`nowMs` unused by client; countdown sync uses snapshot `serverNowMs`) |
 | `error` | `code` + `message` |
 
 ## Client guards

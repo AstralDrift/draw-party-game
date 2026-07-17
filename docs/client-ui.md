@@ -39,7 +39,7 @@ Mid-game joiners become `PlayerPublic.spectator` until the next drawing round (s
 - PWA `sw.js` network-first for `/api/*` and `/ws`
 - Protocol guards in `protocol.ts`
 - All client CSS under `design/` (tokens, base, components, drawing, layout, motion)
-- Buttons use `btn` / `btn--primary|secondary|ghost` / `btn--wide` only
+- Primary actions use `Button` (`btn` / `btn--primary|secondary|ghost` / `btn--wide`); modifiers like `spotlight-button`, `tool-button`, and `reaction-button` are allowed
 
 ## Validation
 
