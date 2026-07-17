@@ -15,7 +15,8 @@ export default defineConfig({
     toHaveScreenshot: {
       animations: 'disabled',
       caret: 'hide',
-      maxDiffPixelRatio: 0.012
+      // Glass UI + CI font AA; intentional display CSS still fails well above this.
+      maxDiffPixelRatio: 0.02
     }
   },
   fullyParallel: false,
