@@ -49,7 +49,7 @@ Draw Party is an open-source Drawful-style party game for a TV/display browser a
 - `client/src/hooks/useRevealStage.ts`: results reveal staging timing (hold → tally → correct → deltas → complete).
 - `client/src/polish.ts`: outcome copy, podium titles, and action hints.
 - `client/src/design/`: CSS tokens and glass styles (see `docs/design.md`).
-- `client/e2e/`: Playwright coverage for full rounds, device compatibility, polish, and PWA cache behavior.
+- `client/e2e/`: Playwright coverage for full rounds, device compatibility, TV layout gates, polish, and PWA cache behavior.
 
 ## Game Flow
 
@@ -83,6 +83,7 @@ Narrow change tips (see contributing for the full matrix):
 - WebSocket / reconnect / health / static: `cargo test` including `main.rs` tests
 - Client logic / protocol: `npm --prefix client test -- --run` + typecheck
 - UI / layout / touch: relevant Playwright e2e (include mobile phone contexts)
+- TV / display layout: `npm run e2e:tv` (+ `npm run review:tv` gallery when shipping lobby/display CSS)
 - Release verification: `/api/health` commit check, then `E2E_BASE_URL=<url> npm run e2e` when practical
 
 ## Development Guidance

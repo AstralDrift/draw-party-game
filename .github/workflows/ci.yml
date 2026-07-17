@@ -54,3 +54,14 @@ jobs:
 
       - name: Run Playwright e2e
         run: npm run e2e
+        env:
+          TV_REVIEW: '1'
+
+      - name: Upload TV layout review gallery
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tv-layout-review
+          path: client/artifacts/tv-review/
+          if-no-files-found: ignore
+          retention-days: 14

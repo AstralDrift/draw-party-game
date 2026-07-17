@@ -65,8 +65,8 @@ export function DisplayLobby(): React.JSX.Element {
       <div className="lobby-side">
         <GlassPanel className="players-panel" tone="soft">
           <div className="panel-title">Players</div>
+          <p className="muted players-count">{playerCountLabel(snapshot.players, snapshot.maxPlayers)}</p>
           <PlayerList players={snapshot.players} showScores />
-          <p className="muted">{playerCountLabel(snapshot.players, snapshot.maxPlayers)}</p>
         </GlassPanel>
         <SettingsPanel settings={settings} onSave={updateSettings} soundOn={soundOn} onToggleSound={toggleSound} />
       </div>

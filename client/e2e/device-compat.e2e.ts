@@ -1,4 +1,10 @@
 import { expect, test, type Browser, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
+import {
+  assertDisplayLobbyLayout,
+  expectNoHorizontalOverflow,
+  expectNoVerticalOverflow,
+  TV_VIEWPORTS
+} from './tv-layout';
 
 type Viewport = {
   width: number;
@@ -13,14 +19,6 @@ type PlayerTarget = {
   minCanvasWidth: number;
   minBackingRatio?: number;
 };
-
-const TV_TARGETS: Array<{ name: string; viewport: Viewport }> = [
-  { name: 'tvbro-720p', viewport: { width: 1280, height: 720 } },
-  { name: 'tvbro-768p', viewport: { width: 1366, height: 768 } },
-  { name: 'full-hd-tv', viewport: { width: 1920, height: 1080 } },
-  { name: 'qhd-tv', viewport: { width: 2560, height: 1440 } },
-  { name: 'uhd-4k-tv', viewport: { width: 3840, height: 2160 } }
-];
 
 const PLAYER_TARGETS: PlayerTarget[] = [
   {
@@ -102,23 +100,12 @@ const PLAYER_TARGETS: PlayerTarget[] = [
 test('TV Bro style lobby fits from 720p through 4K without page scroll', async ({ baseURL, browser }, testInfo) => {
   const appUrl = makeAppUrl(baseURL);
 
-  for (const target of TV_TARGETS) {
-    const context = await browser.newContext({ viewport: target.viewport });
+  for (const target of TV_VIEWPORTS) {
+    const context = await browser.newContext({ viewport: { width: target.width, height: target.height } });
     try {
       const page = await context.newPage();
       await page.goto(appUrl('/'));
-      await expect(page.locator('.room-code')).toHaveText(/[A-Z]{4}/);
-      await expect(page.locator('.qr')).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Start Game' })).toBeVisible();
-      await expectNoHorizontalOverflow(page);
-      await expectNoVerticalOverflow(page);
-
-      const metrics = await tvMetrics(page);
-      expect(metrics.qr.bottom).toBeLessThanOrEqual(target.viewport.height + 4);
-      expect(metrics.start.bottom).toBeLessThanOrEqual(target.viewport.height + 4);
-      expect(metrics.roomCode.height).toBeLessThan(target.viewport.height * 0.18);
-      expect(metrics.qr.width).toBeGreaterThanOrEqual(target.viewport.width >= 1800 ? 250 : 180);
-
+      await assertDisplayLobbyLayout(page, target);
       await page.screenshot({ path: testInfo.outputPath(`${target.name}-lobby.png`), fullPage: false });
     } finally {
       await context.close();
@@ -297,43 +284,6 @@ async function startSoloDrawing(
   await tv.getByRole('button', { name: 'Start Game' }).click();
   await expect(player.locator('canvas.draw-canvas')).toBeVisible();
   return { player, tv };
-}
-
-async function expectNoHorizontalOverflow(page: Page): Promise<void> {
-  await expect
-    .poll(async () =>
-      page.evaluate(() => Math.ceil(document.documentElement.scrollWidth) <= Math.ceil(window.innerWidth) + 1)
-    )
-    .toBe(true);
-}
-
-async function expectNoVerticalOverflow(page: Page): Promise<void> {
-  await expect
-    .poll(async () =>
-      page.evaluate(() => Math.ceil(document.documentElement.scrollHeight) <= Math.ceil(window.innerHeight) + 4)
-    )
-    .toBe(true);
-}
-
-async function tvMetrics(page: Page): Promise<{
-  qr: DOMRect;
-  roomCode: DOMRect;
-  start: DOMRect;
-}> {
-  return page.evaluate(() => {
-    const rect = (selector: string): DOMRect => {
-      const element = document.querySelector(selector);
-      if (!element) {
-        throw new Error(`Missing ${selector}`);
-      }
-      return element.getBoundingClientRect().toJSON();
-    };
-    return {
-      qr: rect('.qr'),
-      roomCode: rect('.room-code'),
-      start: rect('.start-button')
-    };
-  });
 }
 
 async function playerMetrics(page: Page): Promise<{
