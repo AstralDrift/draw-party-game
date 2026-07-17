@@ -86,7 +86,7 @@ Commit only Linux (`*-chromium-linux.png`) baselines — they are what CI compar
 
 CI runs the full e2e suite (geometry + pixel preview) with `TV_REVIEW=1` and uploads the gallery as the `tv-layout-review` artifact.
 
-Device harness setup: [`scripts/tvbro-device/README.md`](../scripts/tvbro-device/README.md).
+Device harness setup: [`scripts/tvbro-device/README.md`](../scripts/tvbro-device/README.md) (requires Android TV AVD + an already-running Draw Party server).
 ## Design and protocol
 
 - UI work: follow [design.md](design.md) and [client-ui.md](client-ui.md). CSS belongs under `client/src/design/`.
