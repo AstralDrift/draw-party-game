@@ -338,6 +338,12 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       const safeName = name.trim() || 'Player';
       localStorage.setItem('draw-party-name', safeName);
       setPlayerName(safeName);
+      setPendingJoin((current) => {
+        if (!current) {
+          return current;
+        }
+        return { ...current, name: safeName };
+      });
       send({ type: 'setName', name: safeName });
       haptic(8);
     },

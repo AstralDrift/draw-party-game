@@ -16,8 +16,19 @@ const FONT_BODY = '"DM Sans", "Segoe UI", "Helvetica Neue", sans-serif';
 export type ShareCardResult = 'shared' | 'downloaded' | 'failed' | 'cancelled';
 
 export function podiumShareLabel(): string {
-  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-    return 'Share Podium';
+  if (
+    typeof navigator !== 'undefined' &&
+    typeof navigator.share === 'function' &&
+    typeof navigator.canShare === 'function'
+  ) {
+    try {
+      const probe = new File([new Uint8Array()], 'draw-party-podium.png', { type: 'image/png' });
+      if (navigator.canShare({ files: [probe] })) {
+        return 'Share Podium';
+      }
+    } catch {
+      // Fall through to download label.
+    }
   }
   return 'Download Podium';
 }
@@ -68,8 +79,11 @@ export async function exportShareCard(scores: ScoreEntry[]): Promise<ShareCardRe
     const link = document.createElement('a');
     link.href = url;
     link.download = 'draw-party-podium.png';
+    link.rel = 'noopener';
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
     return 'downloaded';
   } catch {
     return 'failed';
