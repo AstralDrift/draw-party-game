@@ -1,4 +1,11 @@
-import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import {
+  createPlayers,
+  drawStroke,
+  makeAppUrl,
+  waitForPagesWithVisibleLocatorCount,
+  type PlayerViewport
+} from './helpers';
 
 test('staged results reveal enables Continue after the show beat', async ({ baseURL, browser }) => {
   const contexts: BrowserContext[] = [];
@@ -468,48 +475,6 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
   }
 });
 
-type PlayerViewport = {
-  width: number;
-  height: number;
-  isMobile?: boolean;
-};
-
-function makeAppUrl(baseURL: string | undefined): (path: string) => string {
-  if (!baseURL) {
-    throw new Error('Playwright baseURL is required for Draw Party e2e tests.');
-  }
-  return (path: string) => new URL(path, baseURL).toString();
-}
-
-async function createPlayers(
-  browser: Browser,
-  contexts: BrowserContext[],
-  appUrl: (path: string) => string,
-  roomCode: string,
-  names: string[],
-  viewports: PlayerViewport[] = names.map(() => ({ width: 390, height: 844, isMobile: true }))
-): Promise<Page[]> {
-  const pages: Page[] = [];
-  for (const [index, name] of names.entries()) {
-    const viewport = viewports[index] ?? viewports[0];
-    const context = await browser.newContext({
-      hasTouch: true,
-      isMobile: viewport.isMobile ?? viewport.width < 700,
-      viewport: { width: viewport.width, height: viewport.height }
-    });
-    contexts.push(context);
-
-    const page = await context.newPage();
-    await page.goto(appUrl(`/join/${roomCode}`));
-    await expect(page.locator('input.code-input')).toHaveValue(roomCode);
-    await page.getByPlaceholder('Your name').fill(name);
-    await page.getByRole('button', { name: 'Join the Party' }).click();
-    await expect(page.locator('.app-shell.player .brand')).toHaveText('Lobby');
-    pages.push(page);
-  }
-  return pages;
-}
-
 async function expectProgressSummary(
   page: Page,
   title: string,
@@ -544,43 +509,6 @@ async function expectNoVerticalOverflow(page: Page): Promise<void> {
       })
     )
     .toBe(true);
-}
-
-async function drawStroke(page: Page): Promise<void> {
-  const canvas = page.locator('canvas.draw-canvas');
-  await expect(canvas).toBeVisible();
-  await expect
-    .poll(async () => {
-      const box = await canvas.boundingBox();
-      return Boolean(box && box.width >= 100 && box.height >= 75);
-    })
-    .toBe(true);
-
-  // hasTouch mobile contexts flake on CDP mouse→pointer synthesis; drive the pad
-  // with the same PointerEvent path production touch/pen input uses.
-  await canvas.evaluate((element: HTMLCanvasElement) => {
-    const rect = element.getBoundingClientRect();
-    const fire = (type: string, xRatio: number, yRatio: number, buttons = 1) => {
-      element.dispatchEvent(
-        new PointerEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          pointerId: 1,
-          pointerType: 'pen',
-          isPrimary: true,
-          buttons,
-          clientX: rect.left + rect.width * xRatio,
-          clientY: rect.top + rect.height * yRatio
-        })
-      );
-    };
-    fire('pointerdown', 0.2, 0.25);
-    fire('pointermove', 0.33, 0.36);
-    fire('pointermove', 0.46, 0.48);
-    fire('pointermove', 0.59, 0.38);
-    fire('pointermove', 0.72, 0.28);
-    fire('pointerup', 0.72, 0.28, 0);
-  });
 }
 
 async function hasCanvasInkNear(page: Page, xRatio: number, yRatio: number): Promise<boolean> {
@@ -670,17 +598,6 @@ async function waitForPagesWithVisibleLocator(pages: Page[], selector: string): 
       return matches.length;
     })
     .toBeGreaterThan(0);
-  return matches;
-}
-
-async function waitForPagesWithVisibleLocatorCount(pages: Page[], selector: string, count: number): Promise<Page[]> {
-  let matches: Page[] = [];
-  await expect
-    .poll(async () => {
-      matches = await pagesWithVisibleLocator(pages, selector);
-      return matches.length;
-    })
-    .toBe(count);
   return matches;
 }
 

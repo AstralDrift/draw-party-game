@@ -1,4 +1,4 @@
-import { resultsHoldText, resultsRevealHeadline, roundOutcomeText } from '../../polish';
+import { roundOutcomeText } from '../../polish';
 import type { DrawingDoc, RoundResult } from '../../protocol';
 import { stageVisible, type RevealStage } from '../../hooks/useRevealStage';
 import { Confetti } from './Confetti';
@@ -50,10 +50,10 @@ export function ResultsPanel({
       {showConfetti ? <Confetti variant="result" /> : null}
       <p className="eyebrow">Drawing by {result.artistName}</p>
       <div className={holdStageClass(stage)}>
-        <p className="reveal-hold-line">{resultsHoldText()}</p>
+        <p className="reveal-hold-line">Votes locked in…</p>
       </div>
       <div className={`round-outcome ${stageClass(stage, 'correct')}`}>{roundOutcomeText(result)}</div>
-      <h2 className={stageClass(stage, 'correct')}>{resultsRevealHeadline()}</h2>
+      <h2 className={stageClass(stage, 'correct')}>The real prompt was</h2>
       <div className={`prompt reveal-prompt ${stageClass(stage, 'correct')}`}>{result.correctAnswer}</div>
       {includeDrawing ? (
         <DrawingCanvas

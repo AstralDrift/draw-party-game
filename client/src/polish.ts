@@ -67,14 +67,6 @@ export function playerActionHint(phase: GamePhase, isArtist: boolean): string {
   }
 }
 
-export function resultsHoldText(): string {
-  return 'Votes locked in…';
-}
-
-export function resultsRevealHeadline(): string {
-  return 'The real prompt was';
-}
-
 export type PodiumTitle = {
   playerId: string;
   title: string;
