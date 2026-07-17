@@ -1,5 +1,5 @@
-use super::helpers::*;
 use super::super::*;
+use super::helpers::*;
 use std::collections::BTreeSet;
 
 #[test]
@@ -80,7 +80,12 @@ fn guessing_counts_only_connected_non_artists() {
     let voters = non_artist_ids(&room);
     room.mark_disconnected(&voters[1], 250);
     let event = room
-        .submit_guess(&voters[0], room.turn_token, "only connected fake".to_string(), 300)
+        .submit_guess(
+            &voters[0],
+            room.turn_token,
+            "only connected fake".to_string(),
+            300,
+        )
         .unwrap();
     assert_eq!(event, EngineEvent::PhaseChanged);
     assert_eq!(room.phase, GamePhase::Voting);
@@ -124,8 +129,13 @@ fn disconnected_players_cannot_submit_current_turn_actions() {
         "not_connected"
     );
 
-    room.submit_guess(&voters[1], room.turn_token, "connected fake".to_string(), 252)
-        .unwrap();
+    room.submit_guess(
+        &voters[1],
+        room.turn_token,
+        "connected fake".to_string(),
+        252,
+    )
+    .unwrap();
     assert_eq!(room.phase, GamePhase::Voting);
     assert_eq!(
         room.submit_vote(&voters[0], room.turn_token, truth_option_id(&room), 253)
