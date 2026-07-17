@@ -50,7 +50,12 @@ fn custom_settings() -> RoomSettings {
 
 fn submit_all_drawings(room: &mut Room, now_ms: u64) {
     let token = room.turn_token;
-    let player_ids: Vec<String> = room.players.keys().cloned().collect();
+    let player_ids: Vec<String> = room
+        .players
+        .values()
+        .filter(|player| !player.spectator)
+        .map(|player| player.id.clone())
+        .collect();
     for player_id in player_ids {
         room.submit_drawing(&player_id, token, drawing(), now_ms)
             .unwrap();
@@ -60,9 +65,9 @@ fn submit_all_drawings(room: &mut Room, now_ms: u64) {
 fn non_artist_ids(room: &Room) -> Vec<String> {
     let artist = room.round.current_artist_id.as_deref();
     room.players
-        .keys()
-        .filter(|player_id| artist != Some(player_id.as_str()))
-        .cloned()
+        .values()
+        .filter(|player| !player.spectator && artist != Some(player.id.as_str()))
+        .map(|player| player.id.clone())
         .collect()
 }
 
@@ -683,4 +688,192 @@ fn room_expires_only_after_everyone_disconnects_and_ttl_passes() {
 
     assert!(!room.is_expired(13 + ROOM_TTL_MS));
     assert!(room.is_expired(14 + ROOM_TTL_MS));
+}
+
+#[test]
+fn late_join_as_spectator_allowed() {
+    let mut room = room_with_players();
+    room.handle_start_or_advance(100).unwrap();
+    room.upsert_player("spec".to_string(), "Spectator".to_string(), 150)
+        .unwrap();
+    let spectator = room.players.get("spec").unwrap();
+    assert!(spectator.spectator);
+    assert!(spectator.connected);
+    assert!(!room.round.prompts.contains_key("spec"));
+    assert!(room
+        .snapshot(160)
+        .players
+        .iter()
+        .any(|player| player.id == "spec" && player.spectator));
+}
+
+#[test]
+fn lobby_join_creates_normal_player() {
+    let mut room = Room::new(
+        "ABCD".to_string(),
+        "display".to_string(),
+        "host-token".to_string(),
+        0,
+    );
+    room.upsert_player("p1".to_string(), "Ada".to_string(), 1)
+        .unwrap();
+    assert!(!room.players.get("p1").unwrap().spectator);
+}
+
+#[test]
+fn spectator_cannot_submit() {
+    let mut room = room_with_players();
+    room.handle_start_or_advance(100).unwrap();
+    room.upsert_player("spec".to_string(), "Spectator".to_string(), 150)
+        .unwrap();
+    let token = room.turn_token;
+    assert_eq!(
+        room.submit_drawing("spec", token, drawing(), 160)
+            .unwrap_err()
+            .code,
+        "spectator"
+    );
+    submit_all_drawings(&mut room, 200);
+    let token = room.turn_token;
+    assert_eq!(
+        room.submit_guess("spec", token, "nope".to_string(), 210)
+            .unwrap_err()
+            .code,
+        "spectator"
+    );
+    let voters = non_artist_ids(&room);
+    room.submit_guess(&voters[0], token, "fake one".to_string(), 220)
+        .unwrap();
+    room.submit_guess(&voters[1], token, "fake two".to_string(), 221)
+        .unwrap();
+    let token = room.turn_token;
+    let truth = room
+        .round
+        .voting_options
+        .iter()
+        .find(|option| option.is_correct)
+        .map(|option| option.id.clone())
+        .unwrap();
+    assert_eq!(
+        room.submit_vote("spec", token, truth, 230)
+            .unwrap_err()
+            .code,
+        "spectator"
+    );
+}
+
+#[test]
+fn connected_progress_ignores_spectators() {
+    let mut room = room_with_players();
+    room.handle_start_or_advance(100).unwrap();
+    room.upsert_player("spec".to_string(), "Spectator".to_string(), 150)
+        .unwrap();
+    submit_all_drawings(&mut room, 200);
+    assert_eq!(room.phase, GamePhase::Guessing);
+    let voters = non_artist_ids(&room);
+    assert_eq!(voters.len(), 2);
+    let token = room.turn_token;
+    room.submit_guess(&voters[0], token, "fake one".to_string(), 300)
+        .unwrap();
+    room.submit_guess(&voters[1], token, "fake two".to_string(), 301)
+        .unwrap();
+    assert_eq!(room.phase, GamePhase::Voting);
+    let token = room.turn_token;
+    let truth = room
+        .round
+        .voting_options
+        .iter()
+        .find(|option| option.is_correct)
+        .map(|option| option.id.clone())
+        .unwrap();
+    room.submit_vote(&voters[0], token, truth.clone(), 400)
+        .unwrap();
+    room.submit_vote(&voters[1], token, truth, 401).unwrap();
+    assert_eq!(room.phase, GamePhase::Results);
+    assert!(!room
+        .snapshot(500)
+        .final_scores
+        .iter()
+        .any(|entry| entry.player_id == "spec"));
+}
+
+#[test]
+fn late_join_during_drawing_is_spectator_until_next_round() {
+    let mut room = room_with_players();
+    room.settings.rounds = 2;
+    room.handle_start_or_advance(100).unwrap();
+    assert_eq!(room.phase, GamePhase::Drawing);
+
+    room.upsert_player("p4".to_string(), "Spect".to_string(), 200)
+        .unwrap();
+    assert!(room.players.get("p4").unwrap().spectator);
+    assert!(!room.round.prompts.contains_key("p4"));
+    assert!(!room.round.order.contains(&"p4".to_string()));
+
+    let drawing_token = room.turn_token;
+    for player_id in ["p1", "p2", "p3"] {
+        room.submit_drawing(player_id, drawing_token, drawing(), 300)
+            .unwrap();
+    }
+    assert_eq!(room.phase, GamePhase::Guessing);
+    assert!(room
+        .submit_guess("p4", room.turn_token, "nope".to_string(), 400)
+        .is_err());
+
+    for _ in 0..3 {
+        let artist = room.round.current_artist_id.clone().unwrap();
+        let voters: Vec<String> = room
+            .players
+            .values()
+            .filter(|player| !player.spectator && player.id != artist)
+            .map(|player| player.id.clone())
+            .collect();
+        let guess_token = room.turn_token;
+        for voter in &voters {
+            room.submit_guess(voter, guess_token, format!("fake-{voter}"), 500)
+                .unwrap();
+        }
+        let vote_token = room.turn_token;
+        let correct = room
+            .round
+            .voting_options
+            .iter()
+            .find(|option| option.is_correct)
+            .unwrap()
+            .id
+            .clone();
+        for voter in &voters {
+            room.submit_vote(voter, vote_token, correct.clone(), 600)
+                .unwrap();
+        }
+        room.handle_start_or_advance(700).unwrap();
+    }
+
+    assert_eq!(room.phase, GamePhase::Drawing);
+    assert!(!room.players.get("p4").unwrap().spectator);
+    assert!(room.round.prompts.contains_key("p4"));
+    assert!(room.round.order.contains(&"p4".to_string()));
+}
+
+#[test]
+fn start_drawing_round_failure_does_not_promote_or_prune() {
+    let mut room = room_with_players();
+    room.handle_start_or_advance(100).unwrap();
+    room.upsert_player("spec".to_string(), "Spec".to_string(), 150)
+        .unwrap();
+    assert!(room.players.get("spec").unwrap().spectator);
+    assert_eq!(room.players.len(), 4);
+
+    for player_id in ["p1", "p2", "p3", "spec"] {
+        room.mark_disconnected(player_id, 200);
+    }
+    room.phase = GamePhase::FinalScores;
+    room.current_round = 1;
+
+    let err = room.handle_start_or_advance(300).unwrap_err();
+    assert_eq!(err.code, "not_enough_players");
+    assert_eq!(room.phase, GamePhase::FinalScores);
+    assert_eq!(room.players.len(), 4);
+    assert!(room.players.get("spec").unwrap().spectator);
+    assert!(!room.players.get("p1").unwrap().connected);
 }

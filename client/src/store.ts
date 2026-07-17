@@ -24,7 +24,7 @@ export function viewKeyFor(state: ClientViewState): string {
     snapshot.settings.promptPackId
   ].join(':');
   const playersKey = snapshot.players
-    .map((player) => `${player.id}:${player.name}:${player.score}:${player.connected}`)
+    .map((player) => `${player.id}:${player.name}:${player.score}:${player.connected}:${player.spectator}`)
     .join('|');
   const scoreDeltaKey = snapshot.roundResult?.scoreDeltas.map((score) => `${score.playerId}:${score.delta}`).join('|') ?? '';
   const finalScoreKey = snapshot.finalScores.map((score) => `${score.playerId}:${score.score}`).join('|');
@@ -44,6 +44,7 @@ export function viewKeyFor(state: ClientViewState): string {
     ].join(';');
   }
 
+  const self = snapshot.players.find((player) => player.id === clientId);
   const ownDrawingSubmitted = snapshot.drawingSubmittedIds.includes(clientId);
   const ownGuessSubmitted = snapshot.guessSubmittedIds.includes(clientId);
   const ownVoteSubmitted = snapshot.voteSubmittedIds.includes(clientId);
@@ -51,6 +52,7 @@ export function viewKeyFor(state: ClientViewState): string {
     base,
     settingsKey,
     snapshot.phase === 'lobby' ? playersKey : '',
+    self?.spectator ?? false,
     ownDrawingSubmitted,
     ownGuessSubmitted,
     ownVoteSubmitted,

@@ -19,6 +19,13 @@ import { bindAdvanceButton, isRevealComplete, resetReveal, scheduleReveal } from
 import { renderScoresPanel } from './scores-panel';
 import { renderSettingsPanel } from './settings-panel';
 import { playCue } from './sound';
+import { renderProgressPanel } from './progress-panel';
+import {
+  activePlayers,
+  participationMode,
+  playerCountLabel
+} from './spectator';
+import { renderSpectatorView } from './spectator-views';
 import { viewKeyFor } from './store';
 import { formatDeadline, nowMs, syncServerClock } from './time';
 
@@ -169,7 +176,7 @@ function handleServerMessage(message: ServerMessage): void {
       break;
     case 'error':
       errorMessage = message.message;
-      if (['room_not_found', 'game_in_progress', 'room_full'].includes(message.code)) {
+      if (['room_not_found', 'room_full'].includes(message.code)) {
         pendingJoin = null;
         status = 'Ready to join';
         socket?.close();
@@ -241,18 +248,18 @@ function renderDisplay(): HTMLElement {
   } else if (snapshot.phase === 'drawing') {
     content.append(
       heroPanel('Players are drawing', `Round ${snapshot.currentRound} of ${snapshot.totalRounds}`),
-      renderProgressPanel('Drawings', snapshot.drawingSubmittedIds, 'drawing')
+      renderProgressPanel(snapshot, 'Drawings', snapshot.drawingSubmittedIds, 'drawing')
     );
   } else if (snapshot.phase === 'guessing') {
     content.append(
       renderRevealPanel('What is this?', false),
-      renderProgressPanel('Guesses', snapshot.guessSubmittedIds, 'guessing')
+      renderProgressPanel(snapshot, 'Guesses', snapshot.guessSubmittedIds, 'guessing')
     );
   } else if (snapshot.phase === 'voting') {
     content.append(
       renderRevealPanel('Vote for the real prompt', false),
       renderVotingOptions(snapshot.votingOptions, false),
-      renderProgressPanel('Votes', snapshot.voteSubmittedIds, 'voting')
+      renderProgressPanel(snapshot, 'Votes', snapshot.voteSubmittedIds, 'voting')
     );
   } else if (snapshot.phase === 'results') {
     content.append(renderResults(snapshot.roundResult, true), renderAdvancePanel());
@@ -268,22 +275,45 @@ function renderPlayer(): HTMLElement {
     return renderJoin();
   }
 
-  if (snapshot.phase === 'lobby') {
-    return shell('Lobby', renderPlayerLobby());
+  const room = snapshot;
+  if (isSpectating()) {
+    return shell(
+      'Spectating',
+      renderSpectatorView(room, {
+        lobby: renderPlayerLobby,
+        drawingProgress: () =>
+          renderProgressPanel(room, 'Drawings', room.drawingSubmittedIds, 'drawing'),
+        reactionBar: playerReactionBar,
+        reconnectHint: renderReconnectHint,
+        votingOptions: () => renderVotingOptions(room.votingOptions, false),
+        results: () => renderResults(room.roundResult, false),
+        scores: () => renderScores(room.finalScores, true)
+      })
+    );
   }
-  if (snapshot.phase === 'drawing') {
-    return shell('Draw', renderDrawingTurn());
+
+  switch (room.phase) {
+    case 'lobby':
+      return shell('Lobby', renderPlayerLobby());
+    case 'drawing':
+      return shell('Draw', renderDrawingTurn());
+    case 'guessing':
+      return shell('Guess', renderGuessingTurn());
+    case 'voting':
+      return shell('Vote', renderVotingTurn());
+    case 'results':
+      return shell('Results', renderResults(room.roundResult, false));
+    case 'finalScores':
+      return shell('Final Scores', renderScores(room.finalScores, true));
+    default: {
+      const _exhaustive: never = room.phase;
+      return _exhaustive;
+    }
   }
-  if (snapshot.phase === 'guessing') {
-    return shell('Guess', renderGuessingTurn());
-  }
-  if (snapshot.phase === 'voting') {
-    return shell('Vote', renderVotingTurn());
-  }
-  if (snapshot.phase === 'results') {
-    return shell('Results', renderResults(snapshot.roundResult, false));
-  }
-  return shell('Final Scores', renderScores(snapshot.finalScores, true));
+}
+
+function isSpectating(): boolean {
+  return snapshot ? participationMode(snapshot.players, clientId) === 'watch' : false;
 }
 
 function renderJoin(): HTMLElement {
@@ -370,7 +400,7 @@ function renderJoin(): HTMLElement {
       el('label', { class: 'label' }, 'Name'),
       nameInput,
       button('Join', 'primary wide', join),
-      errorMessage ? null : el('p', { class: 'muted join-note fine-print' }, 'Phones, tablets, and iPads all work as controllers.')
+      errorMessage ? null : el('p', { class: 'muted join-note fine-print' }, 'Join before start to play. Mid-game joins watch as spectators.')
     )
   );
 }
@@ -380,7 +410,7 @@ function renderPlayerLobby(): HTMLElement {
     return el('div', { class: 'player-stack' });
   }
 
-  const connectedPlayers = snapshot.players.filter((player) => player.connected);
+  const connectedPlayers = activePlayers(snapshot.players);
   const neededPlayers = Math.max(0, snapshot.minPlayers - connectedPlayers.length);
   const self = snapshot.players.find((player) => player.id === clientId);
   const ready = neededPlayers === 0;
@@ -430,7 +460,7 @@ function renderRoomPanel(): HTMLElement {
     qrCanvas.replaceWith(el('p', { class: 'muted' }, joinUrl));
   });
 
-  const connectedPlayers = snapshot.players.filter((player) => player.connected);
+  const connectedPlayers = activePlayers(snapshot.players);
   const canStart = connectedPlayers.length >= snapshot.minPlayers;
   const neededPlayers = Math.max(0, snapshot.minPlayers - connectedPlayers.length);
   return el(
@@ -473,19 +503,29 @@ function renderPlayersPanel(showScores: boolean): HTMLElement {
     { class: 'panel players-panel' },
     el('div', { class: 'panel-title' }, 'Players'),
     list,
-    snapshot ? el('p', { class: 'muted' }, playerCountLabel(snapshot)) : null
+    snapshot ? el('p', { class: 'muted' }, playerCountLabel(snapshot.players, snapshot.maxPlayers)) : null
   );
 }
 
 function renderPlayerList(showScores: boolean): HTMLElement {
   const list = el('div', { class: 'player-list' });
   for (const [index, player] of (snapshot?.players ?? []).entries()) {
+    const statusPill = player.spectator
+      ? 'spectating'
+      : showScores
+        ? `${player.score} pts`
+        : player.connected
+          ? 'online'
+          : 'offline';
     list.appendChild(
       el(
         'div',
-        { class: `player-row ${player.connected ? 'online' : 'offline'}`, style: `--row-index:${index}` },
+        {
+          class: `player-row ${player.connected ? 'online' : 'offline'}${player.spectator ? ' is-spectator' : ''}`,
+          style: `--row-index:${index}`
+        },
         el('span', { class: 'player-name' }, player.name),
-        el('span', { class: 'pill' }, showScores ? `${player.score} pts` : player.connected ? 'online' : 'offline')
+        el('span', { class: `pill${player.spectator ? ' spectator-pill' : ''}` }, statusPill)
       )
     );
   }
@@ -493,11 +533,6 @@ function renderPlayerList(showScores: boolean): HTMLElement {
     list.appendChild(el('div', { class: 'empty-state' }, 'Waiting for phones to join.'));
   }
   return list;
-}
-
-function playerCountLabel(room: RoomSnapshot): string {
-  const connected = room.players.filter((player) => player.connected).length;
-  return `${connected} connected · ${room.players.length}/${room.maxPlayers} joined`;
 }
 
 function renderLobbySidePanel(): HTMLElement {
@@ -533,14 +568,14 @@ function renderDrawingTurn(): HTMLElement {
   );
 
   if (submitted) {
-  return el(
-    'section',
-    { class: 'panel play-panel player-turn-panel drawing-turn' },
-    heading,
-    el('p', { class: 'action-hint' }, playerActionHint('drawing', false)),
-    el('div', { class: 'success-box' }, 'Drawing submitted. Watch the TV.')
-  );
-}
+    return el(
+      'section',
+      { class: 'panel play-panel player-turn-panel drawing-turn' },
+      heading,
+      el('p', { class: 'action-hint' }, playerActionHint('drawing', false)),
+      el('div', { class: 'success-box' }, 'Drawing submitted. Watch the TV.')
+    );
+  }
 
   const submitButton = button('Submit Drawing', 'primary wide', () => {
     if (!drawingPad?.hasInk()) {
@@ -654,7 +689,12 @@ function renderVotingTurn(): HTMLElement {
     el(
       'div',
       { class: 'turn-header compact' },
-      el('div', { class: 'turn-copy' }, el('p', { class: 'eyebrow' }, isArtist ? 'Your drawing' : 'Pick an answer'), el('div', { class: 'prompt small' }, isArtist ? 'Watch the vote' : 'Find the real prompt')),
+      el(
+        'div',
+        { class: 'turn-copy' },
+        el('p', { class: 'eyebrow' }, isArtist ? 'Your drawing' : 'Pick an answer'),
+        el('div', { class: 'prompt small' }, isArtist ? 'Watch the vote' : 'Find the real prompt')
+      ),
       el('div', { class: 'deadline', id: 'deadline-text' })
     ),
     el('p', { class: 'action-hint' }, playerActionHint('voting', isArtist)),
@@ -663,7 +703,13 @@ function renderVotingTurn(): HTMLElement {
       ? el('div', { class: 'success-box' }, 'This is your drawing. Watch the vote.')
       : renderVotingOptions(snapshot.votingOptions, true, submitted),
     playerReactionBar(),
-    renderReconnectHint(submitted ? 'Your vote is in.' : isArtist ? 'You drew this one. Watch the votes come in.' : 'Choose the real prompt. You cannot vote for your own fake answer.')
+    renderReconnectHint(
+      submitted
+        ? 'Your vote is in.'
+        : isArtist
+          ? 'You drew this one. Watch the votes come in.'
+          : 'Choose the real prompt. You cannot vote for your own fake answer.'
+    )
   );
 }
 
@@ -728,80 +774,6 @@ function renderVotingOptions(options: VotingOption[], interactive: boolean, subm
     container.appendChild(voteButton);
   }
   return container;
-}
-
-type SubmissionPhase = 'drawing' | 'guessing' | 'voting';
-
-function renderProgressPanel(label: string, submittedIds: string[], phase: SubmissionPhase): HTMLElement {
-  const players = snapshot?.players ?? [];
-  const connectedPlayers = players.filter((player) => player.connected);
-  const eligiblePlayers = connectedPlayers.filter((player) => phase === 'drawing' || player.id !== snapshot?.currentArtistId);
-  const activeSubmittedIds = submittedIds.filter((playerId) => eligiblePlayers.some((player) => player.id === playerId));
-  const progress = eligiblePlayers.length === 0 ? 100 : Math.round((activeSubmittedIds.length / eligiblePlayers.length) * 100);
-  const waitingNames = eligiblePlayers
-    .filter((player) => !submittedIds.includes(player.id))
-    .map((player) => player.name);
-  return el(
-    'section',
-    { class: 'panel progress-panel' },
-    el('div', { class: 'panel-title' }, label),
-    el(
-      'div',
-      { class: 'progress-hero' },
-      el('div', { class: 'big-count' }, `${activeSubmittedIds.length}/${eligiblePlayers.length}`),
-      el('div', { class: 'progress-ring', style: `--progress:${progress}%` }, el('span', {}, `${progress}%`))
-    ),
-    el(
-      'p',
-      { class: 'muted' },
-      waitingNames.length === 0 ? 'Everyone is in.' : `Waiting on ${waitingNames.join(', ')}.`
-    ),
-    renderSubmissionList(players, submittedIds, phase)
-  );
-}
-
-function renderSubmissionList(players: RoomSnapshot['players'], submittedIds: string[], phase: SubmissionPhase): HTMLElement {
-  const list = el('div', { class: 'player-list submission-list' });
-  for (const [index, player] of players.entries()) {
-    const artist = phase !== 'drawing' && player.id === snapshot?.currentArtistId;
-    const submitted = submittedIds.includes(player.id);
-    const state = !player.connected ? 'offline' : artist ? 'artist' : submitted ? 'submitted' : 'waiting';
-    list.appendChild(
-      el(
-        'div',
-        {
-          class: `player-row submission-row ${player.connected ? 'online' : 'offline'} is-${state}`,
-          style: `--row-index:${index}`
-        },
-        el('span', { class: 'player-name' }, player.name),
-        el('span', { class: `pill status-pill status-${state}` }, submissionStatusLabel(state, phase))
-      )
-    );
-  }
-  if (!players.length) {
-    list.appendChild(el('div', { class: 'empty-state' }, 'Waiting for players.'));
-  }
-  return list;
-}
-
-function submissionStatusLabel(state: 'offline' | 'artist' | 'submitted' | 'waiting', phase: SubmissionPhase): string {
-  if (state === 'offline') {
-    return 'offline';
-  }
-  if (state === 'artist') {
-    return 'artist';
-  }
-  if (state === 'waiting') {
-    return 'waiting';
-  }
-  switch (phase) {
-    case 'drawing':
-      return 'drawing in';
-    case 'guessing':
-      return 'guess in';
-    case 'voting':
-      return 'voted';
-  }
 }
 
 function renderResults(result: RoundResult | null | undefined, includeDrawing: boolean): HTMLElement {
@@ -932,14 +904,19 @@ function shell(title: string, child: HTMLElement): HTMLElement {
   const waitingToJoin = role === 'player' && !pendingJoin && !snapshot;
   const reconnecting = !waitingToJoin && status !== 'Connected' && status !== 'Disconnected';
   const connectionText = displayStatusText();
+  const phaseText = snapshot
+    ? isSpectating()
+      ? `Spectating · ${phaseLabel(snapshot.phase)}`
+      : phaseLabel(snapshot.phase)
+    : null;
   return el(
     'main',
-    { class: `app-shell ${role} ${shellPhaseClass()}` },
+    { class: `app-shell ${role} ${shellPhaseClass()}${isSpectating() ? ' is-spectating' : ''}` },
     renderBackdrop(),
     el(
       'header',
       { class: 'topbar' },
-      el('div', {}, el('div', { class: 'brand' }, title), snapshot ? el('div', { class: 'phase' }, phaseLabel(snapshot.phase)) : null),
+      el('div', {}, el('div', { class: 'brand' }, title), phaseText ? el('div', { class: 'phase' }, phaseText) : null),
       el('div', { class: 'connection', id: 'connection-text' }, connectionText)
     ),
     reconnecting ? el('div', { class: 'connection-banner' }, status) : null,

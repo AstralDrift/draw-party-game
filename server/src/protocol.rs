@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 pub const CANVAS_WIDTH: u16 = 1024;
 pub const CANVAS_HEIGHT: u16 = 768;
-pub const MAX_PLAYERS: usize = 8;
+pub const MAX_PLAYERS: usize = 8; // includes spectators — late-join watchers still consume a seat
 pub const MIN_PLAYERS: usize = 1;
 pub const DEFAULT_TOTAL_ROUNDS: u8 = 5;
 pub const TOTAL_ROUNDS: u8 = DEFAULT_TOTAL_ROUNDS;
@@ -104,6 +104,7 @@ pub struct PlayerPublic {
     pub name: String,
     pub score: i32,
     pub connected: bool,
+    pub spectator: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

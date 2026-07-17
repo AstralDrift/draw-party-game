@@ -17,6 +17,7 @@ pub struct Player {
     pub name: String,
     pub score: i32,
     pub connected: bool,
+    pub spectator: bool,
     #[serde(default, skip)]
     pub last_reaction_ms: u64,
 }
@@ -114,13 +115,10 @@ impl Room {
     ) -> EngineResult<()> {
         self.touch(now_ms);
         let safe_name = sanitize_name(&name);
-        if self.phase != GamePhase::Lobby && !self.players.contains_key(&player_id) {
-            return Err(EngineError::new(
-                "game_in_progress",
-                "New players can join before the game starts.",
-            ));
-        }
+        let joining_as_spectator =
+            self.phase != GamePhase::Lobby && !self.players.contains_key(&player_id);
 
+        // Spectators consume MAX_PLAYERS seats (same roster cap as active players).
         if !self.players.contains_key(&player_id) && self.players.len() >= MAX_PLAYERS {
             return Err(EngineError::new(
                 "room_full",
@@ -139,6 +137,7 @@ impl Room {
                 name: safe_name,
                 score: 0,
                 connected: true,
+                spectator: joining_as_spectator,
                 last_reaction_ms: 0,
             });
 
@@ -216,7 +215,7 @@ impl Room {
             ));
         }
         self.ensure_turn_token(turn_token)?;
-        self.ensure_connected_player(player_id, "Only connected players can submit drawings.")?;
+        self.ensure_active_player(player_id, "Only connected players can submit drawings.")?;
         validate_drawing(&drawing)?;
         if self.round.drawings.contains_key(player_id) {
             return Err(EngineError::new(
@@ -471,8 +470,18 @@ impl Room {
     }
 
     fn start_drawing_round(&mut self, now_ms: u64) -> EngineResult<()> {
-        self.prune_disconnected_players();
-        if self.connected_player_count() < MIN_PLAYERS {
+        // Validate the post-promote roster before committing prune/promote/phase mutation.
+        let next_players: BTreeMap<String, Player> = self
+            .players
+            .values()
+            .filter(|player| player.connected)
+            .map(|player| {
+                let mut next = player.clone();
+                next.spectator = false;
+                (next.id.clone(), next)
+            })
+            .collect();
+        if next_players.len() < MIN_PLAYERS {
             let player_word = if MIN_PLAYERS == 1 {
                 "player"
             } else {
@@ -483,6 +492,8 @@ impl Room {
                 format!("Need at least {MIN_PLAYERS} {player_word} to start."),
             ));
         }
+
+        self.players = next_players;
 
         if self.current_round == 0 || self.phase == GamePhase::FinalScores {
             self.current_round = 1;
@@ -649,9 +660,9 @@ impl Room {
 
         let eligible_voter_ids: Vec<String> = self
             .players
-            .keys()
-            .filter(|player_id| player_id.as_str() != artist_id.as_str())
-            .cloned()
+            .values()
+            .filter(|player| !player.spectator && player.id != artist_id)
+            .map(|player| player.id.clone())
             .collect();
         let nobody_found_it = correct_voter_names.is_empty() && !eligible_voter_ids.is_empty();
         let perfect_truth = !eligible_voter_ids.is_empty()
@@ -731,6 +742,7 @@ impl Room {
         self.current_round = self.current_round.saturating_sub(1);
         self.turn_token = self.turn_token.saturating_add(1);
         self.round = RoundState::default();
+        self.promote_spectators();
     }
 
     fn advance_after_results(&mut self, now_ms: u64) -> EngineResult<bool> {
@@ -768,12 +780,34 @@ impl Room {
             .any(|candidate| self.round.drawings.contains_key(candidate))
     }
 
+    fn promote_spectators(&mut self) {
+        for player in self.players.values_mut() {
+            player.spectator = false;
+        }
+    }
+
     fn ensure_active_non_artist(&self, player_id: &str) -> EngineResult<()> {
-        self.ensure_connected_player(player_id, "Only connected players can submit.")?;
+        self.ensure_active_player(player_id, "Only connected players can submit.")?;
         if self.round.current_artist_id.as_deref() == Some(player_id) {
             return Err(EngineError::new(
                 "artist_action",
                 "The artist skips this step.",
+            ));
+        }
+        Ok(())
+    }
+
+    fn ensure_active_player(
+        &self,
+        player_id: &str,
+        disconnected_message: &str,
+    ) -> EngineResult<()> {
+        self.ensure_connected_player(player_id, disconnected_message)?;
+        let player = self.players.get(player_id).expect("checked above");
+        if player.spectator {
+            return Err(EngineError::new(
+                "spectator",
+                "Spectators can watch but cannot submit.",
             ));
         }
         Ok(())
@@ -807,23 +841,15 @@ impl Room {
     }
 
     fn eligible_voter_count(&self) -> usize {
-        self.players
-            .values()
-            .filter(|player| {
-                player.connected
-                    && self.round.current_artist_id.as_deref() != Some(player.id.as_str())
-            })
+        self.active_players()
+            .filter(|player| self.round.current_artist_id.as_deref() != Some(player.id.as_str()))
             .count()
     }
 
     fn connected_drawers_done(&self) -> bool {
-        let connected_players: Vec<&Player> = self
-            .players
-            .values()
-            .filter(|player| player.connected)
-            .collect();
-        !connected_players.is_empty()
-            && connected_players
+        let drawers: Vec<&Player> = self.active_players().collect();
+        !drawers.is_empty()
+            && drawers
                 .iter()
                 .all(|player| self.round.drawings.contains_key(&player.id))
     }
@@ -839,24 +865,9 @@ impl Room {
     }
 
     fn connected_submissions_done(&self, submissions: &BTreeMap<String, String>) -> bool {
-        self.players
-            .values()
-            .filter(|player| {
-                player.connected
-                    && self.round.current_artist_id.as_deref() != Some(player.id.as_str())
-            })
+        self.active_players()
+            .filter(|player| self.round.current_artist_id.as_deref() != Some(player.id.as_str()))
             .all(|player| submissions.contains_key(&player.id))
-    }
-
-    fn connected_player_count(&self) -> usize {
-        self.players
-            .values()
-            .filter(|player| player.connected)
-            .count()
-    }
-
-    fn prune_disconnected_players(&mut self) {
-        self.players.retain(|_, player| player.connected);
     }
 
     fn public_players(&self) -> Vec<PlayerPublic> {
@@ -867,6 +878,7 @@ impl Room {
                 name: player.name.clone(),
                 score: player.score,
                 connected: player.connected,
+                spectator: player.spectator,
             })
             .collect()
     }
@@ -875,6 +887,7 @@ impl Room {
         let mut scores: Vec<ScoreEntry> = self
             .players
             .values()
+            .filter(|player| !player.spectator)
             .map(|player| ScoreEntry {
                 player_id: player.id.clone(),
                 name: player.name.clone(),
@@ -884,6 +897,14 @@ impl Room {
         scores.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.name.cmp(&b.name)));
         scores
     }
+
+    fn active_players(&self) -> impl Iterator<Item = &Player> {
+        self.players.values().filter(|player| is_active(player))
+    }
+}
+
+fn is_active(player: &Player) -> bool {
+    player.connected && !player.spectator
 }
 
 pub fn generate_room_code(existing: &BTreeSet<String>) -> String {

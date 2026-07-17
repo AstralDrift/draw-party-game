@@ -1986,6 +1986,22 @@ input:focus-visible,
   color: #e8fff7;
 }
 
+.spectator-banner {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.spectator-pill,
+.pill.spectator-pill {
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+  color: var(--ink);
+}
+
+.player-row.is-spectator .player-name {
+  opacity: 0.78;
+}
+
 .error {
   background: var(--red-soft);
   color: #fff0f0;
