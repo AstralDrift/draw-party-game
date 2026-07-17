@@ -5,7 +5,8 @@ import { playCue } from '../sound';
 export type RevealStage = 'hold' | 'tally' | 'correct' | 'deltas' | 'complete';
 
 const STAGE_ORDER: RevealStage[] = ['hold', 'tally', 'correct', 'deltas', 'complete'];
-const STAGE_DELAYS_MS = [600, 1000, 500, 600];
+/** Hold → tally → correct → deltas → complete. Slightly longer hold/correct for TV drama. */
+const STAGE_DELAYS_MS = [900, 1100, 800, 700];
 
 function prefersReducedMotion(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;

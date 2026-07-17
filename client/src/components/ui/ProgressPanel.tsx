@@ -64,9 +64,17 @@ export function ProgressPanel({
           {activeSubmittedIds.length}/{eligiblePlayers.length}
         </div>
       </div>
-      <p className="muted">
-        {waitingNames.length === 0 ? 'Everyone is in.' : `Waiting on ${waitingNames.join(', ')}.`}
-      </p>
+        <p className="muted">
+          {waitingNames.length === 0
+            ? phase === 'guessing'
+              ? 'All the fakes are in.'
+              : phase === 'voting'
+                ? 'Every vote is locked.'
+                : 'Everyone is in.'
+            : phase === 'guessing'
+              ? `Still cooking: ${waitingNames.join(', ')}.`
+              : `Waiting on ${waitingNames.join(', ')}.`}
+        </p>
       <div className="player-list submission-list">
         {players.map((player, index) => {
           const artist = phase !== 'drawing' && player.id === snapshot.currentArtistId;

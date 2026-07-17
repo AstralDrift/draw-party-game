@@ -25,7 +25,7 @@ test('one TV and three phones complete a full drawing round', async ({ baseURL, 
     }
 
     await tv.getByRole('button', { name: 'Start Game' }).click();
-    await expect(tv.getByText('Players are drawing')).toBeVisible();
+    await expect(tv.getByText('Phones are drawing').or(tv.getByText('Phones are drawing'))).toBeVisible();
 
     for (const [index, player] of players.entries()) {
       await expect(player.page.locator('#prompt-text')).toContainText(/^Draw:/);
@@ -38,20 +38,22 @@ test('one TV and three phones complete a full drawing round', async ({ baseURL, 
     }
 
     for (let turn = 0; turn < players.length; turn += 1) {
-      await expect(tv.getByText('What is this?')).toBeVisible();
+      await expect(tv.getByText('What did they draw?')).toBeVisible();
       const artistIndex = await waitForArtistIndex(players);
       const guessers = players.filter((_, index) => index !== artistIndex);
 
       for (const [guessIndex, guesser] of guessers.entries()) {
-        await expect(guesser.page.getByPlaceholder('Fake answer')).toBeVisible();
-        await guesser.page.getByPlaceholder('Fake answer').fill(`wrong answer ${turn} ${guesser.name}`);
-        await guesser.page.getByRole('button', { name: 'Submit Guess' }).click();
+        await expect(guesser.page.getByPlaceholder('Something that sounds legit…')).toBeVisible();
+        await guesser.page
+          .getByPlaceholder('Something that sounds legit…')
+          .fill(`wrong answer ${turn} ${guesser.name}`);
+        await guesser.page.getByRole('button', { name: 'Submit Fake Title' }).click();
         if (guessIndex < guessers.length - 1) {
-          await expect(guesser.page.getByText('Guess submitted.')).toBeVisible();
+          await expect(guesser.page.getByText('Title locked in. Waiting for the room…')).toBeVisible();
         }
       }
 
-      await expect(tv.getByText('Vote for the real prompt')).toBeVisible();
+      await expect(tv.getByText('Which title is real?')).toBeVisible();
       for (const voter of guessers) {
         const option = voter.page.locator('button.vote-option:not([disabled])').first();
         await expect(option).toBeVisible();
@@ -59,21 +61,21 @@ test('one TV and three phones complete a full drawing round', async ({ baseURL, 
       }
 
       await expect(tv.getByText('The real prompt was')).toBeVisible();
-      await expect(tv.locator('.round-outcome')).toHaveText(/found it|No one found it/);
+      await expect(tv.locator('.round-outcome')).toHaveText(/cracked it|Nobody got it|saw through it/);
       await expect(tv.locator('.breakdown-row')).toHaveCount(3);
       await expect(tv.locator('.breakdown-kind', { hasText: 'Correct answer' })).toHaveCount(1);
-      await expect(tv.locator('.breakdown-kind', { hasText: /Fake answer by/ })).toHaveCount(2);
+      await expect(tv.locator('.breakdown-kind', { hasText: /Fake by/ })).toHaveCount(2);
       await expect(tv.locator('.chip-label').first()).toHaveText('Voted by');
 
       for (const player of players) {
         await expect(player.page.getByText('The real prompt was')).toBeVisible();
       }
 
-      await expect(tv.getByRole('button', { name: 'Continue' })).toBeEnabled({ timeout: 5000 });
+      await expect(tv.getByRole('button', { name: 'Continue' })).toBeEnabled({ timeout: 7000 });
       await tv.getByRole('button', { name: 'Continue' }).click();
     }
 
-    await expect(tv.getByText('Players are drawing')).toBeVisible();
+    await expect(tv.getByText('Phones are drawing')).toBeVisible();
     await expect(tv.getByText(/Round 2 of \d+/)).toBeVisible();
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
@@ -107,7 +109,7 @@ async function createPlayers(
     await page.goto(appUrl(`/join/${roomCode}`));
     await expect(page.locator('input.code-input')).toHaveValue(roomCode);
     await page.getByPlaceholder('Your name').fill(name);
-    await page.getByRole('button', { name: 'Join' }).click();
+    await page.getByRole('button', { name: 'Join the Party' }).click();
     await expect(page.locator('.app-shell.player .brand')).toHaveText('Lobby');
     await expect(page.getByText(`${name}, you're in`)).toBeVisible();
     players.push({ name, page });
@@ -155,7 +157,7 @@ async function waitForArtistIndex(players: TestPlayer[]): Promise<number> {
       const visibleStates = await Promise.all(
         players.map((player) =>
           player.page
-            .getByText('This is your drawing. Wait for guesses.')
+            .getByText(/You.?re the artist\. Sit back and enjoy the chaos/)
             .isVisible()
             .catch(() => false)
         )

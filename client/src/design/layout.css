@@ -362,8 +362,100 @@
 }
 
 .results-panel[data-reveal-stage='complete'] .confetti,
+.results-panel[data-reveal-stage='correct'] .confetti,
+.results-panel[data-reveal-stage='deltas'] .confetti,
 .scores-panel .confetti {
   opacity: 1;
+}
+
+.reveal-hold-line {
+  margin: 0;
+  font-size: clamp(1.35rem, 3.2vw, 2.4rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.display .reveal-prompt {
+  font-size: clamp(1.8rem, 4.5vw, 3.4rem);
+  line-height: 1.1;
+}
+
+.display .round-outcome {
+  font-size: clamp(1.15rem, 2.4vw, 1.8rem);
+  font-weight: 700;
+}
+
+.display .reveal-coach {
+  margin-top: var(--space-3);
+  font-size: 1.05rem;
+}
+
+.room-hero-sub {
+  margin: var(--space-2) 0 0;
+  max-width: 28ch;
+}
+
+.spotlight-button {
+  min-height: 56px;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent),
+    0 12px 28px color-mix(in srgb, var(--accent) 35%, transparent);
+  animation: spotlight-pulse 2.4s var(--ease-out) infinite;
+}
+
+.spotlight-button:disabled {
+  animation: none;
+  box-shadow: none;
+}
+
+/* Pulse shadow only — avoid transform so automated clicks stay actionable. */
+@keyframes spotlight-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent),
+      0 12px 28px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--accent) 70%, transparent),
+      0 16px 36px color-mix(in srgb, var(--accent) 48%, transparent);
+  }
+}
+
+.encore-panel {
+  display: grid;
+  gap: var(--space-3);
+  align-content: center;
+  text-align: center;
+}
+
+.encore-title {
+  margin: 0;
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+  letter-spacing: -0.03em;
+}
+
+.display .reaction-burst {
+  bottom: 12%;
+  padding: var(--space-4) var(--space-6);
+  font-size: clamp(1.6rem, 3.2vw, 2.4rem);
+  border-width: 2px;
+}
+
+.display .reaction-burst:nth-child(2) {
+  left: 42%;
+}
+.display .reaction-burst:nth-child(3) {
+  left: 58%;
+}
+.display .reaction-burst:nth-child(4) {
+  left: 35%;
+  bottom: 20%;
 }
 
 .podium-title {

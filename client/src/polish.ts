@@ -7,23 +7,23 @@ type RoundOutcomeInput = Pick<
 
 export function roundOutcomeText(result: RoundOutcomeInput): string {
   if (result.nobodyFoundIt) {
-    return 'No one found it';
+    return 'Nobody got it — artist wins the room';
   }
   if (result.perfectTruth) {
-    return 'Everyone found it — perfect!';
+    return 'Everyone saw through it — perfect!';
   }
 
   const correctVoters = result.correctVoterNames;
   if (correctVoters.length === 1) {
-    return `${correctVoters[0]} found it`;
+    return `${correctVoters[0]} cracked it`;
   }
   if (correctVoters.length === 2) {
-    return `${correctVoters[0]} and ${correctVoters[1]} found it`;
+    return `${correctVoters[0]} and ${correctVoters[1]} cracked it`;
   }
   if (correctVoters.length > 2) {
-    return `${correctVoters.length} players found it`;
+    return `${correctVoters.length} players cracked it`;
   }
-  return 'No one found it';
+  return 'Nobody got it — artist wins the room';
 }
 
 export function finalWinnerText(scores: ScoreEntry[]): string {
@@ -45,22 +45,34 @@ export function finalWinnerText(scores: ScoreEntry[]): string {
 export function playerActionHint(phase: GamePhase, isArtist: boolean): string {
   switch (phase) {
     case 'lobby':
-      return 'Wait for the TV host to start the game.';
+      return 'You’re in. Watch the TV — the host starts when the room feels ready.';
     case 'drawing':
-      return 'Draw your secret prompt, then submit.';
+      return 'Draw fast and messy. Clarity is optional. Comedy is not.';
     case 'guessing':
-      return isArtist ? 'Your drawing is up. Sit back while others invent titles.' : 'Write a fake title that could fool the room.';
+      return isArtist
+        ? 'Your drawing is on the TV. Enjoy the fake titles rolling in.'
+        : 'Invent a title that sounds real. Fooling people is the whole game.';
     case 'voting':
-      return isArtist ? 'Watch the vote. You cannot pick your own drawing.' : 'Pick the real prompt. Avoid your own fake.';
+      return isArtist
+        ? 'Sit back. You can’t vote on your own masterpiece.'
+        : 'Hunt the real prompt. Skip your own fake — that’s the trap.';
     case 'results':
-      return 'See who got fooled — next drawing is coming.';
+      return 'Watch who got cooked. Next drawing is loading.';
     case 'finalScores':
-      return 'Cheer the podium. The TV can start another game.';
+      return 'Cheer the podium. Yell for one more round.';
     default: {
       const _exhaustive: never = phase;
       return _exhaustive;
     }
   }
+}
+
+export function resultsHoldText(): string {
+  return 'Votes locked in…';
+}
+
+export function resultsRevealHeadline(): string {
+  return 'The real prompt was';
 }
 
 export type PodiumTitle = {

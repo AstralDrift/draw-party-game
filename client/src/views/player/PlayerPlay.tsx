@@ -31,21 +31,21 @@ export function PlayerGuessing(): React.JSX.Element {
       <GlassPanel className="play-panel player-turn-panel guessing-turn">
         <div className="turn-header compact">
           <div className="turn-copy">
-            <p className="eyebrow">{isArtist ? 'Your drawing' : 'Write a fake'}</p>
-            <div className="prompt small">{isArtist ? 'Players are guessing' : 'Make it believable'}</div>
+            <p className="eyebrow">{isArtist ? 'Your drawing' : 'Fool the room'}</p>
+            <div className="prompt small">{isArtist ? 'Fake titles incoming' : 'Write a title that could be real'}</div>
           </div>
           <Deadline />
         </div>
         <p className="action-hint">{playerActionHint('guessing', isArtist)}</p>
         <DrawingCanvas drawing={snapshot.currentDrawing} className="reveal-canvas phone-canvas" />
         {isArtist ? (
-          <div className="success-box">This is your drawing. Wait for guesses.</div>
+          <div className="success-box">You’re the artist. Sit back and enjoy the chaos.</div>
         ) : (
           <>
-            <Field label="Fake answer">
+            <Field label="Fake title">
               <TextInput
                 maxLength={60}
-                placeholder="Fake answer"
+                placeholder="Something that sounds legit…"
                 disabled={submitted}
                 value={guess}
                 onChange={(event) => setGuess(event.target.value)}
@@ -55,7 +55,7 @@ export function PlayerGuessing(): React.JSX.Element {
               onClick={() => {
                 const next = guess.trim();
                 if (!next) {
-                  setErrorMessage('Enter a guess first.');
+                  setErrorMessage('Enter a fake title first.');
                   return;
                 }
                 send({ type: 'submitGuess', turnToken, guess: next });
@@ -63,9 +63,9 @@ export function PlayerGuessing(): React.JSX.Element {
                 haptic(10);
               }}
             >
-              Submit Guess
+              Submit Fake Title
             </Button>
-            {submitted ? <p className="success-box">Guess submitted.</p> : null}
+            {submitted ? <p className="success-box">Title locked in. Waiting for the room…</p> : null}
           </>
         )}
         <ReactionBar />
@@ -96,15 +96,15 @@ export function PlayerVoting(): React.JSX.Element {
       <GlassPanel className="play-panel player-turn-panel voting-turn">
         <div className="turn-header compact">
           <div className="turn-copy">
-            <p className="eyebrow">{isArtist ? 'Your drawing' : 'Pick an answer'}</p>
-            <div className="prompt small">{isArtist ? 'Watch the vote' : 'Find the real prompt'}</div>
+            <p className="eyebrow">{isArtist ? 'Your drawing' : 'Find the truth'}</p>
+            <div className="prompt small">{isArtist ? 'Watch them sweat' : 'Which one is real?'}</div>
           </div>
           <Deadline />
         </div>
         <p className="action-hint">{playerActionHint('voting', isArtist)}</p>
         <DrawingCanvas drawing={snapshot.currentDrawing} className="reveal-canvas phone-canvas" />
         {isArtist ? (
-          <div className="success-box">This is your drawing. Watch the vote.</div>
+          <div className="success-box">You’re the artist. Watch who takes the bait.</div>
         ) : (
           <div className="vote-list compact player-vote-list">
             {snapshot.votingOptions.map((option, index) => {

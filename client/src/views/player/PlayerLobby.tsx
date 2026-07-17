@@ -46,7 +46,11 @@ export function PlayerLobby(): React.JSX.Element {
                   : `Need ${neededPlayers} more ${neededPlayers === 1 ? 'player' : 'players'}.`}
             </span>
           </div>
-          <p className="muted">Watch the TV. Your device becomes the controller when each round starts.</p>
+          <p className="muted">
+            {spectating
+              ? 'You’re watching for now. You’ll draw next round.'
+              : 'Watch the TV. Your phone is the controller once the round starts.'}
+          </p>
         </GlassPanel>
         <GlassPanel className="players-panel" tone="soft">
           <div className="panel-title">Players</div>

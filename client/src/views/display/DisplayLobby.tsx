@@ -38,7 +38,8 @@ export function DisplayLobby(): React.JSX.Element {
       <GlassPanel className="room-panel">
         <div className="room-hero-copy">
           <p className="eyebrow">Scan to play</p>
-          <h2>Everybody draws. Everybody guesses.</h2>
+          <h2>Everybody draws. Everybody lies.</h2>
+          <p className="muted room-hero-sub">Phones scan the QR or type the code. First laugh in under a minute.</p>
         </div>
         <div className="room-code-wrap">
           <span className="room-code-label">Room Code</span>
@@ -58,10 +59,10 @@ export function DisplayLobby(): React.JSX.Element {
         </Button>
         <p className={canStart ? 'start-note ready' : 'start-note'}>
           {canStart
-            ? `${connectedPlayers.length} connected ${connectedPlayers.length === 1 ? 'player' : 'players'} ready.`
+            ? `${connectedPlayers.length} ready — hit Start when the couch is full.`
             : connectedPlayers.length === 0
-              ? `Need ${snapshot.minPlayers} connected ${snapshot.minPlayers === 1 ? 'player' : 'players'}. Phones can scan the code now.`
-              : `Need ${neededPlayers} more connected ${neededPlayers === 1 ? 'player' : 'players'}.`}
+              ? `Scan the QR (or type the code). Need ${snapshot.minPlayers}+ phones.`
+              : `Need ${neededPlayers} more phone${neededPlayers === 1 ? '' : 's'} before kickoff.`}
         </p>
       </GlassPanel>
 

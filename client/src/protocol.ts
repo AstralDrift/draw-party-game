@@ -198,10 +198,10 @@ export function phaseLabel(phase: GamePhase): string {
 export function defaultRoomSettings(): RoomSettings {
   return {
     rounds: 5,
-    drawSeconds: 90,
-    guessSeconds: 45,
-    voteSeconds: 30,
-    resultsSeconds: 12,
+    drawSeconds: 75,
+    guessSeconds: 40,
+    voteSeconds: 25,
+    resultsSeconds: 10,
     promptPackId: 'safe-party'
   };
 }
