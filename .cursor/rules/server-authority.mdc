@@ -1,0 +1,13 @@
+---
+description: Server authority and engine validation
+globs: server/**
+alwaysApply: false
+---
+
+The Rust server is authoritative for rooms, phase transitions, deadlines, scoring, reconnect/dropout, and cleanup.
+
+- Centralize phase advancement in `server/src/engine.rs`, not route handlers or the client.
+- Disconnected players must not block progress once connected eligible players have submitted.
+- Spectators consume `MAX_PLAYERS` seats; mid-game joiners stay spectators until the next drawing round.
+- After engine or scoring changes, run `cargo test --manifest-path server/Cargo.toml` and keep `docs/architecture.md` aligned.
+- Protocol constants and message types live in `server/src/protocol.rs` — mirror changes in `client/src/protocol.ts` and `docs/protocol.md`.

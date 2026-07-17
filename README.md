@@ -11,46 +11,52 @@ The TV browser creates a room and shows a join code. Each player joins from a ph
 - Drawings are compact vector stroke documents, not image data URLs.
 - Rooms are in-memory and ephemeral. No accounts or database are required for v1.
 
-## Local Development
+## Documentation
 
-Install Rust, Node.js, and npm first.
+| Doc | Audience |
+|-----|----------|
+| [AGENTS.md](AGENTS.md) | AI agents (canonical map + rules) |
+| [docs/](docs/README.md) | Architecture, protocol, design, deploy, contributing |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to develop and validate changes |
+| [SECURITY.md](SECURITY.md) | Vulnerability reporting |
+
+## Prerequisites
+
+- Node.js 22
+- Stable Rust (`clippy`, `rustfmt`)
+- npm
+
+## Local Development
 
 ```bash
 npm --prefix client ci
 npm --prefix client run e2e:install
+npm run server:dev
+npm run client:dev
+```
+
+The Vite dev server proxies `/ws` and `/api` to the Rust server on port `3000`. Open the Vite URL on the TV/display; phones join with the QR/code.
+
+Production-like local run (server serves the built client):
+
+```bash
 npm --prefix client run build
 cargo run --manifest-path server/Cargo.toml
 ```
 
-Then open `http://localhost:3000` on the TV/display browser. Phones join with the QR/code shown on the display.
-
-For client-only development:
-
-```bash
-npm --prefix client run dev
-```
-
-The Vite dev server proxies `/ws` and `/api` to the Rust server on port `3000`.
+Then open `http://localhost:3000`. Root `package.json` also exposes `client:test`, `client:typecheck`, `server:test`, `e2e`, and `test`.
 
 ## Validation
 
+Full CI matrix, blast-radius table, and e2e notes: [docs/contributing.md](docs/contributing.md#validation).
+
 ```bash
-cargo fmt --check --manifest-path server/Cargo.toml
-cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path server/Cargo.toml
-npm --prefix client run typecheck
-npm --prefix client test -- --run
-npm --prefix client run build
-npm run e2e
+npm run test   # or follow the contributing matrix for a narrower PR
 ```
-
-`npm run e2e` builds the client, starts the Rust server on `127.0.0.1:3100`, and runs Playwright against the built app. Set `E2E_PORT` to use a different local port, or set `E2E_BASE_URL` to run the same tests against an already-running deployment.
-
-The E2E suite covers one TV and three isolated phone browser contexts through drawing, guessing, voting, results, and the next round transition. It also checks that `/sw.js` is served as JavaScript, includes the app-shell cache behavior, leaves `/api/*` routes uncached, and keeps browser routes such as `/join/:roomCode` on the SPA shell.
 
 ## Deployment
 
-The Rust server serves the built client from `client/dist`.
+The Rust server serves the built client from `client/dist`. Env vars, Docker, Railway health metadata, and PWA cache rules: [docs/deployment.md](docs/deployment.md).
 
 ```bash
 npm --prefix client ci
@@ -59,19 +65,17 @@ cargo build --manifest-path server/Cargo.toml --release
 DRAW_PARTY_STATIC_DIR=client/dist ./target/release/draw-party-server
 ```
 
-`GET /api/health` returns server status plus deploy metadata when the host provides it. Railway GitHub deploys expose values such as `RAILWAY_GIT_COMMIT_SHA`, `RAILWAY_GIT_BRANCH`, `RAILWAY_DEPLOYMENT_ID`, and `RAILWAY_ENVIRONMENT_NAME`; local runs can set `GIT_SHA` and `GIT_BRANCH` for the same smoke-proof flow. `GET /` opens the TV display. `GET /join/:roomCode` opens the phone join flow.
+`GET /api/health` returns server status plus deploy metadata when the host provides it. `GET /` opens the TV display. `GET /join/:roomCode` opens the phone join flow.
 
-The production server should serve `client/dist` as its static directory so the copied `sw.js`, `manifest.webmanifest`, and hashed assets are all available from the same origin. The service worker caches the app shell and built assets for browser/PWA resilience, but intentionally bypasses `/api/*` and `/ws` so live game state and WebSocket traffic stay network-first.
-
-GitHub Actions runs Rust formatting, clippy, Rust tests, client typecheck, Vitest, client build, and Playwright on pull requests and pushes to `main`.
-
-For Railway release verification, confirm the deployed health response reports the expected merged commit and then run the browser flow against the public service:
+For Railway release verification:
 
 ```bash
 curl https://drawparty.up.railway.app/api/health
 E2E_BASE_URL=https://drawparty.up.railway.app npm run e2e
 ```
 
+GitHub Actions runs Rust formatting, clippy, Rust tests, client typecheck, Vitest, client build, and Playwright on pull requests and pushes to `main`.
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

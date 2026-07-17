@@ -1,12 +1,14 @@
 # Draw Party Design System
 
+Implementation lives under `client/src/design/` (tokens, base, components, drawing, layout, motion). This document is the product design source of truth; keep CSS tokens aligned when either side changes.
+
 ## 1. Atmosphere & Identity
 
 Draw Party should feel like a living-room apple-glass night: soft translucent surfaces floating over a deep charcoal stage, with quiet blue accents and couch-readable type. The signature is frosted glass — hairline borders, gentle blur, and layered depth — never neon arcade chrome, purple SaaS gradients, cream/terracotta editorial, or newspaper density.
 
 ## 2. Color
 
-Party play is dark-first (TV living rooms). Tokens below are the product palette; light mode is not required for v1 glass rewrite.
+Party play is dark-first (TV living rooms). Tokens below are the product palette; light mode is not required for v1.
 
 ### Palette
 
