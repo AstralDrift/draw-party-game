@@ -269,10 +269,7 @@ mod tests {
     const MIN_PROMPTS_PER_PACK: usize = 100;
 
     fn assert_pack_quality(id: &str, prompts: &[&str]) {
-        assert!(
-            !prompts.is_empty(),
-            "prompt pack {id} must be non-empty"
-        );
+        assert!(!prompts.is_empty(), "prompt pack {id} must be non-empty");
         assert!(
             prompts.len() >= MIN_PROMPTS_PER_PACK,
             "prompt pack {id} has {} prompts; expected at least {MIN_PROMPTS_PER_PACK}",
