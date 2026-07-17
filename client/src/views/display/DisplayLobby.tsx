@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useGame } from '../../app/GameProvider';
+import { displayLobbyStartNote } from '../../polish';
 import {
   defaultRoomSettings,
   isPromptPackId,
@@ -30,7 +31,6 @@ export function DisplayLobby(): React.JSX.Element {
   const joinUrl = `${window.location.origin}/join/${snapshot.roomCode}`;
   const connectedPlayers = activePlayers(snapshot.players);
   const canStart = connectedPlayers.length >= snapshot.minPlayers;
-  const neededPlayers = Math.max(0, snapshot.minPlayers - connectedPlayers.length);
   const settings = snapshot.settings;
 
   return (
@@ -58,11 +58,7 @@ export function DisplayLobby(): React.JSX.Element {
           Start Game
         </Button>
         <p className={canStart ? 'start-note ready' : 'start-note'}>
-          {canStart
-            ? `${connectedPlayers.length} ready — hit Start when the couch is full.`
-            : connectedPlayers.length === 0
-              ? `Scan the QR (or type the code). Need ${snapshot.minPlayers}+ phones.`
-              : `Need ${neededPlayers} more phone${neededPlayers === 1 ? '' : 's'} before kickoff.`}
+          {displayLobbyStartNote(connectedPlayers.length, snapshot.minPlayers)}
         </p>
       </GlassPanel>
 
@@ -176,6 +172,7 @@ function SettingsPanel({
         variant="secondary"
         wide
         className={`sound-toggle ${soundOn ? 'is-selected' : ''}`}
+        aria-pressed={soundOn}
         onClick={onToggleSound}
       >
         {soundOn ? 'Sound On' : 'Sound Off'}

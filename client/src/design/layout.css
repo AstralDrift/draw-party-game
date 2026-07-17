@@ -479,12 +479,12 @@
   animation: confetti-fall 1.4s ease-in forwards;
 }
 
-.confetti-piece.piece-1 { left: 8%; background: #58efb5; animation-delay: 0.05s; }
-.confetti-piece.piece-2 { left: 22%; background: #ffd166; animation-delay: 0.12s; }
+.confetti-piece.piece-1 { left: 8%; background: #30d158; animation-delay: 0.05s; }
+.confetti-piece.piece-2 { left: 22%; background: #ffd60a; animation-delay: 0.12s; }
 .confetti-piece.piece-3 { left: 38%; background: #63d2ff; animation-delay: 0.18s; }
-.confetti-piece.piece-4 { left: 55%; background: #ff73b7; animation-delay: 0.08s; }
+.confetti-piece.piece-4 { left: 55%; background: #0071e3; animation-delay: 0.08s; }
 .confetti-piece.piece-5 { left: 72%; background: #a8ffe0; animation-delay: 0.22s; }
-.confetti-piece.piece-6 { left: 88%; background: #fff6d7; animation-delay: 0.15s; }
+.confetti-piece.piece-6 { left: 88%; background: #f5f5f7; animation-delay: 0.15s; }
 
 @keyframes confetti-fall {
   to {
@@ -614,12 +614,8 @@
 
 @media (max-height: 780px) {
   .display.phase-final-scores .share-card-button {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    clip: rect(0 0 0 0);
-    overflow: hidden;
+    min-height: 40px;
+    margin-top: var(--space-1);
   }
 
   .display-grid-finalScores .podium-place {

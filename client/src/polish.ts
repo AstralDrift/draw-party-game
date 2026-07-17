@@ -1,9 +1,38 @@
 import type { GamePhase, RoundResult, ScoreEntry } from './protocol';
 
+/** Soft party-size guidance. Server `MIN_PLAYERS` stays 1 for solo/demo. */
+export const RECOMMENDED_PARTY_SIZE = 3;
+
 type RoundOutcomeInput = Pick<
   RoundResult,
   'breakdown' | 'correctVoterNames' | 'nobodyFoundIt' | 'perfectTruth'
 >;
+
+export function displayLobbyStartNote(connectedCount: number, minPlayers: number): string {
+  if (connectedCount < minPlayers) {
+    if (connectedCount === 0) {
+      return `Scan the QR (or type the code). Need ${minPlayers}+ phones.`;
+    }
+    const needed = Math.max(0, minPlayers - connectedCount);
+    return `Need ${needed} more phone${needed === 1 ? '' : 's'} before kickoff.`;
+  }
+  if (connectedCount < RECOMMENDED_PARTY_SIZE) {
+    return `${connectedCount} ready — playable now, best with 3+ for votes and fakes.`;
+  }
+  return `${connectedCount} ready — hit Start when the couch is full.`;
+}
+
+export function playerLobbyReadyNote(connectedCount: number, minPlayers: number): string {
+  const needed = Math.max(0, minPlayers - connectedCount);
+  if (needed > 0) {
+    return `Need ${needed} more ${needed === 1 ? 'player' : 'players'}.`;
+  }
+  if (connectedCount < RECOMMENDED_PARTY_SIZE) {
+    const invite = RECOMMENDED_PARTY_SIZE - connectedCount;
+    return `Invite ${invite} more for better voting.`;
+  }
+  return 'The TV can start the game.';
+}
 
 export function roundOutcomeText(result: RoundOutcomeInput): string {
   if (result.nobodyFoundIt) {

@@ -66,24 +66,48 @@
 }
 
 .swatch {
-  width: 40px;
-  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target, var(--touch));
+  height: var(--touch-target, var(--touch));
   border-radius: 50%;
   border: 2px solid rgba(255, 255, 255, 0.25);
+  color: var(--ink);
+  padding: 0;
 }
 
 .swatch.is-selected {
   box-shadow: 0 0 0 3px var(--accent);
 }
 
+.swatch-eraser {
+  border-color: rgba(29, 29, 31, 0.4);
+  background: #ffffff;
+}
+
+.swatch-eraser .swatch-eraser-icon {
+  pointer-events: none;
+}
+
+.swatch-eraser.is-selected {
+  box-shadow: 0 0 0 3px var(--accent);
+}
+
 .tool-button {
-  min-width: 44px;
-  min-height: 44px;
+  min-width: var(--touch-target, var(--touch));
+  min-height: var(--touch-target, var(--touch));
   padding: 0 var(--space-3);
   border-radius: var(--radius-pill);
   border: 1px solid var(--border-hairline);
   background: rgba(0, 0, 0, 0.22);
   color: var(--text-primary);
+}
+
+.tool-button.is-armed {
+  border-color: var(--status-danger);
+  color: var(--status-danger);
+  background: rgba(255, 69, 58, 0.16);
 }
 
 .draw-status {

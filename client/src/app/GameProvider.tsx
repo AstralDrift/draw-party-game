@@ -54,6 +54,7 @@ interface GameContextValue {
   clearError: () => void;
   setSelectedVote: (vote: { turnToken: number; optionId: string } | null) => void;
   joinRoom: (roomCode: string, name: string) => void;
+  setName: (name: string) => void;
   cancelJoin: () => void;
   send: (message: ClientMessage) => void;
   updateSettings: (settings: RoomSettings) => void;
@@ -332,6 +333,23 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
     [connect, haptic]
   );
 
+  const setName = useCallback(
+    (name: string) => {
+      const safeName = name.trim() || 'Player';
+      localStorage.setItem('draw-party-name', safeName);
+      setPlayerName(safeName);
+      setPendingJoin((current) => {
+        if (!current) {
+          return current;
+        }
+        return { ...current, name: safeName };
+      });
+      send({ type: 'setName', name: safeName });
+      haptic(8);
+    },
+    [haptic, send]
+  );
+
   const cancelJoin = useCallback(() => {
     setPendingJoin(null);
     pendingJoinRef.current = null;
@@ -378,6 +396,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       clearError: () => setErrorMessage(''),
       setSelectedVote,
       joinRoom,
+      setName,
       cancelJoin,
       send,
       updateSettings,
@@ -401,6 +420,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       soundOn,
       reactionBursts,
       joinRoom,
+      setName,
       cancelJoin,
       send,
       updateSettings,

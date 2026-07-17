@@ -87,7 +87,7 @@ export function ProgressPanel({
       </div>
         <p className="muted">{progressWaitingText(phase, waitingNames)}</p>
       <div className="player-list submission-list">
-        {players.map((player, index) => {
+        {players.map((player) => {
           const artist = phase !== 'drawing' && player.id === snapshot.currentArtistId;
           const submitted = submittedIds.includes(player.id);
           const state = !player.connected
@@ -101,7 +101,6 @@ export function ProgressPanel({
             <div
               key={player.id}
               className={`player-row submission-row ${player.connected ? 'online' : 'offline'} is-${state}`}
-              style={{ ['--row-index' as string]: index }}
             >
               <span className="player-name">{player.name}</span>
               <span className={`pill status-pill status-${state}`}>

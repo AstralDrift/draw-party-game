@@ -12,7 +12,7 @@ export function PlayerList({ players, showScores = false }: PlayerListProps): Re
 
   return (
     <div className="player-list">
-      {players.map((player, index) => {
+      {players.map((player) => {
         const statusPill = player.spectator
           ? player.connected
             ? 'spectating'
@@ -26,7 +26,6 @@ export function PlayerList({ players, showScores = false }: PlayerListProps): Re
           <div
             key={player.id}
             className={`player-row ${player.connected ? 'online' : 'offline'}${player.spectator ? ' is-spectator' : ''}`}
-            style={{ ['--row-index' as string]: index }}
           >
             <span className="player-name">{player.name}</span>
             <span className={`pill${player.spectator ? ' spectator-pill' : ''}`}>{statusPill}</span>
