@@ -55,7 +55,7 @@ Important fields:
 |------|---------|
 | `createRoom` | Display creates a room |
 | `joinRoom` | Player joins with `roomCode` + `name` |
-| `setName` | Rename player (no phase gate; UI is typically lobby) |
+| `setName` | Rename player (no phase gate; current client sets name via `joinRoom` only) |
 | `updateRoomSettings` | Display updates timers/rounds/pack (lobby only) |
 | `startGame` | Display starts the game, Continues after results, or Play Again from final scores |
 | `submitDrawing` | `turnToken` + `drawing` |

@@ -54,7 +54,7 @@ Draw Party is an open-source Drawful-style party game for a TV/display browser a
 ## Game Flow
 
 1. Lobby: the display creates a room; phones join by QR/code; the display can adjust room settings (timers, results pacing, prompt pack).
-2. Drawing: all connected players draw their assigned prompts and submit once they have ink.
+2. Drawing: each connected non-spectator draws their assigned prompt and submits once they have ink.
 3. Guessing: each drawing is revealed in turn; non-artist players submit fake answers. Phones may send ephemeral reactions.
 4. Voting: non-artist players choose the real prompt while the artist watches. Reactions remain available.
 5. Results: the client stages the reveal (hold → tally → correct → deltas → complete); the engine auto-advances after `resultsSeconds` unless the display Continues early. Scoring includes nobody-found and perfect-truth bonuses.

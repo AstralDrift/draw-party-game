@@ -114,7 +114,7 @@ Animate only `transform` and `opacity`. Honor `prefers-reduced-motion: reduce` b
 | `GlassPanel` | Frosted content surface |
 | `Button` | Pill CTA / glass secondary / quiet tool |
 | `Field` | Glass input + label |
-| `Badge` / `Pill` | Online, score, status chips |
+| Status chips | Markup uses `.pill` (`.badge` is an unused CSS alias) |
 | Shell brand | Wordmark via Shell / `.brand` (`.brand-mark` CSS exists but is unused) |
 | `PlayerList` | Couch-readable roster rows (`.player-row`) |
 | `Deadline` | Large countdown (`#deadline-text`) |
