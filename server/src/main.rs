@@ -77,6 +77,33 @@ impl AppInner {
             None
         }
     }
+
+    fn disconnect_room_member(&mut self, room_code: &str, client_id: &str) -> Vec<OutboundMessage> {
+        let event = if let Some(room) = self.rooms.get_mut(room_code) {
+            let now = now_ms();
+            room.mark_disconnected(client_id, now);
+            match room.advance_if_ready(now) {
+                Ok(Some(event)) => Some(event),
+                Ok(None) => Some(EngineEvent::PlayerListChanged),
+                Err(err) => {
+                    warn!(
+                        room_code,
+                        client_id,
+                        code = err.code,
+                        message = err.message,
+                        "disconnect readiness advance failed"
+                    );
+                    Some(EngineEvent::PlayerListChanged)
+                }
+            }
+        } else {
+            None
+        };
+
+        event
+            .map(|event| room_messages(self, room_code, event))
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -251,30 +278,54 @@ async fn handle_socket(socket: WebSocket, state: AppState, query: WsQuery) {
         .session_token
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let requested_room = query
+        .room
+        .as_ref()
+        .map(|room_code| room_code.to_uppercase());
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let (connection, mut rx, mut close_rx) =
         Connection::new(client_id.clone(), query.role.clone(), session_token.clone());
     let session = connection.key().clone();
     let mut receiver_close_rx = close_rx.clone();
 
-    let rejected = {
+    let rejection = {
         let mut inner = state.inner.lock().await;
         if inner
             .connections
             .get(&client_id)
             .is_some_and(|existing| !existing.accepts_session_token(&session_token))
         {
-            true
+            Some((
+                "session_in_use",
+                "This player session is already active on another device.",
+            ))
+        } else if query.role == Role::Player
+            && inner
+                .rooms
+                .values()
+                .any(|room| !room.player_session_matches(&client_id, &session_token))
+        {
+            Some((
+                "invalid_player_session",
+                "This player identity belongs to another device.",
+            ))
         } else {
+            let mut transition_messages = Vec::new();
             if let Some(replaced) = inner.replace_connection(connection) {
+                if replaced.room_code() != requested_room.as_deref() {
+                    if let Some(old_room_code) = replaced.room_code() {
+                        transition_messages.extend(
+                            inner.disconnect_room_member(old_room_code, session.client_id()),
+                        );
+                    }
+                }
                 replaced.retire();
             }
 
-            if let Some(room_code) = &query.room {
-                let room_code = room_code.to_uppercase();
+            if let Some(room_code) = requested_room.as_deref() {
                 if query.role == Role::Display {
                     let now = now_ms();
-                    let snapshot = match inner.rooms.get_mut(&room_code) {
+                    let snapshot = match inner.rooms.get_mut(room_code) {
                         Some(room)
                             if query.host_token.as_deref() == Some(room.host_token.as_str()) =>
                         {
@@ -293,7 +344,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, query: WsQuery) {
                     match snapshot {
                         Ok(snapshot) => {
                             if let Some(conn) = inner.connection_mut(&session) {
-                                conn.set_room_code(room_code.clone());
+                                conn.set_room_code(room_code.to_string());
                             }
                             queue_snapshot_for_connection(&inner, &session, snapshot);
                         }
@@ -301,14 +352,15 @@ async fn handle_socket(socket: WebSocket, state: AppState, query: WsQuery) {
                     }
                 }
             }
-            false
+            deliver_many(transition_messages);
+            None
         }
     };
 
-    if rejected {
+    if let Some((code, message)) = rejection {
         let error = ServerMessage::Error {
-            code: "session_in_use".to_string(),
-            message: "This player session is already active on another device.".to_string(),
+            code: code.to_string(),
+            message: message.to_string(),
         };
         if let Ok(text) = serde_json::to_string(&error) {
             let _ = ws_sender.send(Message::Text(text.into())).await;
@@ -664,33 +716,10 @@ async fn disconnect_client(state: &AppState, session: &SessionKey) {
         let room_code = inner
             .remove_connection(session)
             .and_then(|conn| conn.room_code_owned());
-        let messages = if let Some(room_code) = room_code {
-            let event = if let Some(room) = inner.rooms.get_mut(&room_code) {
-                let now = now_ms();
-                room.mark_disconnected(session.client_id(), now);
-                match room.advance_if_ready(now) {
-                    Ok(Some(event)) => Some(event),
-                    Ok(None) => Some(EngineEvent::PlayerListChanged),
-                    Err(err) => {
-                        warn!(
-                            room_code,
-                            client_id = session.client_id(),
-                            code = err.code,
-                            message = err.message,
-                            "disconnect readiness advance failed"
-                        );
-                        Some(EngineEvent::PlayerListChanged)
-                    }
-                }
-            } else {
-                None
-            };
-            event
-                .map(|event| room_messages(&inner, &room_code, event))
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
+        let messages = room_code
+            .as_deref()
+            .map(|room_code| inner.disconnect_room_member(room_code, session.client_id()))
+            .unwrap_or_default();
         deliver_many(messages);
     }
 }
@@ -1435,6 +1464,100 @@ mod tests {
                 .pointer("/snapshot/settings/rounds")
                 .and_then(Value::as_u64),
             Some(3)
+        );
+    }
+
+    #[tokio::test]
+    async fn websocket_invalid_reclaim_does_not_reserve_a_disconnected_player_id() {
+        let url = spawn_ws_server().await;
+        let (mut display, _) = connect_async(format!(
+            "{url}?role=display&clientId=display&sessionToken=display-session"
+        ))
+        .await
+        .unwrap();
+        let (room_code, _, _) = create_test_room(&mut display).await;
+        let mut host = join_player(&url, &room_code, "host-phone", "Ada").await;
+
+        host.send(text_message(json!({ "type": "leaveRoom" })))
+            .await
+            .unwrap();
+        let _ = read_until_type(&mut display, "playerListChanged").await;
+
+        let (mut attacker, _) = connect_async(format!(
+            "{url}?role=player&room={room_code}&clientId=host-phone&sessionToken=attacker-session"
+        ))
+        .await
+        .unwrap();
+        let error = read_until_type(&mut attacker, "error").await;
+        assert_eq!(
+            error.get("code").and_then(Value::as_str),
+            Some("invalid_player_session")
+        );
+
+        let mut restored = join_player(&url, &room_code, "host-phone", "Ada").await;
+        restored
+            .send(text_message(json!({
+                "type": "updateRoomSettings",
+                "settings": {
+                    "rounds": 3,
+                    "drawSeconds": 30,
+                    "guessSeconds": 20,
+                    "voteSeconds": 15,
+                    "resultsSeconds": 12,
+                    "promptPackId": "safe-party"
+                }
+            })))
+            .await
+            .unwrap();
+        let updated = read_until_settings_rounds(&mut restored, 3).await;
+        assert_eq!(
+            updated
+                .pointer("/snapshot/settings/rounds")
+                .and_then(Value::as_u64),
+            Some(3)
+        );
+    }
+
+    #[tokio::test]
+    async fn websocket_replacement_into_another_room_disconnects_the_old_room_player() {
+        let url = spawn_ws_server().await;
+        let (mut display_a, _) = connect_async(format!(
+            "{url}?role=display&clientId=display-a&sessionToken=display-a-session"
+        ))
+        .await
+        .unwrap();
+        let (room_a, _, _) = create_test_room(&mut display_a).await;
+        let _player_a = join_player(&url, &room_a, "player", "Ada").await;
+        let _ = read_until_type(&mut display_a, "playerListChanged").await;
+
+        let (mut display_b, _) = connect_async(format!(
+            "{url}?role=display&clientId=display-b&sessionToken=display-b-session"
+        ))
+        .await
+        .unwrap();
+        let (room_b, _, _) = create_test_room(&mut display_b).await;
+
+        let (mut player_b, _) = connect_async(format!(
+            "{url}?role=player&room={room_b}&clientId=player&sessionToken=player-session"
+        ))
+        .await
+        .unwrap();
+        player_b
+            .send(text_message(json!({
+                "type": "joinRoom",
+                "roomCode": room_b,
+                "name": "Ada"
+            })))
+            .await
+            .unwrap();
+        let _ = read_until_type(&mut player_b, "roomSnapshot").await;
+
+        let disconnected = read_until_type(&mut display_a, "playerListChanged").await;
+        assert_eq!(
+            disconnected
+                .pointer("/players/0/connected")
+                .and_then(Value::as_bool),
+            Some(false)
         );
     }
 

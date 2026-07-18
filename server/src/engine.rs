@@ -252,6 +252,12 @@ impl Room {
                 .is_some_and(|player| player.connected)
     }
 
+    pub fn player_session_matches(&self, player_id: &str, session_token: &str) -> bool {
+        self.players
+            .get(player_id)
+            .is_none_or(|player| player.session_token == session_token)
+    }
+
     pub fn handle_start_or_advance(&mut self, now_ms: u64) -> EngineResult<EngineEvent> {
         self.touch(now_ms);
         match self.phase {

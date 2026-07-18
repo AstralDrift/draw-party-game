@@ -91,6 +91,20 @@ function getStoredValue(key: string, fallback: () => string): string {
   return value;
 }
 
+function getTabStoredValue(key: string, fallback: () => string): string {
+  try {
+    const stored = sessionStorage.getItem(key);
+    if (stored) {
+      return stored;
+    }
+    const value = fallback();
+    sessionStorage.setItem(key, value);
+    return value;
+  } catch {
+    return fallback();
+  }
+}
+
 function detectRole(): { role: ClientRole; initialRoomCode: string } {
   const joinMatch = window.location.pathname.match(/^\/join\/([A-Z0-9]{4})/i);
   return {
@@ -103,7 +117,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   const boot = useMemo(() => detectRole(), []);
   const clientId = useMemo(() => getStoredValue('draw-party-client-id', () => crypto.randomUUID()), []);
   const sessionToken = useMemo(
-    () => getStoredValue('draw-party-session-token', () => crypto.randomUUID()),
+    () => getTabStoredValue('draw-party-session-token', () => crypto.randomUUID()),
     []
   );
   const socketRef = useRef<GameSocket | null>(null);
@@ -112,6 +126,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   const lastTickSecondRef = useRef(-1);
   const pendingJoinRef = useRef<PendingJoin | null>(null);
   const snapshotRef = useRef<RoomSnapshot | null>(null);
+  const reconnectSuppressedRef = useRef(false);
   const hostTokens = useMemo(() => new HostTokenCache(), []);
   const burstIdRef = useRef(0);
 
@@ -226,6 +241,16 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
         case 'pong':
           break;
         case 'error':
+          if (message.code === 'session_in_use' || message.code === 'invalid_player_session') {
+            reconnectSuppressedRef.current = true;
+            setErrorMessage(
+              message.code === 'session_in_use'
+                ? 'This game controller is already active in another tab.'
+                : 'This player identity belongs to another device.'
+            );
+            socketRef.current?.close();
+            break;
+          }
           if (
             boot.role === 'display' &&
             (message.code === 'room_not_found' || message.code === 'unauthorized_display')
@@ -288,6 +313,9 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
           }
         },
         onClose: () => {
+          if (reconnectSuppressedRef.current) {
+            return;
+          }
           if (reconnectTimerRef.current) {
             return;
           }
@@ -352,6 +380,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       setPlayerName(name);
       setRoomCodeDraft(roomCode);
       const next = { roomCode, name };
+      reconnectSuppressedRef.current = false;
       setPendingJoin(next);
       pendingJoinRef.current = next;
       connect(roomCode);
