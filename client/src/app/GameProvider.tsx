@@ -57,7 +57,7 @@ interface GameContextValue {
   joinRoom: (roomCode: string, name: string) => void;
   setName: (name: string) => void;
   cancelJoin: () => void;
-  send: (message: ClientMessage) => void;
+  send: (message: ClientMessage) => boolean;
   updateSettings: (settings: RoomSettings) => void;
   toggleSound: () => void;
   haptic: (pattern?: number | number[]) => void;
@@ -149,7 +149,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   }, []);
 
   const send = useCallback((message: ClientMessage) => {
-    socketRef.current?.send(message);
+    return socketRef.current?.send(message) ?? false;
   }, []);
 
   const applySnapshot = useCallback((next: RoomSnapshot) => {
@@ -299,6 +299,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
           }
         },
         onClose: () => {
+          setSelectedVote(null);
           if (reconnectSuppressedRef.current) {
             return;
           }
