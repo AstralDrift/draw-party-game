@@ -1,3 +1,4 @@
+import { Play, Volume2, VolumeX } from 'lucide';
 import { useGame } from '../../app/GameProvider';
 import { displayLobbyStartNote } from '../../polish';
 import { activePlayers, playerCountLabel } from '../../spectator';
@@ -23,16 +24,18 @@ export function DisplayLobby(): React.JSX.Element {
   return (
     <div className="display-grid display-grid-lobby">
       <GlassPanel className="room-panel">
-        <div className="room-hero-copy">
-          <p className="eyebrow">Scan to play</p>
-          <h2>Everybody draws. Everybody guesses.</h2>
-          <p className="muted room-hero-sub">
-            Phones scan the QR or type the code. The first phone runs the lobby — no TV remote needed.
-          </p>
-        </div>
-        <div className="room-code-wrap">
-          <span className="room-code-label">Room Code</span>
-          <div className="room-code">{snapshot.roomCode}</div>
+        <div className="room-intro">
+          <div className="room-hero-copy">
+            <p className="eyebrow">Scan to play</p>
+            <h2>Everybody draws. Everybody guesses.</h2>
+            <p className="muted room-hero-sub">
+              Phones scan the QR or type the code. The first phone runs the lobby — no TV remote needed.
+            </p>
+          </div>
+          <div className="room-code-wrap">
+            <span className="room-code-label">Room Code</span>
+            <div className="room-code">{snapshot.roomCode}</div>
+          </div>
         </div>
         <div className="qr-stage">
           <QrCode url={joinUrl} />
@@ -40,6 +43,7 @@ export function DisplayLobby(): React.JSX.Element {
         <p className="join-url">{joinUrl}</p>
         <Button
           className="start-button"
+          icon={Play}
           variant="secondary"
           wide
           disabled={!canStart}
@@ -92,6 +96,7 @@ export function DisplayLobby(): React.JSX.Element {
         </GlassPanel>
         <Button
           variant="secondary"
+          icon={soundOn ? Volume2 : VolumeX}
           wide
           className={`sound-toggle ${soundOn ? 'is-selected' : ''}`}
           aria-pressed={soundOn}

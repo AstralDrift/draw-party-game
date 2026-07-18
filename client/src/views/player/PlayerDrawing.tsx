@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { Send } from 'lucide';
 import { useGame } from '../../app/GameProvider';
 import type { DrawingPad } from '../../drawing';
 import { playerActionHint } from '../../polish';
@@ -61,6 +62,7 @@ export function PlayerDrawing(): React.JSX.Element {
           <div className={`submit-dock${ready ? ' is-ready' : ''}`}>
             <Button
               wide
+              icon={Send}
               disabled={!ready}
               onClick={() => {
                 const pad = padRef.current;
