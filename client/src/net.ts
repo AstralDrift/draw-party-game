@@ -63,9 +63,16 @@ export class GameSocket {
     });
   }
 
-  send(message: ClientMessage): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
+  send(message: ClientMessage): boolean {
+    const socket = this.ws;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return false;
+    }
+    try {
+      socket.send(JSON.stringify(message));
+      return true;
+    } catch {
+      return false;
     }
   }
 

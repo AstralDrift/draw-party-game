@@ -120,8 +120,10 @@ export function PlayerVoting(): React.JSX.Element {
                   className={`${disabled ? 'vote-option disabled' : 'vote-option'}${selected ? ' is-selected' : ''}`}
                   disabled={disabled}
                   onClick={() => {
+                    if (!send({ type: 'submitVote', turnToken, optionId: option.id })) {
+                      return;
+                    }
                     setSelectedVote({ turnToken, optionId: option.id });
-                    send({ type: 'submitVote', turnToken, optionId: option.id });
                     playCue('submit');
                     haptic(10);
                   }}

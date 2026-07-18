@@ -100,3 +100,86 @@ test('disconnected drawer does not stall drawing phase', async ({ baseURL, brows
     await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
   }
 });
+
+test('a vote interrupted by reconnect can be submitted again', async ({ baseURL, browser }) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const players = await createPlayers(
+      browser,
+      contexts,
+      appUrl,
+      roomCode,
+      ['Ava', 'Bo', 'Cy'],
+      undefined,
+      async (context) => {
+        await context.addInitScript(() => {
+          const NativeWebSocket = window.WebSocket;
+          const sockets: WebSocket[] = [];
+          Object.defineProperty(window, '__drawPartyTestSockets', { value: sockets });
+          window.WebSocket = new Proxy(NativeWebSocket, {
+            construct(target, args) {
+              const socket = Reflect.construct(target, args) as WebSocket;
+              sockets.push(socket);
+              return socket;
+            }
+          });
+        });
+      }
+    );
+
+    await tv.getByRole('button', { name: 'Start Game' }).click();
+    for (const player of players) {
+      await drawStroke(player);
+      await player.getByRole('button', { name: 'Submit Drawing' }).click();
+    }
+
+    await expect(tv.getByText('What did they draw?')).toBeVisible();
+    const guessers = await waitForGuessers(players);
+    for (const [index, guesser] of guessers.entries()) {
+      await guesser.getByPlaceholder('Something that sounds legit…').fill(`reconnect fake ${index}`);
+      await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
+    }
+    await expect(tv.getByText('Which title is real?')).toBeVisible();
+
+    const interruptedVoter = guessers[0];
+    const interruptedOption = interruptedVoter.locator('button.vote-option:not([disabled])').first();
+    await expect(interruptedOption).toBeVisible();
+    await interruptedVoter.evaluate(() => {
+      const sockets = (
+        window as typeof window & { __drawPartyTestSockets: WebSocket[] }
+      ).__drawPartyTestSockets;
+      const socket = sockets.findLast((candidate) => candidate.readyState === WebSocket.OPEN);
+      if (!socket) {
+        throw new Error('expected an open player WebSocket');
+      }
+      const send = socket.send.bind(socket);
+      socket.send = (data) => {
+        if (typeof data === 'string' && JSON.parse(data).type === 'submitVote') {
+          socket.close();
+          return;
+        }
+        send(data);
+      };
+    });
+    await interruptedOption.click();
+
+    await expect(interruptedVoter.locator('#connection-text')).toHaveText('Connected', { timeout: 5000 });
+    await expect(interruptedVoter.locator('button.vote-option:not([disabled])').first()).toBeVisible();
+    await interruptedVoter.locator('button.vote-option:not([disabled])').first().click();
+
+    const remainingVoter = guessers[1];
+    await remainingVoter.locator('button.vote-option:not([disabled])').first().click();
+    await expect(tv.getByText('The real prompt was')).toBeVisible();
+  } finally {
+    await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
+  }
+});

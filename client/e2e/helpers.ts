@@ -19,7 +19,8 @@ export async function createPlayers(
   appUrl: (path: string) => string,
   roomCode: string,
   names: string[],
-  viewports: PlayerViewport[] = names.map(() => ({ width: 390, height: 844, isMobile: true }))
+  viewports: PlayerViewport[] = names.map(() => ({ width: 390, height: 844, isMobile: true })),
+  prepareContext?: (context: BrowserContext, index: number) => Promise<void>
 ): Promise<Page[]> {
   const pages: Page[] = [];
   for (const [index, name] of names.entries()) {
@@ -30,6 +31,7 @@ export async function createPlayers(
       viewport: { width: viewport.width, height: viewport.height }
     });
     contexts.push(context);
+    await prepareContext?.(context, index);
 
     const page = await context.newPage();
     await page.goto(appUrl(`/join/${roomCode}`));
