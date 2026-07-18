@@ -67,3 +67,35 @@ fn host_succession_uses_join_order_not_player_id_order() {
     assert_eq!(room.host_player_id.as_deref(), Some("p3"));
     assert!(room.player_can_control("p3"));
 }
+
+#[test]
+fn reconnecting_a_player_requires_its_original_session_token() {
+    let mut room = Room::new(
+        "HOST".to_string(),
+        "display".to_string(),
+        "host-token".to_string(),
+        0,
+    );
+    room.upsert_player_with_session(
+        "p1".to_string(),
+        "private-session".to_string(),
+        "Ada".to_string(),
+        1,
+    )
+    .unwrap();
+    room.mark_disconnected("p1", 2);
+
+    let error = room
+        .upsert_player_with_session(
+            "p1".to_string(),
+            "attacker-session".to_string(),
+            "Mallory".to_string(),
+            3,
+        )
+        .unwrap_err();
+
+    assert_eq!(error.code, "invalid_player_session");
+    let player = room.players.get("p1").unwrap();
+    assert_eq!(player.name, "Ada");
+    assert!(!player.connected);
+}

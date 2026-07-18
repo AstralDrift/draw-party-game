@@ -3,6 +3,7 @@
 React + TypeScript Apple-glass UI is the sole client entry. All phases are implemented against the Rust protocol.
 
 See [design.md](design.md) for the visual system and [architecture.md](architecture.md) for authority boundaries.
+The phased UX plan and its current execution status live in [ui-ux-improvement-plan.md](ui-ux-improvement-plan.md).
 
 ## Phase coverage
 

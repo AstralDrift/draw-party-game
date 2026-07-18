@@ -22,6 +22,8 @@ pub struct Player {
     pub joined_at_ms: u64,
     #[serde(default, skip)]
     pub last_reaction_ms: u64,
+    #[serde(default, skip)]
+    session_token: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -118,6 +120,33 @@ impl Room {
         name: String,
         now_ms: u64,
     ) -> EngineResult<()> {
+        let session_token = self
+            .players
+            .get(&player_id)
+            .map(|player| player.session_token.clone())
+            .filter(|token| !token.is_empty())
+            .unwrap_or_else(|| format!("legacy:{player_id}"));
+        self.upsert_player_with_session(player_id, session_token, name, now_ms)
+    }
+
+    pub fn upsert_player_with_session(
+        &mut self,
+        player_id: String,
+        session_token: String,
+        name: String,
+        now_ms: u64,
+    ) -> EngineResult<()> {
+        if self
+            .players
+            .get(&player_id)
+            .is_some_and(|player| player.session_token != session_token)
+        {
+            return Err(EngineError::new(
+                "invalid_player_session",
+                "This player identity belongs to another device.",
+            ));
+        }
+
         self.touch(now_ms);
         let safe_name = sanitize_name(&name);
         let joining_as_spectator =
@@ -145,6 +174,7 @@ impl Room {
                 spectator: joining_as_spectator,
                 joined_at_ms: now_ms,
                 last_reaction_ms: 0,
+                session_token,
             });
         self.ensure_host();
 
@@ -220,6 +250,12 @@ impl Room {
                 .players
                 .get(player_id)
                 .is_some_and(|player| player.connected)
+    }
+
+    pub fn player_session_matches(&self, player_id: &str, session_token: &str) -> bool {
+        self.players
+            .get(player_id)
+            .is_none_or(|player| player.session_token == session_token)
     }
 
     pub fn handle_start_or_advance(&mut self, now_ms: u64) -> EngineResult<EngineEvent> {

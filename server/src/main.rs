@@ -1,6 +1,6 @@
 use axum::{
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
+        ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade},
         Query, Request, State,
     },
     http::{
@@ -12,6 +12,8 @@ use axum::{
     routing::get,
     Json, Router,
 };
+mod session;
+
 use draw_party_server::{
     engine::{generate_room_code, EngineError, EngineEvent, Room},
     protocol::{ClientMessage, GamePhase, Role, RoomSettings, RoomSnapshot, ServerMessage},
@@ -27,7 +29,7 @@ use std::{
 };
 use tokio::{
     net::TcpListener,
-    sync::{mpsc, Mutex},
+    sync::Mutex,
     time::{self, Duration},
 };
 use tower_http::{
@@ -36,6 +38,8 @@ use tower_http::{
 };
 use tracing::{error, info, warn};
 use uuid::Uuid;
+
+use session::{deliver_many, CloseSignal, Connection, OutboundMessage, SessionKey};
 
 #[derive(Clone)]
 struct AppState {
@@ -48,10 +52,58 @@ struct AppInner {
     connections: HashMap<String, Connection>,
 }
 
-struct Connection {
-    role: Role,
-    room_code: Option<String>,
-    tx: mpsc::UnboundedSender<ServerMessage>,
+impl AppInner {
+    fn connection(&self, session: &SessionKey) -> Option<&Connection> {
+        self.connections
+            .get(session.client_id())
+            .filter(|connection| connection.matches(session))
+    }
+
+    fn connection_mut(&mut self, session: &SessionKey) -> Option<&mut Connection> {
+        self.connections
+            .get_mut(session.client_id())
+            .filter(|connection| connection.matches(session))
+    }
+
+    fn replace_connection(&mut self, connection: Connection) -> Option<Connection> {
+        self.connections
+            .insert(connection.key().client_id().to_string(), connection)
+    }
+
+    fn remove_connection(&mut self, session: &SessionKey) -> Option<Connection> {
+        if self.connection(session).is_some() {
+            self.connections.remove(session.client_id())
+        } else {
+            None
+        }
+    }
+
+    fn disconnect_room_member(&mut self, room_code: &str, client_id: &str) -> Vec<OutboundMessage> {
+        let event = if let Some(room) = self.rooms.get_mut(room_code) {
+            let now = now_ms();
+            room.mark_disconnected(client_id, now);
+            match room.advance_if_ready(now) {
+                Ok(Some(event)) => Some(event),
+                Ok(None) => Some(EngineEvent::PlayerListChanged),
+                Err(err) => {
+                    warn!(
+                        room_code,
+                        client_id,
+                        code = err.code,
+                        message = err.message,
+                        "disconnect readiness advance failed"
+                    );
+                    Some(EngineEvent::PlayerListChanged)
+                }
+            }
+        } else {
+            None
+        };
+
+        event
+            .map(|event| room_messages(self, room_code, event))
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -61,6 +113,7 @@ struct WsQuery {
     role: Role,
     #[serde(alias = "client_id")]
     client_id: Option<String>,
+    session_token: Option<String>,
     host_token: Option<String>,
 }
 
@@ -221,152 +274,300 @@ async fn handle_socket(socket: WebSocket, state: AppState, query: WsQuery) {
         .client_id
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let session_token = query
+        .session_token
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let requested_room = query
+        .room
+        .as_ref()
+        .map(|room_code| room_code.to_uppercase());
     let (mut ws_sender, mut ws_receiver) = socket.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<ServerMessage>();
+    let (mut connection, mut rx, mut close_rx) =
+        Connection::new(client_id.clone(), query.role.clone(), session_token.clone());
+    let session = connection.key().clone();
+    let mut receiver_close_rx = close_rx.clone();
 
-    {
+    let rejection = {
         let mut inner = state.inner.lock().await;
-        inner.connections.insert(
-            client_id.clone(),
-            Connection {
-                role: query.role.clone(),
-                room_code: None,
-                tx,
-            },
-        );
-
-        if let Some(room_code) = &query.room {
-            let room_code = room_code.to_uppercase();
-            if query.role == Role::Display {
-                let now = now_ms();
-                let snapshot = match inner.rooms.get_mut(&room_code) {
+        let admission_error = if inner
+            .connections
+            .get(&client_id)
+            .is_some_and(|existing| !existing.accepts_session_token(&session_token))
+        {
+            Some((
+                "session_in_use",
+                "This player session is already active on another device.",
+            ))
+        } else if inner
+            .rooms
+            .values()
+            .any(|room| !room.player_session_matches(&client_id, &session_token))
+        {
+            Some((
+                "invalid_player_session",
+                "This player identity belongs to another device.",
+            ))
+        } else if let Some(room_code) = requested_room.as_deref() {
+            match query.role {
+                Role::Display => match inner.rooms.get(room_code) {
                     Some(room) if query.host_token.as_deref() == Some(room.host_token.as_str()) => {
-                        room.add_display(client_id.clone(), now);
-                        Ok(room.snapshot(now))
+                        None
                     }
-                    Some(_) => Err(EngineError {
-                        code: "unauthorized_display",
-                        message: "This display is not authorized for that room.".to_string(),
-                    }),
-                    None => Err(EngineError {
-                        code: "room_not_found",
-                        message: "That room does not exist.".to_string(),
-                    }),
-                };
-                match snapshot {
-                    Ok(snapshot) => {
-                        if let Some(conn) = inner.connections.get_mut(&client_id) {
-                            conn.room_code = Some(room_code.clone());
-                        }
-                        queue_snapshot_for_connection(&inner, &client_id, snapshot);
-                    }
-                    Err(err) => queue_error_for_connection(&inner, &client_id, err),
+                    Some(_) => Some((
+                        "unauthorized_display",
+                        "This display is not authorized for that room.",
+                    )),
+                    None => Some(("room_not_found", "That room does not exist.")),
+                },
+                Role::Player if inner.rooms.contains_key(room_code) => None,
+                Role::Player => Some(("room_not_found", "That room does not exist.")),
+            }
+        } else {
+            None
+        };
+
+        if let Some(error) = admission_error {
+            Some(error)
+        } else {
+            let existing_room_code = inner
+                .connections
+                .get(&client_id)
+                .and_then(Connection::room_code_owned);
+            if existing_room_code.is_some()
+                && existing_room_code.as_deref() != requested_room.as_deref()
+            {
+                Some((
+                    "session_in_use",
+                    "This player session is already active in another room.",
+                ))
+            } else {
+                if let Some(room_code) = existing_room_code.as_deref() {
+                    connection.set_room_code(room_code.to_string());
                 }
+
+                let mut transition_messages = Vec::new();
+                if let Some(replaced) = inner.replace_connection(connection) {
+                    if replaced.room_code() != requested_room.as_deref() {
+                        if let Some(old_room_code) = replaced.room_code() {
+                            transition_messages.extend(
+                                inner.disconnect_room_member(old_room_code, session.client_id()),
+                            );
+                        }
+                    }
+                    replaced.supersede();
+                }
+
+                if let Some(room_code) = requested_room.as_deref() {
+                    if query.role == Role::Display {
+                        let now = now_ms();
+                        if let Some(room) = inner.rooms.get_mut(room_code) {
+                            room.add_display(client_id.clone(), now);
+                            let snapshot = room.snapshot(now);
+                            if let Some(conn) = inner.connection_mut(&session) {
+                                conn.set_room_code(room_code.to_string());
+                            }
+                            queue_snapshot_for_connection(&inner, &session, snapshot);
+                        }
+                    } else if inner
+                        .connection(&session)
+                        .is_some_and(|connection| connection.room_code() == Some(room_code))
+                    {
+                        if let Some(room) = inner.rooms.get(room_code) {
+                            queue_snapshot_for_connection(
+                                &inner,
+                                &session,
+                                room.snapshot(now_ms()),
+                            );
+                        }
+                    }
+                }
+                deliver_many(transition_messages);
+                None
             }
         }
+    };
+
+    if let Some((code, message)) = rejection {
+        let error = ServerMessage::Error {
+            code: code.to_string(),
+            message: message.to_string(),
+        };
+        if let Ok(text) = serde_json::to_string(&error) {
+            let _ = ws_sender.send(Message::Text(text.into())).await;
+        }
+        let _ = ws_sender.send(Message::Close(None)).await;
+        return;
     }
 
     let sender_task = tokio::spawn(async move {
-        while let Some(message) = rx.recv().await {
-            match serde_json::to_string(&message) {
-                Ok(text) => {
-                    if ws_sender.send(Message::Text(text.into())).await.is_err() {
+        loop {
+            tokio::select! {
+                changed = close_rx.changed() => {
+                    if changed.is_err() {
+                        break;
+                    }
+                    let signal = *close_rx.borrow();
+                    if let Some(signal) = signal {
+                        let _ = ws_sender.send(close_message(signal)).await;
                         break;
                     }
                 }
-                Err(err) => {
-                    error!(?err, "failed to serialize server message");
-                    break;
+                message = rx.recv() => {
+                    let Some(message) = message else {
+                        let signal = *close_rx.borrow();
+                        if let Some(signal) = signal {
+                            let _ = ws_sender.send(close_message(signal)).await;
+                        }
+                        break;
+                    };
+                    match serde_json::to_string(&message) {
+                        Ok(text) => {
+                            tokio::select! {
+                                changed = close_rx.changed() => {
+                                    if changed.is_err() {
+                                        break;
+                                    }
+                                    let signal = *close_rx.borrow();
+                                    if let Some(signal) = signal {
+                                        let _ = ws_sender.send(close_message(signal)).await;
+                                        break;
+                                    }
+                                }
+                                result = ws_sender.send(Message::Text(text.into())) => {
+                                    if result.is_err() {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            error!(?err, "failed to serialize server message");
+                            break;
+                        }
+                    }
                 }
             }
         }
     });
 
-    while let Some(message) = ws_receiver.next().await {
-        match message {
-            Ok(Message::Text(text)) => match serde_json::from_str::<ClientMessage>(text.as_str()) {
-                Ok(client_message) => {
-                    handle_client_message(&state, &client_id, client_message).await;
+    let mut sender_task = sender_task;
+    let mut closed_by_server = false;
+    loop {
+        tokio::select! {
+            changed = receiver_close_rx.changed() => {
+                if changed.is_err() {
+                    break;
                 }
-                Err(err) => {
-                    warn!(?err, "invalid client message");
-                    send_error(
-                        &state,
-                        &client_id,
-                        "invalid_message",
-                        "Message format was not understood.",
-                    )
-                    .await;
+                if receiver_close_rx.borrow().is_some() {
+                    closed_by_server = true;
+                    let _ = (&mut sender_task).await;
+                    let _ = time::timeout(Duration::from_secs(1), ws_receiver.next()).await;
+                    break;
                 }
-            },
-            Ok(Message::Close(_)) => break,
-            Ok(Message::Ping(_)) | Ok(Message::Pong(_)) | Ok(Message::Binary(_)) => {}
-            Err(err) => {
-                warn!(?err, "websocket receive error");
-                break;
+            }
+            message = ws_receiver.next() => {
+                let Some(message) = message else {
+                    break;
+                };
+                match message {
+                    Ok(Message::Text(text)) => match serde_json::from_str::<ClientMessage>(text.as_str()) {
+                        Ok(client_message) => {
+                            handle_client_message(&state, &session, client_message).await;
+                        }
+                        Err(err) => {
+                            warn!(?err, "invalid client message");
+                            send_error(
+                                &state,
+                                &session,
+                                "invalid_message",
+                                "Message format was not understood.",
+                            )
+                            .await;
+                        }
+                    },
+                    Ok(Message::Close(_)) => break,
+                    Ok(Message::Ping(_)) | Ok(Message::Pong(_)) | Ok(Message::Binary(_)) => {}
+                    Err(err) => {
+                        warn!(?err, "websocket receive error");
+                        break;
+                    }
+                }
             }
         }
     }
 
-    sender_task.abort();
-    disconnect_client(&state, &client_id).await;
+    if !closed_by_server {
+        sender_task.abort();
+    }
+    disconnect_client(&state, &session).await;
 }
 
-async fn handle_client_message(state: &AppState, client_id: &str, message: ClientMessage) {
+fn close_message(signal: CloseSignal) -> Message {
+    match signal {
+        CloseSignal::Superseded => Message::Close(Some(CloseFrame {
+            code: 4001,
+            reason: "superseded".into(),
+        })),
+        CloseSignal::SlowConsumer => Message::Close(None),
+    }
+}
+
+async fn handle_client_message(state: &AppState, session: &SessionKey, message: ClientMessage) {
     match message {
-        ClientMessage::CreateRoom => create_room(state, client_id).await,
+        ClientMessage::CreateRoom => create_room(state, session).await,
         ClientMessage::JoinRoom { room_code, name } => {
-            join_room(state, client_id, room_code, name).await
+            join_room(state, session, room_code, name).await
         }
-        ClientMessage::SetName { name } => set_name(state, client_id, name).await,
+        ClientMessage::SetName { name } => set_name(state, session, name).await,
         ClientMessage::UpdateRoomSettings { settings } => {
-            update_room_settings(state, client_id, settings).await
+            update_room_settings(state, session, settings).await
         }
-        ClientMessage::StartGame => start_or_advance(state, client_id).await,
+        ClientMessage::StartGame => start_or_advance(state, session).await,
         ClientMessage::SubmitDrawing {
             turn_token,
             drawing,
-        } => submit_drawing(state, client_id, turn_token, drawing).await,
+        } => submit_drawing(state, session, turn_token, drawing).await,
         ClientMessage::SubmitGuess { turn_token, guess } => {
-            submit_guess(state, client_id, turn_token, guess).await
+            submit_guess(state, session, turn_token, guess).await
         }
         ClientMessage::SubmitVote {
             turn_token,
             option_id,
-        } => submit_vote(state, client_id, turn_token, option_id).await,
-        ClientMessage::SendReaction { emoji } => send_reaction(state, client_id, emoji).await,
+        } => submit_vote(state, session, turn_token, option_id).await,
+        ClientMessage::SendReaction { emoji } => send_reaction(state, session, emoji).await,
         ClientMessage::Heartbeat => {
-            send_to_client(state, client_id, ServerMessage::Pong { now_ms: now_ms() }).await
+            send_to_client(state, session, ServerMessage::Pong { now_ms: now_ms() }).await
         }
-        ClientMessage::LeaveRoom => disconnect_client(state, client_id).await,
+        ClientMessage::LeaveRoom => disconnect_client(state, session).await,
     }
 }
 
-async fn send_reaction(state: &AppState, client_id: &str, emoji: String) {
-    let messages = {
+async fn send_reaction(state: &AppState, session: &SessionKey, emoji: String) {
+    {
         let mut inner = state.inner.lock().await;
-        let Some(conn) = inner.connections.get(client_id) else {
+        let Some(conn) = inner.connection(session) else {
             return;
         };
-        if conn.role != Role::Player {
+        if conn.role() != &Role::Player {
             return;
         }
-        let Some(room_code) = conn.room_code.clone() else {
+        let Some(room_code) = conn.room_code_owned() else {
             return;
         };
         let Some(room) = inner.rooms.get_mut(&room_code) else {
             return;
         };
-        match room.submit_reaction(client_id, &emoji, now_ms()) {
+        let messages = match room.submit_reaction(session.client_id(), &emoji, now_ms()) {
             Ok(Some(burst)) => {
                 let mut out = Vec::new();
                 for (other_id, other_conn) in &inner.connections {
-                    if other_conn.room_code.as_deref() != Some(room_code.as_str()) {
+                    if other_conn.room_code() != Some(room_code.as_str()) {
                         continue;
                     }
                     let _ = other_id;
                     out.push((
-                        other_conn.tx.clone(),
+                        other_conn.outbound(),
                         ServerMessage::ReactionBurst {
                             player_id: burst.player_id.clone(),
                             name: burst.name.clone(),
@@ -378,22 +579,22 @@ async fn send_reaction(state: &AppState, client_id: &str, emoji: String) {
                 out
             }
             Ok(None) => Vec::new(),
-            Err(err) => targeted_error(&inner, client_id, err.code, &err.message),
-        }
-    };
-    send_many(messages);
+            Err(err) => targeted_error(&inner, session, err.code, &err.message),
+        };
+        deliver_many(messages);
+    }
 }
 
-async fn create_room(state: &AppState, client_id: &str) {
-    let messages = {
+async fn create_room(state: &AppState, session: &SessionKey) {
+    {
         let mut inner = state.inner.lock().await;
-        if !matches!(
-            inner.connections.get(client_id).map(|conn| &conn.role),
+        let messages = if !matches!(
+            inner.connection(session).map(Connection::role),
             Some(Role::Display)
         ) {
             targeted_error(
                 &inner,
-                client_id,
+                session,
                 "display_only",
                 "Only the TV display can create rooms.",
             )
@@ -404,21 +605,20 @@ async fn create_room(state: &AppState, client_id: &str) {
             let now = now_ms();
             let room = Room::new(
                 room_code.clone(),
-                client_id.to_string(),
+                session.client_id().to_string(),
                 host_token.clone(),
                 now,
             );
             let snapshot = room.snapshot(now);
             inner.rooms.insert(room_code.clone(), room);
-            if let Some(conn) = inner.connections.get_mut(client_id) {
-                conn.room_code = Some(room_code.clone());
+            if let Some(conn) = inner.connection_mut(session) {
+                conn.set_room_code(room_code.clone());
             }
             inner
-                .connections
-                .get(client_id)
+                .connection(session)
                 .map(|conn| {
                     vec![(
-                        conn.tx.clone(),
+                        conn.outbound(),
                         ServerMessage::RoomCreated {
                             snapshot,
                             host_token,
@@ -426,57 +626,71 @@ async fn create_room(state: &AppState, client_id: &str) {
                     )]
                 })
                 .unwrap_or_default()
-        }
-    };
-    send_many(messages);
+        };
+        deliver_many(messages);
+    }
 }
 
-async fn join_room(state: &AppState, client_id: &str, room_code: String, name: String) {
+async fn join_room(state: &AppState, session: &SessionKey, room_code: String, name: String) {
     let room_code = room_code.to_uppercase();
-    mutate_room(state, client_id, &room_code, |room| {
-        room.upsert_player(client_id.to_string(), name, now_ms())?;
+    let session_token = {
+        let inner = state.inner.lock().await;
+        inner
+            .connection(session)
+            .map(|connection| connection.session_token().to_string())
+    };
+    let Some(session_token) = session_token else {
+        return;
+    };
+    mutate_room(state, session, &room_code, |room| {
+        room.upsert_player_with_session(
+            session.client_id().to_string(),
+            session_token,
+            name,
+            now_ms(),
+        )?;
         Ok(EngineEvent::PlayerListChanged)
     })
     .await;
 }
 
-async fn set_name(state: &AppState, client_id: &str, name: String) {
-    mutate_current_room(state, client_id, |room| {
-        room.set_name(client_id, name, now_ms())?;
+async fn set_name(state: &AppState, session: &SessionKey, name: String) {
+    mutate_current_room(state, session, |room| {
+        room.set_name(session.client_id(), name, now_ms())?;
         Ok(EngineEvent::PlayerListChanged)
     })
     .await;
 }
 
-async fn update_room_settings(state: &AppState, client_id: &str, settings: RoomSettings) {
-    let Some(room_code) = authorized_controller_room_code(state, client_id).await else {
+async fn update_room_settings(state: &AppState, session: &SessionKey, settings: RoomSettings) {
+    let Some(room_code) = authorized_controller_room_code(state, session).await else {
         send_error(
             state,
-            client_id,
+            session,
             "not_authorized",
             "Only the TV display or the host phone can change room settings.",
         )
         .await;
         return;
     };
-    mutate_room(state, client_id, &room_code, |room| {
+    mutate_room(state, session, &room_code, |room| {
         room.update_settings(settings, now_ms())
     })
     .await;
 }
 
-async fn start_or_advance(state: &AppState, client_id: &str) {
-    let Some(room_code) = authorized_controller_room_code(state, client_id).await else {
+async fn start_or_advance(state: &AppState, session: &SessionKey) {
+    let Some(room_code) = authorized_controller_room_code(state, session).await else {
         send_error(
             state,
-            client_id,
+            session,
             "not_authorized",
             "Only the TV display or the host phone can advance the game.",
         )
         .await;
         return;
     };
-    mutate_room(state, client_id, &room_code, |room| {
+    mutate_room(state, session, &room_code, |room| {
         room.handle_start_or_advance(now_ms())
     })
     .await;
@@ -484,55 +698,60 @@ async fn start_or_advance(state: &AppState, client_id: &str) {
 
 async fn submit_drawing(
     state: &AppState,
-    client_id: &str,
+    session: &SessionKey,
     turn_token: u64,
     drawing: draw_party_server::protocol::DrawingDoc,
 ) {
-    mutate_current_room(state, client_id, |room| {
-        room.submit_drawing(client_id, turn_token, drawing, now_ms())
+    mutate_current_room(state, session, |room| {
+        room.submit_drawing(session.client_id(), turn_token, drawing, now_ms())
     })
     .await;
 }
 
-async fn submit_guess(state: &AppState, client_id: &str, turn_token: u64, guess: String) {
-    mutate_current_room(state, client_id, |room| {
-        room.submit_guess(client_id, turn_token, guess, now_ms())
+async fn submit_guess(state: &AppState, session: &SessionKey, turn_token: u64, guess: String) {
+    mutate_current_room(state, session, |room| {
+        room.submit_guess(session.client_id(), turn_token, guess, now_ms())
     })
     .await;
 }
 
-async fn submit_vote(state: &AppState, client_id: &str, turn_token: u64, option_id: String) {
-    mutate_current_room(state, client_id, |room| {
-        room.submit_vote(client_id, turn_token, option_id, now_ms())
+async fn submit_vote(state: &AppState, session: &SessionKey, turn_token: u64, option_id: String) {
+    mutate_current_room(state, session, |room| {
+        room.submit_vote(session.client_id(), turn_token, option_id, now_ms())
     })
     .await;
 }
 
-async fn mutate_current_room<F>(state: &AppState, client_id: &str, operation: F)
+async fn mutate_current_room<F>(state: &AppState, session: &SessionKey, operation: F)
 where
     F: FnOnce(&mut Room) -> Result<EngineEvent, EngineError>,
 {
     let room_code = {
         let inner = state.inner.lock().await;
         inner
-            .connections
-            .get(client_id)
-            .and_then(|conn| conn.room_code.clone())
+            .connection(session)
+            .and_then(Connection::room_code_owned)
     };
 
     if let Some(room_code) = room_code {
-        mutate_room(state, client_id, &room_code, operation).await;
+        mutate_room(state, session, &room_code, operation).await;
     } else {
-        send_error(state, client_id, "not_in_room", "Join a room first.").await;
+        send_error(state, session, "not_in_room", "Join a room first.").await;
     }
 }
 
-async fn mutate_room<F>(state: &AppState, client_id: &str, room_code: &str, operation: F)
+async fn mutate_room<F>(state: &AppState, session: &SessionKey, room_code: &str, operation: F)
 where
     F: FnOnce(&mut Room) -> Result<EngineEvent, EngineError>,
 {
-    let messages = {
+    {
         let mut inner = state.inner.lock().await;
+        if inner.connection(session).is_none() {
+            return;
+        }
+        let previous_room_code = inner
+            .connection(session)
+            .and_then(Connection::room_code_owned);
         let result = inner
             .rooms
             .get_mut(room_code)
@@ -544,55 +763,39 @@ where
                 })
             });
 
-        match result {
+        let messages = match result {
             Ok(event) => {
-                if let Some(conn) = inner.connections.get_mut(client_id) {
-                    conn.room_code = Some(room_code.to_string());
+                let mut messages = previous_room_code
+                    .as_deref()
+                    .filter(|previous_room_code| *previous_room_code != room_code)
+                    .map(|previous_room_code| {
+                        inner.disconnect_room_member(previous_room_code, session.client_id())
+                    })
+                    .unwrap_or_default();
+                if let Some(conn) = inner.connection_mut(session) {
+                    conn.set_room_code(room_code.to_string());
                 }
-                room_messages(&inner, room_code, event)
+                messages.extend(room_messages(&inner, room_code, event));
+                messages
             }
-            Err(error) => targeted_error(&inner, client_id, error.code, &error.message),
-        }
-    };
-    send_many(messages);
+            Err(error) => targeted_error(&inner, session, error.code, &error.message),
+        };
+        deliver_many(messages);
+    }
 }
 
-async fn disconnect_client(state: &AppState, client_id: &str) {
-    let messages = {
+async fn disconnect_client(state: &AppState, session: &SessionKey) {
+    {
         let mut inner = state.inner.lock().await;
         let room_code = inner
-            .connections
-            .remove(client_id)
-            .and_then(|conn| conn.room_code);
-        if let Some(room_code) = room_code {
-            let event = if let Some(room) = inner.rooms.get_mut(&room_code) {
-                let now = now_ms();
-                room.mark_disconnected(client_id, now);
-                match room.advance_if_ready(now) {
-                    Ok(Some(event)) => Some(event),
-                    Ok(None) => Some(EngineEvent::PlayerListChanged),
-                    Err(err) => {
-                        warn!(
-                            room_code,
-                            client_id,
-                            code = err.code,
-                            message = err.message,
-                            "disconnect readiness advance failed"
-                        );
-                        Some(EngineEvent::PlayerListChanged)
-                    }
-                }
-            } else {
-                None
-            };
-            event
-                .map(|event| room_messages(&inner, &room_code, event))
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        }
-    };
-    send_many(messages);
+            .remove_connection(session)
+            .and_then(|conn| conn.room_code_owned());
+        let messages = room_code
+            .as_deref()
+            .map(|room_code| inner.disconnect_room_member(room_code, session.client_id()))
+            .unwrap_or_default();
+        deliver_many(messages);
+    }
 }
 
 fn spawn_room_maintenance(state: AppState) {
@@ -600,7 +803,7 @@ fn spawn_room_maintenance(state: AppState) {
         let mut interval = time::interval(Duration::from_secs(1));
         loop {
             interval.tick().await;
-            let messages = {
+            {
                 let mut inner = state.inner.lock().await;
                 let now = now_ms();
                 let mut changed_rooms = Vec::new();
@@ -631,21 +834,17 @@ fn spawn_room_maintenance(state: AppState) {
                     inner.rooms.remove(&room_code);
                 }
 
-                changed_rooms
+                let messages = changed_rooms
                     .into_iter()
                     .flat_map(|(room_code, event)| room_messages(&inner, &room_code, event))
-                    .collect::<Vec<_>>()
-            };
-            send_many(messages);
+                    .collect::<Vec<_>>();
+                deliver_many(messages);
+            }
         }
     });
 }
 
-fn room_messages(
-    inner: &AppInner,
-    room_code: &str,
-    event: EngineEvent,
-) -> Vec<(mpsc::UnboundedSender<ServerMessage>, ServerMessage)> {
+fn room_messages(inner: &AppInner, room_code: &str, event: EngineEvent) -> Vec<OutboundMessage> {
     let Some(room) = inner.rooms.get(room_code) else {
         return Vec::new();
     };
@@ -653,10 +852,10 @@ fn room_messages(
 
     let mut messages = Vec::new();
     for (client_id, conn) in &inner.connections {
-        if conn.room_code.as_deref() != Some(room_code) {
+        if conn.room_code() != Some(room_code) {
             continue;
         }
-        let snapshot = personalize_snapshot(room, &base_snapshot, client_id, &conn.role);
+        let snapshot = personalize_snapshot(room, &base_snapshot, client_id, conn.role());
         let event_message = match event {
             EngineEvent::PhaseChanged => ServerMessage::PhaseChanged {
                 snapshot: snapshot.clone(),
@@ -671,17 +870,17 @@ fn room_messages(
                 snapshot: snapshot.clone(),
             },
         };
-        messages.push((conn.tx.clone(), event_message));
+        messages.push((conn.outbound(), event_message));
         messages.push((
-            conn.tx.clone(),
+            conn.outbound(),
             ServerMessage::RoomSnapshot {
                 snapshot: snapshot.clone(),
             },
         ));
 
-        if snapshot.phase == GamePhase::Drawing && conn.role == Role::Player {
+        if snapshot.phase == GamePhase::Drawing && conn.role() == &Role::Player {
             if let Some(prompt) = room.prompt_for_player(client_id) {
-                messages.push((conn.tx.clone(), ServerMessage::PromptAssigned { prompt }));
+                messages.push((conn.outbound(), ServerMessage::PromptAssigned { prompt }));
             }
         }
 
@@ -692,7 +891,7 @@ fn room_messages(
                 snapshot.current_drawing.clone(),
             ) {
                 messages.push((
-                    conn.tx.clone(),
+                    conn.outbound(),
                     ServerMessage::DrawingReveal {
                         artist_id,
                         artist_name,
@@ -704,7 +903,7 @@ fn room_messages(
 
         if snapshot.phase == GamePhase::Voting {
             messages.push((
-                conn.tx.clone(),
+                conn.outbound(),
                 ServerMessage::VotingOptions {
                     options: snapshot.voting_options.clone(),
                 },
@@ -713,7 +912,7 @@ fn room_messages(
 
         if snapshot.phase == GamePhase::Results {
             if let Some(result) = snapshot.round_result.clone() {
-                messages.push((conn.tx.clone(), ServerMessage::RoundResult { result }));
+                messages.push((conn.outbound(), ServerMessage::RoundResult { result }));
             }
         }
     }
@@ -747,25 +946,19 @@ fn personalize_snapshot(
     snapshot
 }
 
-fn queue_snapshot_for_connection(inner: &AppInner, client_id: &str, snapshot: RoomSnapshot) {
-    if let Some(conn) = inner.connections.get(client_id) {
-        let _ = conn.tx.send(ServerMessage::RoomSnapshot { snapshot });
+fn queue_snapshot_for_connection(inner: &AppInner, session: &SessionKey, snapshot: RoomSnapshot) {
+    if let Some(conn) = inner.connection(session) {
+        deliver_many(vec![(
+            conn.outbound(),
+            ServerMessage::RoomSnapshot { snapshot },
+        )]);
     }
 }
 
-fn queue_error_for_connection(inner: &AppInner, client_id: &str, err: EngineError) {
-    if let Some(conn) = inner.connections.get(client_id) {
-        let _ = conn.tx.send(ServerMessage::Error {
-            code: err.code.to_string(),
-            message: err.message,
-        });
-    }
-}
-
-async fn send_error(state: &AppState, client_id: &str, code: &str, message: &str) {
+async fn send_error(state: &AppState, session: &SessionKey, code: &str, message: &str) {
     send_to_client(
         state,
-        client_id,
+        session,
         ServerMessage::Error {
             code: code.to_string(),
             message: message.to_string(),
@@ -774,28 +967,26 @@ async fn send_error(state: &AppState, client_id: &str, code: &str, message: &str
     .await;
 }
 
-async fn send_to_client(state: &AppState, client_id: &str, message: ServerMessage) {
-    let tx = {
+async fn send_to_client(state: &AppState, session: &SessionKey, message: ServerMessage) {
+    {
         let inner = state.inner.lock().await;
-        inner.connections.get(client_id).map(|conn| conn.tx.clone())
-    };
-    if let Some(tx) = tx {
-        let _ = tx.send(message);
+        if let Some(conn) = inner.connection(session) {
+            deliver_many(vec![(conn.outbound(), message)]);
+        }
     }
 }
 
 fn targeted_error(
     inner: &AppInner,
-    client_id: &str,
+    session: &SessionKey,
     code: &str,
     message: &str,
-) -> Vec<(mpsc::UnboundedSender<ServerMessage>, ServerMessage)> {
+) -> Vec<OutboundMessage> {
     inner
-        .connections
-        .get(client_id)
+        .connection(session)
         .map(|conn| {
             vec![(
-                conn.tx.clone(),
+                conn.outbound(),
                 ServerMessage::Error {
                     code: code.to_string(),
                     message: message.to_string(),
@@ -805,28 +996,22 @@ fn targeted_error(
         .unwrap_or_default()
 }
 
-fn send_many(messages: Vec<(mpsc::UnboundedSender<ServerMessage>, ServerMessage)>) {
-    for (tx, message) in messages {
-        let _ = tx.send(message);
-    }
-}
-
-async fn authorized_controller_room_code(state: &AppState, client_id: &str) -> Option<String> {
+async fn authorized_controller_room_code(state: &AppState, session: &SessionKey) -> Option<String> {
     let inner = state.inner.lock().await;
-    let conn = inner.connections.get(client_id)?;
-    let room_code = conn.room_code.as_ref()?;
+    let conn = inner.connection(session)?;
+    let room_code = conn.room_code()?;
     let room = inner.rooms.get(room_code)?;
-    match conn.role {
+    match conn.role() {
         Role::Display => {
-            if room.displays.contains(client_id) {
-                Some(room_code.clone())
+            if room.displays.contains(session.client_id()) {
+                Some(room_code.to_string())
             } else {
                 None
             }
         }
         Role::Player => {
-            if room.player_can_control(client_id) {
-                Some(room_code.clone())
+            if room.player_can_control(session.client_id()) {
+                Some(room_code.to_string())
             } else {
                 None
             }
@@ -950,7 +1135,7 @@ mod tests {
 
     async fn join_player(url: &str, room_code: &str, client_id: &str, name: &str) -> TestSocket {
         let (mut player, _) = connect_async(format!(
-            "{url}?role=player&room={room_code}&clientId={client_id}"
+            "{url}?role=player&room={room_code}&clientId={client_id}&sessionToken={client_id}-session"
         ))
         .await
         .unwrap();
@@ -966,13 +1151,51 @@ mod tests {
         player
     }
 
-    async fn expect_no_message(ws: &mut TestSocket) {
-        assert!(
-            time::timeout(Duration::from_millis(150), ws.next())
-                .await
-                .is_err(),
-            "unexpected websocket message was received"
+    #[tokio::test]
+    async fn retiring_the_current_connection_marks_its_player_disconnected() {
+        let room_code = "ABCD".to_string();
+        let client_id = "slow-player".to_string();
+        let now = now_ms();
+        let mut room = Room::new(
+            room_code.clone(),
+            "display".to_string(),
+            "host-token".to_string(),
+            now,
         );
+        let (mut connection, _rx, _close_rx) = Connection::new(
+            client_id.clone(),
+            Role::Player,
+            "slow-player-session".to_string(),
+        );
+        let session = connection.key().clone();
+        room.upsert_player_with_session(
+            client_id.clone(),
+            "slow-player-session".to_string(),
+            "Ada".to_string(),
+            now,
+        )
+        .unwrap();
+        connection.set_room_code(room_code.clone());
+        let state = AppState {
+            inner: Arc::new(Mutex::new(AppInner {
+                rooms: HashMap::from([(room_code.clone(), room)]),
+                connections: HashMap::from([(client_id.clone(), connection)]),
+            })),
+        };
+
+        disconnect_client(&state, &session).await;
+
+        let inner = state.inner.lock().await;
+        let snapshot = inner.rooms.get(&room_code).unwrap().snapshot(now_ms());
+        assert_eq!(
+            snapshot
+                .players
+                .iter()
+                .find(|player| player.id == client_id)
+                .map(|player| player.connected),
+            Some(false)
+        );
+        assert!(!inner.connections.contains_key(&client_id));
     }
 
     #[test]
@@ -1172,16 +1395,6 @@ mod tests {
             error.get("code").and_then(Value::as_str),
             Some("unauthorized_display")
         );
-        unauthorized
-            .send(text_message(json!({ "type": "startGame" })))
-            .await
-            .unwrap();
-        let error = read_until_type(&mut unauthorized, "error").await;
-        assert_eq!(
-            error.get("code").and_then(Value::as_str),
-            Some("not_authorized")
-        );
-
         let (mut authorized, _) = connect_async(format!(
             "{url}?role=display&room={room_code}&hostToken={host_token}&clientId=display-2"
         ))
@@ -1208,7 +1421,324 @@ mod tests {
                 .and_then(Value::as_str),
             Some("drawing")
         );
-        expect_no_message(&mut unauthorized).await;
+    }
+
+    #[tokio::test]
+    async fn websocket_replacement_closes_the_superseded_connection() {
+        let url = spawn_ws_server().await;
+        let (mut original, _) = connect_async(format!(
+            "{url}?role=display&clientId=display&sessionToken=display-session"
+        ))
+        .await
+        .unwrap();
+        let (room_code, host_token, _) = create_test_room(&mut original).await;
+
+        let (mut replacement, _) = connect_async(format!(
+            "{url}?role=display&room={room_code}&hostToken={host_token}&clientId=display&sessionToken=display-session"
+        ))
+        .await
+        .unwrap();
+        let snapshot = read_until_type(&mut replacement, "roomSnapshot").await;
+        assert_eq!(
+            snapshot
+                .pointer("/snapshot/roomCode")
+                .and_then(Value::as_str),
+            Some(room_code.as_str())
+        );
+
+        let closed = time::timeout(Duration::from_secs(1), original.next())
+            .await
+            .expect("superseded socket did not terminate");
+        let frame = match closed {
+            Some(Ok(WsMessage::Close(Some(frame)))) => frame,
+            other => panic!("expected an explicit superseded close frame, got {other:?}"),
+        };
+        assert_eq!(u16::from(frame.code), 4001);
+        assert_eq!(frame.reason, "superseded");
+
+        replacement
+            .send(text_message(json!({ "type": "heartbeat" })))
+            .await
+            .unwrap();
+        assert!(read_until_type(&mut replacement, "pong")
+            .await
+            .get("nowMs")
+            .and_then(Value::as_u64)
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn websocket_invalid_display_reattach_keeps_the_current_controller() {
+        let url = spawn_ws_server().await;
+        let (mut display, _) = connect_async(format!(
+            "{url}?role=display&clientId=display&sessionToken=display-session"
+        ))
+        .await
+        .unwrap();
+        let (room_code, _, _) = create_test_room(&mut display).await;
+
+        let (mut invalid, _) = connect_async(format!(
+            "{url}?role=display&room={room_code}&hostToken=wrong&clientId=display&sessionToken=display-session"
+        ))
+        .await
+        .unwrap();
+        let error = read_until_type(&mut invalid, "error").await;
+        assert_eq!(
+            error.get("code").and_then(Value::as_str),
+            Some("unauthorized_display")
+        );
+
+        display
+            .send(text_message(json!({ "type": "heartbeat" })))
+            .await
+            .unwrap();
+        assert!(read_until_type(&mut display, "pong")
+            .await
+            .get("nowMs")
+            .and_then(Value::as_u64)
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn websocket_same_room_replacement_keeps_disconnect_cleanup() {
+        let url = spawn_ws_server().await;
+        let (mut display, _) = connect_async(format!(
+            "{url}?role=display&clientId=display&sessionToken=display-session"
+        ))
+        .await
+        .unwrap();
+        let (room_code, _, _) = create_test_room(&mut display).await;
+        let _original = join_player(&url, &room_code, "player", "Ada").await;
+        let _ = read_until_type(&mut display, "playerListChanged").await;
+
+        let (mut replacement, _) = connect_async(format!(
+            "{url}?role=player&room={room_code}&clientId=player&sessionToken=player-session"
+        ))
+        .await
+        .unwrap();
+        let _ = read_until_type(&mut replacement, "roomSnapshot").await;
+        replacement.close(None).await.unwrap();
+
+        let disconnected = read_until_type(&mut display, "playerListChanged").await;
+        assert_eq!(
+            disconnected
+                .pointer("/players/0/connected")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+    }
+
+    #[tokio::test]
+    async fn websocket_rejects_a_second_socket_that_claims_the_host_player_id() {
+        let url = spawn_ws_server().await;
+        let (mut display, _) = connect_async(format!(
+            "{url}?role=display&clientId=display&sessionToken=display-session"
+        ))
+        .await
+        .unwrap();
+        let (room_code, _, _) = create_test_room(&mut display).await;
+        let mut host = join_player(&url, &room_code, "host-phone", "Ada").await;
+
+        let (mut attacker, _) = connect_async(format!(
+            "{url}?role=player&room={room_code}&clientId=host-phone&sessionToken=attacker-session"
+        ))
+        .await
+        .unwrap();
+        let error = read_until_type(&mut attacker, "error").await;
+        assert_eq!(
+            error.get("code").and_then(Value::as_str),
+            Some("session_in_use")
+        );
+
+        host.send(text_message(json!({
+            "type": "updateRoomSettings",
+            "settings": {
+                "rounds": 3,
+                "drawSeconds": 30,
+                "guessSeconds": 20,
+                "voteSeconds": 15,
+                "resultsSeconds": 12,
+                "promptPackId": "safe-party"
+            }
+        })))
+        .await
+        .unwrap();
+        let updated = read_until_settings_rounds(&mut host, 3).await;
+        assert_eq!(
+            updated
+                .pointer("/snapshot/settings/rounds")
+                .and_then(Value::as_u64),
+            Some(3)
+        );
+    }
+
+    #[tokio::test]
+    async fn websocket_invalid_reclaim_does_not_reserve_a_disconnected_player_id() {
+        let url = spawn_ws_server().await;
+        let (mut display, _) = connect_async(format!(
+            "{url}?role=display&clientId=display&sessionToken=display-session"
+        ))
+        .await
+        .unwrap();
+        let (room_code, _, _) = create_test_room(&mut display).await;
+        let mut host = join_player(&url, &room_code, "host-phone", "Ada").await;
+
+        host.send(text_message(json!({ "type": "leaveRoom" })))
+            .await
+            .unwrap();
+        let _ = read_until_type(&mut display, "playerListChanged").await;
+
+        let (mut attacker, _) = connect_async(format!(
+            "{url}?role=player&room={room_code}&clientId=host-phone&sessionToken=attacker-session"
+        ))
+        .await
+        .unwrap();
+        let error = read_until_type(&mut attacker, "error").await;
+        assert_eq!(
+            error.get("code").and_then(Value::as_str),
+            Some("invalid_player_session")
+        );
+
+        let mut restored = join_player(&url, &room_code, "host-phone", "Ada").await;
+        restored
+            .send(text_message(json!({
+                "type": "updateRoomSettings",
+                "settings": {
+                    "rounds": 3,
+                    "drawSeconds": 30,
+                    "guessSeconds": 20,
+                    "voteSeconds": 15,
+                    "resultsSeconds": 12,
+                    "promptPackId": "safe-party"
+                }
+            })))
+            .await
+            .unwrap();
+        let updated = read_until_settings_rounds(&mut restored, 3).await;
+        assert_eq!(
+            updated
+                .pointer("/snapshot/settings/rounds")
+                .and_then(Value::as_u64),
+            Some(3)
+        );
+    }
+
+    #[tokio::test]
+    async fn websocket_display_cannot_squat_a_disconnected_player_id() {
+        let url = spawn_ws_server().await;
+        let (mut display, _) = connect_async(format!(
+            "{url}?role=display&clientId=display&sessionToken=display-session"
+        ))
+        .await
+        .unwrap();
+        let (room_code, _, _) = create_test_room(&mut display).await;
+        let mut host = join_player(&url, &room_code, "host-phone", "Ada").await;
+
+        host.send(text_message(json!({ "type": "leaveRoom" })))
+            .await
+            .unwrap();
+        let _ = read_until_type(&mut display, "playerListChanged").await;
+
+        let (mut attacker, _) = connect_async(format!(
+            "{url}?role=display&room={room_code}&clientId=host-phone&sessionToken=attacker-session"
+        ))
+        .await
+        .unwrap();
+        let error = read_until_type(&mut attacker, "error").await;
+        assert_eq!(
+            error.get("code").and_then(Value::as_str),
+            Some("invalid_player_session")
+        );
+
+        let mut restored = join_player(&url, &room_code, "host-phone", "Ada").await;
+        restored
+            .send(text_message(json!({ "type": "startGame" })))
+            .await
+            .unwrap();
+        let phase = read_until_type(&mut restored, "phaseChanged").await;
+        assert_eq!(
+            phase.pointer("/snapshot/phase").and_then(Value::as_str),
+            Some("drawing")
+        );
+    }
+
+    #[tokio::test]
+    async fn websocket_replacement_cannot_change_rooms_before_joining() {
+        let url = spawn_ws_server().await;
+        let (mut display_a, _) = connect_async(format!(
+            "{url}?role=display&clientId=display-a&sessionToken=display-a-session"
+        ))
+        .await
+        .unwrap();
+        let (room_a, _, _) = create_test_room(&mut display_a).await;
+        let mut player_a = join_player(&url, &room_a, "player", "Ada").await;
+        let _ = read_until_type(&mut display_a, "playerListChanged").await;
+
+        let (mut display_b, _) = connect_async(format!(
+            "{url}?role=display&clientId=display-b&sessionToken=display-b-session"
+        ))
+        .await
+        .unwrap();
+        let (room_b, _, _) = create_test_room(&mut display_b).await;
+
+        let (mut player_b, _) = connect_async(format!(
+            "{url}?role=player&room={room_b}&clientId=player&sessionToken=player-session"
+        ))
+        .await
+        .unwrap();
+        let error = read_until_type(&mut player_b, "error").await;
+        assert_eq!(
+            error.get("code").and_then(Value::as_str),
+            Some("session_in_use")
+        );
+
+        player_a
+            .send(text_message(json!({ "type": "heartbeat" })))
+            .await
+            .unwrap();
+        assert!(read_until_type(&mut player_a, "pong")
+            .await
+            .get("nowMs")
+            .and_then(Value::as_u64)
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn websocket_join_into_another_room_disconnects_the_old_room_player() {
+        let url = spawn_ws_server().await;
+        let (mut display_a, _) = connect_async(format!(
+            "{url}?role=display&clientId=display-a&sessionToken=display-a-session"
+        ))
+        .await
+        .unwrap();
+        let (room_a, _, _) = create_test_room(&mut display_a).await;
+        let mut player = join_player(&url, &room_a, "player", "Ada").await;
+        let _ = read_until_type(&mut display_a, "playerListChanged").await;
+
+        let (mut display_b, _) = connect_async(format!(
+            "{url}?role=display&clientId=display-b&sessionToken=display-b-session"
+        ))
+        .await
+        .unwrap();
+        let (room_b, _, _) = create_test_room(&mut display_b).await;
+
+        player
+            .send(text_message(json!({
+                "type": "joinRoom",
+                "roomCode": room_b,
+                "name": "Ada"
+            })))
+            .await
+            .unwrap();
+        let _ = read_until_type(&mut player, "roomSnapshot").await;
+
+        let disconnected = read_until_type(&mut display_a, "playerListChanged").await;
+        assert_eq!(
+            disconnected
+                .pointer("/players/0/connected")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
     }
 
     #[tokio::test]
