@@ -102,6 +102,10 @@ function detectRole(): { role: ClientRole; initialRoomCode: string } {
 export function GameProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const boot = useMemo(() => detectRole(), []);
   const clientId = useMemo(() => getStoredValue('draw-party-client-id', () => crypto.randomUUID()), []);
+  const sessionToken = useMemo(
+    () => getStoredValue('draw-party-session-token', () => crypto.randomUUID()),
+    []
+  );
   const socketRef = useRef<GameSocket | null>(null);
   const reconnectTimerRef = useRef(0);
   const lastPhaseRef = useRef('');
@@ -259,6 +263,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       const socket = new GameSocket({
         role: boot.role,
         clientId,
+        sessionToken,
         roomCode,
         hostToken:
           boot.role === 'display' && roomCode
@@ -301,7 +306,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       socketRef.current = socket;
       socket.connect();
     },
-    [boot.role, clientId, handleServerMessage, hostTokens]
+    [boot.role, clientId, handleServerMessage, hostTokens, sessionToken]
   );
 
   useEffect(() => {

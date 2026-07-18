@@ -4,6 +4,7 @@ import { isServerMessage } from './protocol';
 interface SocketOptions {
   role: Role;
   clientId: string;
+  sessionToken: string;
   roomCode?: string;
   hostToken?: string;
   onOpen: () => void;
@@ -25,6 +26,7 @@ export class GameSocket {
     url.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     url.searchParams.set('role', this.options.role);
     url.searchParams.set('client_id', this.options.clientId);
+    url.searchParams.set('sessionToken', this.options.sessionToken);
     if (this.options.roomCode) {
       url.searchParams.set('room', this.options.roomCode);
     }
