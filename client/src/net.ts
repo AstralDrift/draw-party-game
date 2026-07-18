@@ -51,10 +51,10 @@ export class GameSocket {
         this.options.onStatus('Received invalid server message');
       }
     });
-    this.ws.addEventListener('close', () => {
+    this.ws.addEventListener('close', (event) => {
       this.options.onStatus('Disconnected');
       this.stopHeartbeat();
-      if (!this.closedByUser) {
+      if (!this.closedByUser && event.code !== 4001) {
         this.options.onClose();
       }
     });
@@ -67,6 +67,10 @@ export class GameSocket {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     }
+  }
+
+  isOpen(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
   }
 
   close(): void {

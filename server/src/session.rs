@@ -4,6 +4,12 @@ use uuid::Uuid;
 
 pub const OUTBOUND_QUEUE_CAPACITY: usize = 16;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CloseSignal {
+    SlowConsumer,
+    Superseded,
+}
+
 /// Identifies one socket generation for a logical browser client.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionKey {
@@ -37,9 +43,13 @@ impl Connection {
         client_id: String,
         role: Role,
         session_token: String,
-    ) -> (Self, mpsc::Receiver<ServerMessage>, watch::Receiver<bool>) {
+    ) -> (
+        Self,
+        mpsc::Receiver<ServerMessage>,
+        watch::Receiver<Option<CloseSignal>>,
+    ) {
         let (tx, rx) = mpsc::channel(OUTBOUND_QUEUE_CAPACITY);
-        let (close_tx, close_rx) = watch::channel(false);
+        let (close_tx, close_rx) = watch::channel(None);
         let outbound = OutboundTarget { tx, close_tx };
         (
             Self {
@@ -90,26 +100,26 @@ impl Connection {
         self.outbound.clone()
     }
 
-    pub fn retire(&self) {
-        self.outbound.retire();
+    pub fn supersede(&self) {
+        self.outbound.close(CloseSignal::Superseded);
     }
 }
 
 #[derive(Clone)]
 pub struct OutboundTarget {
     tx: mpsc::Sender<ServerMessage>,
-    close_tx: watch::Sender<bool>,
+    close_tx: watch::Sender<Option<CloseSignal>>,
 }
 
 impl OutboundTarget {
     pub fn deliver(&self, message: ServerMessage) {
         if self.tx.try_send(message).is_err() {
-            self.retire();
+            self.close(CloseSignal::SlowConsumer);
         }
     }
 
-    fn retire(&self) {
-        let _ = self.close_tx.send(true);
+    fn close(&self, signal: CloseSignal) {
+        let _ = self.close_tx.send(Some(signal));
     }
 }
 
@@ -128,14 +138,14 @@ mod tests {
     #[tokio::test]
     async fn bounded_delivery_retires_only_the_slow_connection() {
         let (slow_tx, mut slow_rx) = mpsc::channel(1);
-        let (slow_close_tx, mut slow_close_rx) = watch::channel(false);
+        let (slow_close_tx, mut slow_close_rx) = watch::channel(None);
         let slow_target = OutboundTarget {
             tx: slow_tx,
             close_tx: slow_close_tx,
         };
 
         let (healthy_tx, mut healthy_rx) = mpsc::channel(2);
-        let (healthy_close_tx, healthy_close_rx) = watch::channel(false);
+        let (healthy_close_tx, healthy_close_rx) = watch::channel(None);
         let healthy_target = OutboundTarget {
             tx: healthy_tx,
             close_tx: healthy_close_tx,
@@ -152,11 +162,11 @@ mod tests {
             Ok(ServerMessage::Pong { now_ms: 1 })
         ));
         slow_close_rx.changed().await.unwrap();
-        assert!(*slow_close_rx.borrow());
+        assert_eq!(*slow_close_rx.borrow(), Some(CloseSignal::SlowConsumer));
         assert!(matches!(
             healthy_rx.try_recv(),
             Ok(ServerMessage::Pong { now_ms: 3 })
         ));
-        assert!(!*healthy_close_rx.borrow());
+        assert_eq!(*healthy_close_rx.borrow(), None);
     }
 }

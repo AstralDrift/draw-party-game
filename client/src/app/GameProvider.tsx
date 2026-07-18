@@ -91,20 +91,6 @@ function getStoredValue(key: string, fallback: () => string): string {
   return value;
 }
 
-function getTabStoredValue(key: string, fallback: () => string): string {
-  try {
-    const stored = sessionStorage.getItem(key);
-    if (stored) {
-      return stored;
-    }
-    const value = fallback();
-    sessionStorage.setItem(key, value);
-    return value;
-  } catch {
-    return fallback();
-  }
-}
-
 function detectRole(): { role: ClientRole; initialRoomCode: string } {
   const joinMatch = window.location.pathname.match(/^\/join\/([A-Z0-9]{4})/i);
   return {
@@ -117,7 +103,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   const boot = useMemo(() => detectRole(), []);
   const clientId = useMemo(() => getStoredValue('draw-party-client-id', () => crypto.randomUUID()), []);
   const sessionToken = useMemo(
-    () => getTabStoredValue('draw-party-session-token', () => crypto.randomUUID()),
+    () => getStoredValue('draw-party-session-token', () => crypto.randomUUID()),
     []
   );
   const socketRef = useRef<GameSocket | null>(null);
@@ -383,7 +369,12 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       reconnectSuppressedRef.current = false;
       setPendingJoin(next);
       pendingJoinRef.current = next;
-      connect(roomCode);
+      const socket = socketRef.current;
+      if (socket?.isOpen()) {
+        socket.send({ type: 'joinRoom', roomCode, name });
+      } else {
+        connect(roomCode);
+      }
       haptic(8);
     },
     [connect, haptic]
