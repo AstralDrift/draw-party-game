@@ -1,4 +1,6 @@
 import type { PlayerPublic } from '../../protocol';
+import { UsersRound } from 'lucide';
+import { LucideIcon } from './LucideIcon';
 
 interface PlayerListProps {
   players: PlayerPublic[];
@@ -9,7 +11,10 @@ export function PlayerList({ players, showScores = false }: PlayerListProps): Re
   if (players.length === 0) {
     return (
       <div className="player-list player-list--empty">
-        <div className="empty-state">Waiting for phones to join.</div>
+        <div className="empty-state">
+          <span className="empty-icon-wrap"><LucideIcon icon={UsersRound} className="empty-icon" /></span>
+          <span>Waiting for phones to join.</span>
+        </div>
       </div>
     );
   }

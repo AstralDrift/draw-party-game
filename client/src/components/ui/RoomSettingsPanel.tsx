@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Save, Volume2, VolumeX } from 'lucide';
 import {
   defaultRoomSettings,
   isPromptPackId,
@@ -105,6 +106,7 @@ export function RoomSettingsPanel({
       </Field>
       <Button
         wide
+        icon={Save}
         onClick={() =>
           onSave({
             rounds: clamp(rounds, 1, 12, settings.rounds),
@@ -122,6 +124,7 @@ export function RoomSettingsPanel({
         <Button
           variant="secondary"
           wide
+          icon={soundOn ? Volume2 : VolumeX}
           className={`sound-toggle ${soundOn ? 'is-selected' : ''}`}
           aria-pressed={soundOn}
           onClick={onToggleSound}

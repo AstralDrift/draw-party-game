@@ -1,3 +1,4 @@
+import { LogIn, RotateCcw } from 'lucide';
 import { useGame } from '../../app/GameProvider';
 import { Button } from '../../components/ui/Button';
 import { Field, TextInput } from '../../components/ui/Field';
@@ -30,7 +31,7 @@ export function JoinScreen(): React.JSX.Element {
               ? 'Connected. Waiting for the TV to seat you…'
               : 'Connection dropped — retrying automatically.'}
           </p>
-          <Button variant="secondary" wide onClick={cancelJoin}>
+          <Button variant="secondary" wide icon={RotateCcw} onClick={cancelJoin}>
             Change Room
           </Button>
         </GlassPanel>
@@ -97,7 +98,7 @@ export function JoinScreen(): React.JSX.Element {
               }}
             />
           </Field>
-          <Button wide type="submit">
+          <Button wide icon={LogIn} type="submit">
             Join the Party
           </Button>
         </form>

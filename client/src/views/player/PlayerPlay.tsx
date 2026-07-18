@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Send } from 'lucide';
 import { useGame } from '../../app/GameProvider';
 import { playerActionHint } from '../../polish';
 import { playCue } from '../../sound';
@@ -51,7 +52,7 @@ export function PlayerGuessing(): React.JSX.Element {
                 onChange={(event) => setGuess(event.target.value)}
               />
             </Field>
-            <Button wide disabled={submitted}
+            <Button wide icon={Send} disabled={submitted}
               onClick={() => {
                 const next = guess.trim();
                 if (!next) {
