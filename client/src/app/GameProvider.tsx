@@ -9,6 +9,7 @@ import {
   type ReactNode
 } from 'react';
 import { GameSocket } from '../net';
+import { HostTokenCache } from '../host-token-cache';
 import {
   type ClientMessage,
   type ReactionEmoji,
@@ -64,30 +65,30 @@ interface GameContextValue {
 
 const GameContext = createContext<GameContextValue | null>(null);
 
+function readStoredValue(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredValue(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Party play still works when a browser blocks persistent storage.
+  }
+}
+
 function getStoredValue(key: string, fallback: () => string): string {
-  const stored = localStorage.getItem(key);
+  const stored = readStoredValue(key);
   if (stored) {
     return stored;
   }
   const value = fallback();
-  localStorage.setItem(key, value);
+  writeStoredValue(key, value);
   return value;
-}
-
-function hostTokenKey(roomCode: string): string {
-  return `draw-party-host-token-${roomCode}`;
-}
-
-function getStoredHostToken(roomCode: string): string | null {
-  return localStorage.getItem(hostTokenKey(roomCode));
-}
-
-function storeHostToken(roomCode: string, hostToken: string): void {
-  localStorage.setItem(hostTokenKey(roomCode), hostToken);
-}
-
-function clearStoredHostToken(roomCode: string): void {
-  localStorage.removeItem(hostTokenKey(roomCode));
 }
 
 function detectRole(): { role: ClientRole; initialRoomCode: string } {
@@ -107,13 +108,14 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   const lastTickSecondRef = useRef(-1);
   const pendingJoinRef = useRef<PendingJoin | null>(null);
   const snapshotRef = useRef<RoomSnapshot | null>(null);
+  const hostTokens = useMemo(() => new HostTokenCache(), []);
   const burstIdRef = useRef(0);
 
   const [snapshot, setSnapshot] = useState<RoomSnapshot | null>(null);
   const [prompt, setPrompt] = useState('');
   const [status, setStatus] = useState(boot.role === 'player' ? 'Ready to join' : 'Disconnected');
   const [errorMessage, setErrorMessage] = useState('');
-  const [playerName, setPlayerName] = useState(() => localStorage.getItem('draw-party-name') ?? '');
+  const [playerName, setPlayerName] = useState(() => readStoredValue('draw-party-name') ?? '');
   const [roomCodeDraft, setRoomCodeDraft] = useState(boot.initialRoomCode);
   const [pendingJoin, setPendingJoin] = useState<PendingJoin | null>(null);
   const [selectedVote, setSelectedVote] = useState<{ turnToken: number; optionId: string } | null>(null);
@@ -166,7 +168,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       setErrorMessage('');
       switch (message.type) {
         case 'roomCreated':
-          storeHostToken(message.snapshot.roomCode, message.hostToken);
+          hostTokens.set(message.snapshot.roomCode, message.hostToken);
           applySnapshot(message.snapshot);
           break;
         case 'roomSnapshot':
@@ -226,7 +228,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
           ) {
             const deadCode = snapshotRef.current?.roomCode;
             if (deadCode) {
-              clearStoredHostToken(deadCode);
+              hostTokens.delete(deadCode);
             }
             setSnapshot(null);
             snapshotRef.current = null;
@@ -248,7 +250,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
         }
       }
     },
-    [applySnapshot, boot.role]
+    [applySnapshot, boot.role, hostTokens]
   );
 
   const connect = useCallback(
@@ -259,7 +261,9 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
         clientId,
         roomCode,
         hostToken:
-          boot.role === 'display' && roomCode ? getStoredHostToken(roomCode) ?? undefined : undefined,
+          boot.role === 'display' && roomCode
+            ? hostTokens.get(roomCode) ?? undefined
+            : undefined,
         onOpen: () => {
           if (reconnectTimerRef.current) {
             window.clearTimeout(reconnectTimerRef.current);
@@ -297,7 +301,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       socketRef.current = socket;
       socket.connect();
     },
-    [boot.role, clientId, handleServerMessage]
+    [boot.role, clientId, handleServerMessage, hostTokens]
   );
 
   useEffect(() => {
@@ -339,7 +343,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
 
   const joinRoom = useCallback(
     (roomCode: string, name: string) => {
-      localStorage.setItem('draw-party-name', name);
+      writeStoredValue('draw-party-name', name);
       setPlayerName(name);
       setRoomCodeDraft(roomCode);
       const next = { roomCode, name };
@@ -354,7 +358,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   const setName = useCallback(
     (name: string) => {
       const safeName = name.trim() || 'Player';
-      localStorage.setItem('draw-party-name', safeName);
+      writeStoredValue('draw-party-name', safeName);
       setPlayerName(safeName);
       setPendingJoin((current) => {
         if (!current) {

@@ -27,7 +27,7 @@ use std::{
 };
 use tokio::{
     net::TcpListener,
-    sync::{mpsc, Mutex},
+    sync::{mpsc, watch, Mutex},
     time::{self, Duration},
 };
 use tower_http::{
@@ -48,10 +48,31 @@ struct AppInner {
     connections: HashMap<String, Connection>,
 }
 
+const OUTBOUND_QUEUE_CAPACITY: usize = 16;
+
 struct Connection {
+    id: Uuid,
     role: Role,
     room_code: Option<String>,
-    tx: mpsc::UnboundedSender<ServerMessage>,
+    tx: mpsc::Sender<ServerMessage>,
+    close_tx: watch::Sender<bool>,
+}
+
+#[derive(Clone)]
+struct OutboundTarget {
+    tx: mpsc::Sender<ServerMessage>,
+    close_tx: watch::Sender<bool>,
+}
+
+type OutboundMessage = (OutboundTarget, ServerMessage);
+
+impl Connection {
+    fn outbound(&self) -> OutboundTarget {
+        OutboundTarget {
+            tx: self.tx.clone(),
+            close_tx: self.close_tx.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -221,19 +242,26 @@ async fn handle_socket(socket: WebSocket, state: AppState, query: WsQuery) {
         .client_id
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let connection_id = Uuid::new_v4();
     let (mut ws_sender, mut ws_receiver) = socket.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<ServerMessage>();
+    let (tx, mut rx) = mpsc::channel::<ServerMessage>(OUTBOUND_QUEUE_CAPACITY);
+    let (close_tx, mut close_rx) = watch::channel(false);
+    let mut receiver_close_rx = close_rx.clone();
 
     {
         let mut inner = state.inner.lock().await;
-        inner.connections.insert(
+        if let Some(replaced) = inner.connections.insert(
             client_id.clone(),
             Connection {
+                id: connection_id,
                 role: query.role.clone(),
                 room_code: None,
                 tx,
+                close_tx,
             },
-        );
+        ) {
+            let _ = replaced.close_tx.send(true);
+        }
 
         if let Some(room_code) = &query.room {
             let room_code = room_code.to_uppercase();
@@ -267,87 +295,139 @@ async fn handle_socket(socket: WebSocket, state: AppState, query: WsQuery) {
     }
 
     let sender_task = tokio::spawn(async move {
-        while let Some(message) = rx.recv().await {
-            match serde_json::to_string(&message) {
-                Ok(text) => {
-                    if ws_sender.send(Message::Text(text.into())).await.is_err() {
+        loop {
+            tokio::select! {
+                changed = close_rx.changed() => {
+                    if changed.is_err() || *close_rx.borrow() {
+                        let _ = ws_sender.send(Message::Close(None)).await;
                         break;
                     }
                 }
-                Err(err) => {
-                    error!(?err, "failed to serialize server message");
-                    break;
+                message = rx.recv() => {
+                    let Some(message) = message else {
+                        break;
+                    };
+                    match serde_json::to_string(&message) {
+                        Ok(text) => {
+                            tokio::select! {
+                                changed = close_rx.changed() => {
+                                    if changed.is_err() || *close_rx.borrow() {
+                                        let _ = ws_sender.send(Message::Close(None)).await;
+                                        break;
+                                    }
+                                }
+                                result = ws_sender.send(Message::Text(text.into())) => {
+                                    if result.is_err() {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            error!(?err, "failed to serialize server message");
+                            break;
+                        }
+                    }
                 }
             }
         }
     });
 
-    while let Some(message) = ws_receiver.next().await {
-        match message {
-            Ok(Message::Text(text)) => match serde_json::from_str::<ClientMessage>(text.as_str()) {
-                Ok(client_message) => {
-                    handle_client_message(&state, &client_id, client_message).await;
+    loop {
+        tokio::select! {
+            changed = receiver_close_rx.changed() => {
+                if changed.is_err() || *receiver_close_rx.borrow() {
+                    break;
                 }
-                Err(err) => {
-                    warn!(?err, "invalid client message");
-                    send_error(
-                        &state,
-                        &client_id,
-                        "invalid_message",
-                        "Message format was not understood.",
-                    )
-                    .await;
+            }
+            message = ws_receiver.next() => {
+                let Some(message) = message else {
+                    break;
+                };
+                match message {
+                    Ok(Message::Text(text)) => match serde_json::from_str::<ClientMessage>(text.as_str()) {
+                        Ok(client_message) => {
+                            handle_client_message(&state, &client_id, connection_id, client_message).await;
+                        }
+                        Err(err) => {
+                            warn!(?err, "invalid client message");
+                            send_error(
+                                &state,
+                                &client_id,
+                                connection_id,
+                                "invalid_message",
+                                "Message format was not understood.",
+                            )
+                            .await;
+                        }
+                    },
+                    Ok(Message::Close(_)) => break,
+                    Ok(Message::Ping(_)) | Ok(Message::Pong(_)) | Ok(Message::Binary(_)) => {}
+                    Err(err) => {
+                        warn!(?err, "websocket receive error");
+                        break;
+                    }
                 }
-            },
-            Ok(Message::Close(_)) => break,
-            Ok(Message::Ping(_)) | Ok(Message::Pong(_)) | Ok(Message::Binary(_)) => {}
-            Err(err) => {
-                warn!(?err, "websocket receive error");
-                break;
             }
         }
     }
 
     sender_task.abort();
-    disconnect_client(&state, &client_id).await;
+    disconnect_client(&state, &client_id, connection_id).await;
 }
 
-async fn handle_client_message(state: &AppState, client_id: &str, message: ClientMessage) {
+async fn handle_client_message(
+    state: &AppState,
+    client_id: &str,
+    connection_id: Uuid,
+    message: ClientMessage,
+) {
     match message {
-        ClientMessage::CreateRoom => create_room(state, client_id).await,
+        ClientMessage::CreateRoom => create_room(state, client_id, connection_id).await,
         ClientMessage::JoinRoom { room_code, name } => {
-            join_room(state, client_id, room_code, name).await
+            join_room(state, client_id, connection_id, room_code, name).await
         }
-        ClientMessage::SetName { name } => set_name(state, client_id, name).await,
+        ClientMessage::SetName { name } => set_name(state, client_id, connection_id, name).await,
         ClientMessage::UpdateRoomSettings { settings } => {
-            update_room_settings(state, client_id, settings).await
+            update_room_settings(state, client_id, connection_id, settings).await
         }
-        ClientMessage::StartGame => start_or_advance(state, client_id).await,
+        ClientMessage::StartGame => start_or_advance(state, client_id, connection_id).await,
         ClientMessage::SubmitDrawing {
             turn_token,
             drawing,
-        } => submit_drawing(state, client_id, turn_token, drawing).await,
+        } => submit_drawing(state, client_id, connection_id, turn_token, drawing).await,
         ClientMessage::SubmitGuess { turn_token, guess } => {
-            submit_guess(state, client_id, turn_token, guess).await
+            submit_guess(state, client_id, connection_id, turn_token, guess).await
         }
         ClientMessage::SubmitVote {
             turn_token,
             option_id,
-        } => submit_vote(state, client_id, turn_token, option_id).await,
-        ClientMessage::SendReaction { emoji } => send_reaction(state, client_id, emoji).await,
-        ClientMessage::Heartbeat => {
-            send_to_client(state, client_id, ServerMessage::Pong { now_ms: now_ms() }).await
+        } => submit_vote(state, client_id, connection_id, turn_token, option_id).await,
+        ClientMessage::SendReaction { emoji } => {
+            send_reaction(state, client_id, connection_id, emoji).await
         }
-        ClientMessage::LeaveRoom => disconnect_client(state, client_id).await,
+        ClientMessage::Heartbeat => {
+            send_to_client(
+                state,
+                client_id,
+                connection_id,
+                ServerMessage::Pong { now_ms: now_ms() },
+            )
+            .await
+        }
+        ClientMessage::LeaveRoom => disconnect_client(state, client_id, connection_id).await,
     }
 }
 
-async fn send_reaction(state: &AppState, client_id: &str, emoji: String) {
-    let messages = {
+async fn send_reaction(state: &AppState, client_id: &str, connection_id: Uuid, emoji: String) {
+    {
         let mut inner = state.inner.lock().await;
         let Some(conn) = inner.connections.get(client_id) else {
             return;
         };
+        if conn.id != connection_id {
+            return;
+        }
         if conn.role != Role::Player {
             return;
         }
@@ -357,7 +437,7 @@ async fn send_reaction(state: &AppState, client_id: &str, emoji: String) {
         let Some(room) = inner.rooms.get_mut(&room_code) else {
             return;
         };
-        match room.submit_reaction(client_id, &emoji, now_ms()) {
+        let messages = match room.submit_reaction(client_id, &emoji, now_ms()) {
             Ok(Some(burst)) => {
                 let mut out = Vec::new();
                 for (other_id, other_conn) in &inner.connections {
@@ -366,7 +446,7 @@ async fn send_reaction(state: &AppState, client_id: &str, emoji: String) {
                     }
                     let _ = other_id;
                     out.push((
-                        other_conn.tx.clone(),
+                        other_conn.outbound(),
                         ServerMessage::ReactionBurst {
                             player_id: burst.player_id.clone(),
                             name: burst.name.clone(),
@@ -378,22 +458,27 @@ async fn send_reaction(state: &AppState, client_id: &str, emoji: String) {
                 out
             }
             Ok(None) => Vec::new(),
-            Err(err) => targeted_error(&inner, client_id, err.code, &err.message),
-        }
-    };
-    send_many(messages);
+            Err(err) => targeted_error(&inner, client_id, connection_id, err.code, &err.message),
+        };
+        send_many(messages);
+    }
 }
 
-async fn create_room(state: &AppState, client_id: &str) {
-    let messages = {
+async fn create_room(state: &AppState, client_id: &str, connection_id: Uuid) {
+    {
         let mut inner = state.inner.lock().await;
-        if !matches!(
-            inner.connections.get(client_id).map(|conn| &conn.role),
+        let messages = if !matches!(
+            inner
+                .connections
+                .get(client_id)
+                .filter(|conn| conn.id == connection_id)
+                .map(|conn| &conn.role),
             Some(Role::Display)
         ) {
             targeted_error(
                 &inner,
                 client_id,
+                connection_id,
                 "display_only",
                 "Only the TV display can create rooms.",
             )
@@ -418,7 +503,7 @@ async fn create_room(state: &AppState, client_id: &str) {
                 .get(client_id)
                 .map(|conn| {
                     vec![(
-                        conn.tx.clone(),
+                        conn.outbound(),
                         ServerMessage::RoomCreated {
                             snapshot,
                             host_token,
@@ -426,57 +511,72 @@ async fn create_room(state: &AppState, client_id: &str) {
                     )]
                 })
                 .unwrap_or_default()
-        }
-    };
-    send_many(messages);
+        };
+        send_many(messages);
+    }
 }
 
-async fn join_room(state: &AppState, client_id: &str, room_code: String, name: String) {
+async fn join_room(
+    state: &AppState,
+    client_id: &str,
+    connection_id: Uuid,
+    room_code: String,
+    name: String,
+) {
     let room_code = room_code.to_uppercase();
-    mutate_room(state, client_id, &room_code, |room| {
+    mutate_room(state, client_id, connection_id, &room_code, |room| {
         room.upsert_player(client_id.to_string(), name, now_ms())?;
         Ok(EngineEvent::PlayerListChanged)
     })
     .await;
 }
 
-async fn set_name(state: &AppState, client_id: &str, name: String) {
-    mutate_current_room(state, client_id, |room| {
+async fn set_name(state: &AppState, client_id: &str, connection_id: Uuid, name: String) {
+    mutate_current_room(state, client_id, connection_id, |room| {
         room.set_name(client_id, name, now_ms())?;
         Ok(EngineEvent::PlayerListChanged)
     })
     .await;
 }
 
-async fn update_room_settings(state: &AppState, client_id: &str, settings: RoomSettings) {
-    let Some(room_code) = authorized_controller_room_code(state, client_id).await else {
+async fn update_room_settings(
+    state: &AppState,
+    client_id: &str,
+    connection_id: Uuid,
+    settings: RoomSettings,
+) {
+    let Some(room_code) = authorized_controller_room_code(state, client_id, connection_id).await
+    else {
         send_error(
             state,
             client_id,
+            connection_id,
             "not_authorized",
             "Only the TV display or the host phone can change room settings.",
         )
         .await;
         return;
     };
-    mutate_room(state, client_id, &room_code, |room| {
+    mutate_room(state, client_id, connection_id, &room_code, |room| {
         room.update_settings(settings, now_ms())
     })
     .await;
 }
 
-async fn start_or_advance(state: &AppState, client_id: &str) {
-    let Some(room_code) = authorized_controller_room_code(state, client_id).await else {
+async fn start_or_advance(state: &AppState, client_id: &str, connection_id: Uuid) {
+    let Some(room_code) = authorized_controller_room_code(state, client_id, connection_id).await
+    else {
         send_error(
             state,
             client_id,
+            connection_id,
             "not_authorized",
             "Only the TV display or the host phone can advance the game.",
         )
         .await;
         return;
     };
-    mutate_room(state, client_id, &room_code, |room| {
+    mutate_room(state, client_id, connection_id, &room_code, |room| {
         room.handle_start_or_advance(now_ms())
     })
     .await;
@@ -485,31 +585,48 @@ async fn start_or_advance(state: &AppState, client_id: &str) {
 async fn submit_drawing(
     state: &AppState,
     client_id: &str,
+    connection_id: Uuid,
     turn_token: u64,
     drawing: draw_party_server::protocol::DrawingDoc,
 ) {
-    mutate_current_room(state, client_id, |room| {
+    mutate_current_room(state, client_id, connection_id, |room| {
         room.submit_drawing(client_id, turn_token, drawing, now_ms())
     })
     .await;
 }
 
-async fn submit_guess(state: &AppState, client_id: &str, turn_token: u64, guess: String) {
-    mutate_current_room(state, client_id, |room| {
+async fn submit_guess(
+    state: &AppState,
+    client_id: &str,
+    connection_id: Uuid,
+    turn_token: u64,
+    guess: String,
+) {
+    mutate_current_room(state, client_id, connection_id, |room| {
         room.submit_guess(client_id, turn_token, guess, now_ms())
     })
     .await;
 }
 
-async fn submit_vote(state: &AppState, client_id: &str, turn_token: u64, option_id: String) {
-    mutate_current_room(state, client_id, |room| {
+async fn submit_vote(
+    state: &AppState,
+    client_id: &str,
+    connection_id: Uuid,
+    turn_token: u64,
+    option_id: String,
+) {
+    mutate_current_room(state, client_id, connection_id, |room| {
         room.submit_vote(client_id, turn_token, option_id, now_ms())
     })
     .await;
 }
 
-async fn mutate_current_room<F>(state: &AppState, client_id: &str, operation: F)
-where
+async fn mutate_current_room<F>(
+    state: &AppState,
+    client_id: &str,
+    connection_id: Uuid,
+    operation: F,
+) where
     F: FnOnce(&mut Room) -> Result<EngineEvent, EngineError>,
 {
     let room_code = {
@@ -517,22 +634,42 @@ where
         inner
             .connections
             .get(client_id)
+            .filter(|conn| conn.id == connection_id)
             .and_then(|conn| conn.room_code.clone())
     };
 
     if let Some(room_code) = room_code {
-        mutate_room(state, client_id, &room_code, operation).await;
+        mutate_room(state, client_id, connection_id, &room_code, operation).await;
     } else {
-        send_error(state, client_id, "not_in_room", "Join a room first.").await;
+        send_error(
+            state,
+            client_id,
+            connection_id,
+            "not_in_room",
+            "Join a room first.",
+        )
+        .await;
     }
 }
 
-async fn mutate_room<F>(state: &AppState, client_id: &str, room_code: &str, operation: F)
-where
+async fn mutate_room<F>(
+    state: &AppState,
+    client_id: &str,
+    connection_id: Uuid,
+    room_code: &str,
+    operation: F,
+) where
     F: FnOnce(&mut Room) -> Result<EngineEvent, EngineError>,
 {
-    let messages = {
+    {
         let mut inner = state.inner.lock().await;
+        if inner
+            .connections
+            .get(client_id)
+            .is_none_or(|conn| conn.id != connection_id)
+        {
+            return;
+        }
         let result = inner
             .rooms
             .get_mut(room_code)
@@ -544,27 +681,36 @@ where
                 })
             });
 
-        match result {
+        let messages = match result {
             Ok(event) => {
                 if let Some(conn) = inner.connections.get_mut(client_id) {
                     conn.room_code = Some(room_code.to_string());
                 }
                 room_messages(&inner, room_code, event)
             }
-            Err(error) => targeted_error(&inner, client_id, error.code, &error.message),
-        }
-    };
-    send_many(messages);
+            Err(error) => {
+                targeted_error(&inner, client_id, connection_id, error.code, &error.message)
+            }
+        };
+        send_many(messages);
+    }
 }
 
-async fn disconnect_client(state: &AppState, client_id: &str) {
-    let messages = {
+async fn disconnect_client(state: &AppState, client_id: &str, connection_id: Uuid) {
+    {
         let mut inner = state.inner.lock().await;
+        if inner
+            .connections
+            .get(client_id)
+            .is_none_or(|conn| conn.id != connection_id)
+        {
+            return;
+        }
         let room_code = inner
             .connections
             .remove(client_id)
             .and_then(|conn| conn.room_code);
-        if let Some(room_code) = room_code {
+        let messages = if let Some(room_code) = room_code {
             let event = if let Some(room) = inner.rooms.get_mut(&room_code) {
                 let now = now_ms();
                 room.mark_disconnected(client_id, now);
@@ -590,9 +736,9 @@ async fn disconnect_client(state: &AppState, client_id: &str) {
                 .unwrap_or_default()
         } else {
             Vec::new()
-        }
-    };
-    send_many(messages);
+        };
+        send_many(messages);
+    }
 }
 
 fn spawn_room_maintenance(state: AppState) {
@@ -600,7 +746,7 @@ fn spawn_room_maintenance(state: AppState) {
         let mut interval = time::interval(Duration::from_secs(1));
         loop {
             interval.tick().await;
-            let messages = {
+            {
                 let mut inner = state.inner.lock().await;
                 let now = now_ms();
                 let mut changed_rooms = Vec::new();
@@ -631,21 +777,17 @@ fn spawn_room_maintenance(state: AppState) {
                     inner.rooms.remove(&room_code);
                 }
 
-                changed_rooms
+                let messages = changed_rooms
                     .into_iter()
                     .flat_map(|(room_code, event)| room_messages(&inner, &room_code, event))
-                    .collect::<Vec<_>>()
-            };
-            send_many(messages);
+                    .collect::<Vec<_>>();
+                send_many(messages);
+            }
         }
     });
 }
 
-fn room_messages(
-    inner: &AppInner,
-    room_code: &str,
-    event: EngineEvent,
-) -> Vec<(mpsc::UnboundedSender<ServerMessage>, ServerMessage)> {
+fn room_messages(inner: &AppInner, room_code: &str, event: EngineEvent) -> Vec<OutboundMessage> {
     let Some(room) = inner.rooms.get(room_code) else {
         return Vec::new();
     };
@@ -671,9 +813,9 @@ fn room_messages(
                 snapshot: snapshot.clone(),
             },
         };
-        messages.push((conn.tx.clone(), event_message));
+        messages.push((conn.outbound(), event_message));
         messages.push((
-            conn.tx.clone(),
+            conn.outbound(),
             ServerMessage::RoomSnapshot {
                 snapshot: snapshot.clone(),
             },
@@ -681,7 +823,7 @@ fn room_messages(
 
         if snapshot.phase == GamePhase::Drawing && conn.role == Role::Player {
             if let Some(prompt) = room.prompt_for_player(client_id) {
-                messages.push((conn.tx.clone(), ServerMessage::PromptAssigned { prompt }));
+                messages.push((conn.outbound(), ServerMessage::PromptAssigned { prompt }));
             }
         }
 
@@ -692,7 +834,7 @@ fn room_messages(
                 snapshot.current_drawing.clone(),
             ) {
                 messages.push((
-                    conn.tx.clone(),
+                    conn.outbound(),
                     ServerMessage::DrawingReveal {
                         artist_id,
                         artist_name,
@@ -704,7 +846,7 @@ fn room_messages(
 
         if snapshot.phase == GamePhase::Voting {
             messages.push((
-                conn.tx.clone(),
+                conn.outbound(),
                 ServerMessage::VotingOptions {
                     options: snapshot.voting_options.clone(),
                 },
@@ -713,7 +855,7 @@ fn room_messages(
 
         if snapshot.phase == GamePhase::Results {
             if let Some(result) = snapshot.round_result.clone() {
-                messages.push((conn.tx.clone(), ServerMessage::RoundResult { result }));
+                messages.push((conn.outbound(), ServerMessage::RoundResult { result }));
             }
         }
     }
@@ -749,23 +891,36 @@ fn personalize_snapshot(
 
 fn queue_snapshot_for_connection(inner: &AppInner, client_id: &str, snapshot: RoomSnapshot) {
     if let Some(conn) = inner.connections.get(client_id) {
-        let _ = conn.tx.send(ServerMessage::RoomSnapshot { snapshot });
+        send_many(vec![(
+            conn.outbound(),
+            ServerMessage::RoomSnapshot { snapshot },
+        )]);
     }
 }
 
 fn queue_error_for_connection(inner: &AppInner, client_id: &str, err: EngineError) {
     if let Some(conn) = inner.connections.get(client_id) {
-        let _ = conn.tx.send(ServerMessage::Error {
-            code: err.code.to_string(),
-            message: err.message,
-        });
+        send_many(vec![(
+            conn.outbound(),
+            ServerMessage::Error {
+                code: err.code.to_string(),
+                message: err.message,
+            },
+        )]);
     }
 }
 
-async fn send_error(state: &AppState, client_id: &str, code: &str, message: &str) {
+async fn send_error(
+    state: &AppState,
+    client_id: &str,
+    connection_id: Uuid,
+    code: &str,
+    message: &str,
+) {
     send_to_client(
         state,
         client_id,
+        connection_id,
         ServerMessage::Error {
             code: code.to_string(),
             message: message.to_string(),
@@ -774,28 +929,38 @@ async fn send_error(state: &AppState, client_id: &str, code: &str, message: &str
     .await;
 }
 
-async fn send_to_client(state: &AppState, client_id: &str, message: ServerMessage) {
-    let tx = {
+async fn send_to_client(
+    state: &AppState,
+    client_id: &str,
+    connection_id: Uuid,
+    message: ServerMessage,
+) {
+    {
         let inner = state.inner.lock().await;
-        inner.connections.get(client_id).map(|conn| conn.tx.clone())
-    };
-    if let Some(tx) = tx {
-        let _ = tx.send(message);
+        if let Some(conn) = inner
+            .connections
+            .get(client_id)
+            .filter(|conn| conn.id == connection_id)
+        {
+            send_many(vec![(conn.outbound(), message)]);
+        }
     }
 }
 
 fn targeted_error(
     inner: &AppInner,
     client_id: &str,
+    connection_id: Uuid,
     code: &str,
     message: &str,
-) -> Vec<(mpsc::UnboundedSender<ServerMessage>, ServerMessage)> {
+) -> Vec<OutboundMessage> {
     inner
         .connections
         .get(client_id)
+        .filter(|conn| conn.id == connection_id)
         .map(|conn| {
             vec![(
-                conn.tx.clone(),
+                conn.outbound(),
                 ServerMessage::Error {
                     code: code.to_string(),
                     message: message.to_string(),
@@ -805,15 +970,24 @@ fn targeted_error(
         .unwrap_or_default()
 }
 
-fn send_many(messages: Vec<(mpsc::UnboundedSender<ServerMessage>, ServerMessage)>) {
-    for (tx, message) in messages {
-        let _ = tx.send(message);
+fn send_many(messages: Vec<OutboundMessage>) {
+    for (target, message) in messages {
+        if target.tx.try_send(message).is_err() {
+            let _ = target.close_tx.send(true);
+        }
     }
 }
 
-async fn authorized_controller_room_code(state: &AppState, client_id: &str) -> Option<String> {
+async fn authorized_controller_room_code(
+    state: &AppState,
+    client_id: &str,
+    connection_id: Uuid,
+) -> Option<String> {
     let inner = state.inner.lock().await;
     let conn = inner.connections.get(client_id)?;
+    if conn.id != connection_id {
+        return None;
+    }
     let room_code = conn.room_code.as_ref()?;
     let room = inner.rooms.get(room_code)?;
     match conn.role {
@@ -973,6 +1147,88 @@ mod tests {
                 .is_err(),
             "unexpected websocket message was received"
         );
+    }
+
+    #[tokio::test]
+    async fn outbound_backpressure_retires_only_the_slow_connection() {
+        let (slow_tx, mut slow_rx) = mpsc::channel(1);
+        let (slow_close_tx, mut slow_close_rx) = watch::channel(false);
+        let slow_target = OutboundTarget {
+            tx: slow_tx,
+            close_tx: slow_close_tx,
+        };
+
+        let (healthy_tx, mut healthy_rx) = mpsc::channel(2);
+        let (healthy_close_tx, healthy_close_rx) = watch::channel(false);
+        let healthy_target = OutboundTarget {
+            tx: healthy_tx,
+            close_tx: healthy_close_tx,
+        };
+
+        send_many(vec![
+            (slow_target.clone(), ServerMessage::Pong { now_ms: 1 }),
+            (slow_target, ServerMessage::Pong { now_ms: 2 }),
+            (healthy_target, ServerMessage::Pong { now_ms: 3 }),
+        ]);
+
+        assert!(matches!(
+            slow_rx.try_recv(),
+            Ok(ServerMessage::Pong { now_ms: 1 })
+        ));
+        slow_close_rx.changed().await.unwrap();
+        assert!(*slow_close_rx.borrow());
+        assert!(matches!(
+            healthy_rx.try_recv(),
+            Ok(ServerMessage::Pong { now_ms: 3 })
+        ));
+        assert!(!*healthy_close_rx.borrow());
+    }
+
+    #[tokio::test]
+    async fn retiring_the_current_connection_marks_its_player_disconnected() {
+        let room_code = "ABCD".to_string();
+        let client_id = "slow-player".to_string();
+        let connection_id = Uuid::new_v4();
+        let now = now_ms();
+        let mut room = Room::new(
+            room_code.clone(),
+            "display".to_string(),
+            "host-token".to_string(),
+            now,
+        );
+        room.upsert_player(client_id.clone(), "Ada".to_string(), now)
+            .unwrap();
+        let (tx, _rx) = mpsc::channel(OUTBOUND_QUEUE_CAPACITY);
+        let (close_tx, _close_rx) = watch::channel(false);
+        let state = AppState {
+            inner: Arc::new(Mutex::new(AppInner {
+                rooms: HashMap::from([(room_code.clone(), room)]),
+                connections: HashMap::from([(
+                    client_id.clone(),
+                    Connection {
+                        id: connection_id,
+                        role: Role::Player,
+                        room_code: Some(room_code.clone()),
+                        tx,
+                        close_tx,
+                    },
+                )]),
+            })),
+        };
+
+        disconnect_client(&state, &client_id, connection_id).await;
+
+        let inner = state.inner.lock().await;
+        let snapshot = inner.rooms.get(&room_code).unwrap().snapshot(now_ms());
+        assert_eq!(
+            snapshot
+                .players
+                .iter()
+                .find(|player| player.id == client_id)
+                .map(|player| player.connected),
+            Some(false)
+        );
+        assert!(!inner.connections.contains_key(&client_id));
     }
 
     #[test]
@@ -1209,6 +1465,46 @@ mod tests {
             Some("drawing")
         );
         expect_no_message(&mut unauthorized).await;
+    }
+
+    #[tokio::test]
+    async fn websocket_replacement_closes_the_superseded_connection() {
+        let url = spawn_ws_server().await;
+        let (mut original, _) = connect_async(format!("{url}?role=display&clientId=display"))
+            .await
+            .unwrap();
+        let (room_code, host_token, _) = create_test_room(&mut original).await;
+
+        let (mut replacement, _) = connect_async(format!(
+            "{url}?role=display&room={room_code}&hostToken={host_token}&clientId=display"
+        ))
+        .await
+        .unwrap();
+        let snapshot = read_until_type(&mut replacement, "roomSnapshot").await;
+        assert_eq!(
+            snapshot
+                .pointer("/snapshot/roomCode")
+                .and_then(Value::as_str),
+            Some(room_code.as_str())
+        );
+
+        let closed = time::timeout(Duration::from_secs(1), original.next())
+            .await
+            .expect("superseded socket did not terminate");
+        assert!(matches!(
+            closed,
+            Some(Ok(WsMessage::Close(_))) | Some(Err(_)) | None
+        ));
+
+        replacement
+            .send(text_message(json!({ "type": "heartbeat" })))
+            .await
+            .unwrap();
+        assert!(read_until_type(&mut replacement, "pong")
+            .await
+            .get("nowMs")
+            .and_then(Value::as_u64)
+            .is_some());
     }
 
     #[tokio::test]

@@ -47,7 +47,23 @@ const CUE_PATTERNS: Record<CueName, CueStep[]> = {
 };
 
 let audioContext: AudioContext | null = null;
-let enabled = localStorage.getItem('draw-party-sound') === 'on';
+let enabled = readSoundPreference();
+
+function readSoundPreference(): boolean {
+  try {
+    return localStorage.getItem('draw-party-sound') === 'on';
+  } catch {
+    return false;
+  }
+}
+
+function persistSoundPreference(value: boolean): void {
+  try {
+    localStorage.setItem('draw-party-sound', value ? 'on' : 'off');
+  } catch {
+    // Sound remains available for this session when storage is unavailable.
+  }
+}
 
 export function soundEnabled(): boolean {
   return enabled;
@@ -55,7 +71,7 @@ export function soundEnabled(): boolean {
 
 export function setSoundEnabled(nextEnabled: boolean): void {
   enabled = nextEnabled;
-  localStorage.setItem('draw-party-sound', enabled ? 'on' : 'off');
+  persistSoundPreference(enabled);
   if (enabled) {
     audioContext = audioContext ?? new AudioContext();
     void audioContext.resume();
