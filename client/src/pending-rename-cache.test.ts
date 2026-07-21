@@ -26,23 +26,31 @@ class MemoryStorage {
 }
 
 describe('PendingRenameCache', () => {
-  it('restores only the latest explicit rename as queued after a refresh', () => {
+  const BOB_REQUEST = '11111111-1111-4111-8111-111111111111';
+
+  it('restores the correlated in-flight rename and its latest coalesced request as queued', () => {
     const storage = new MemoryStorage();
-    const bob = createPendingRenameIntent('Bob', 'Ava', true, 4);
+    const bob = createPendingRenameIntent('Bob', 'Ava', true, 4, BOB_REQUEST);
     const bobThenCarol = coalescePendingRenameIntent(bob, 'Carol');
 
     expect(new PendingRenameCache(storage, () => 1_000).save('ABCD', 'p1', bobThenCarol)).toBe(
       true
     );
-    expect(new PendingRenameCache(storage, () => 1_001).restore('ABCD', 'p1')).toEqual(
-      createPendingRenameIntent('Carol', 'Ava', false, 0)
-    );
+    expect(new PendingRenameCache(storage, () => 1_001).restore('ABCD', 'p1')).toEqual({
+      ...bobThenCarol,
+      state: 'queued',
+      sentAfterSnapshotRevision: null
+    });
   });
 
   it('rejects mismatched, oversized, malformed, and unavailable storage without throwing', () => {
     const storage = new MemoryStorage();
     const cache = new PendingRenameCache(storage, () => 2_000);
-    cache.save('ABCD', 'p1', createPendingRenameIntent('Avery', 'Ava', true, 4));
+    cache.save(
+      'ABCD',
+      'p1',
+      createPendingRenameIntent('Avery', 'Ava', true, 4, BOB_REQUEST)
+    );
     expect(cache.restore('WXYZ', 'p1')).toBeNull();
     expect(storage.getItem(PENDING_RENAME_STORAGE_KEY)).toBeNull();
 
@@ -66,7 +74,11 @@ describe('PendingRenameCache', () => {
       () => 2_000
     );
     expect(
-      unavailable.save('ABCD', 'p1', createPendingRenameIntent('Avery', 'Ava', true, 4))
+      unavailable.save(
+        'ABCD',
+        'p1',
+        createPendingRenameIntent('Avery', 'Ava', true, 4, BOB_REQUEST)
+      )
     ).toBe(false);
     expect(unavailable.restore('ABCD', 'p1')).toBeNull();
     expect(() => unavailable.clear()).not.toThrow();

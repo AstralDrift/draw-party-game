@@ -1,5 +1,6 @@
 export const CANVAS_WIDTH = 1024;
 export const CANVAS_HEIGHT = 768;
+export const MAX_NAME_LEN = 24;
 
 export type Role = 'display' | 'player';
 export type GamePhase = 'lobby' | 'drawing' | 'guessing' | 'voting' | 'results' | 'finalScores';
@@ -138,7 +139,7 @@ export interface RoomSnapshot {
 export type ClientMessage =
   | { type: 'createRoom' }
   | { type: 'joinRoom'; roomCode: string; name: string }
-  | { type: 'setName'; name: string }
+  | { type: 'setName'; name: string; requestId: string }
   | { type: 'updateRoomSettings'; settings: RoomSettings }
   | { type: 'startGame' }
   | { type: 'startPractice' }
@@ -156,6 +157,7 @@ export type ServerMessage =
   | { type: 'phaseChanged'; snapshot: RoomSnapshot }
   | { type: 'promptAssigned'; prompt: string }
   | { type: 'playerListChanged'; players: PlayerPublic[] }
+  | { type: 'nameSet'; requestId: string; canonicalName: string }
   | { type: 'drawingReveal'; artistId: string; artistName: string; drawing: DrawingDoc }
   | { type: 'votingOptions'; options: VotingOption[] }
   | { type: 'roundResult'; result: RoundResult }
@@ -182,6 +184,11 @@ export function isServerMessage(value: unknown): value is ServerMessage {
       return typeof (value as { prompt?: unknown }).prompt === 'string';
     case 'playerListChanged':
       return isPlayerList((value as { players?: unknown }).players);
+    case 'nameSet':
+      return (
+        isRenameRequestId((value as { requestId?: unknown }).requestId) &&
+        isCanonicalName((value as { canonicalName?: unknown }).canonicalName)
+      );
     case 'drawingReveal':
       return (
         typeof (value as { artistId?: unknown }).artistId === 'string' &&
@@ -242,6 +249,22 @@ export function isPromptPackId(value: unknown): value is PromptPackId {
 
 export function isReactionEmoji(value: unknown): value is ReactionEmoji {
   return typeof value === 'string' && (REACTION_EMOJIS as readonly string[]).includes(value);
+}
+
+function isRenameRequestId(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+  );
+}
+
+function isCanonicalName(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.trim() === value &&
+    Array.from(value).length <= MAX_NAME_LEN
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

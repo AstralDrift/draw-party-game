@@ -315,7 +315,15 @@ fn practice_accepts_exactly_one_player_and_scores_nothing() {
 
     room.handle_start_or_advance(300).unwrap();
     assert_eq!(room.phase, GamePhase::FinalScores);
-    room.handle_start_practice(400).unwrap();
+    let replay_unlock_ms = room.deadline_ms.expect("final scores unlock deadline");
+    assert_eq!(
+        room.handle_start_practice(replay_unlock_ms - 1)
+            .unwrap_err()
+            .code,
+        "final_scores_locked"
+    );
+    assert_eq!(room.phase, GamePhase::FinalScores);
+    room.handle_start_practice(replay_unlock_ms).unwrap();
     assert_eq!(room.phase, GamePhase::Drawing);
     assert_eq!(room.current_round, 1);
     assert_eq!(room.game_mode, GameMode::Practice);
@@ -439,15 +447,22 @@ fn drawing_timeout_with_partial_submissions_enters_guessing() {
 }
 
 #[test]
-fn guessing_timeout_without_guesses_skips_to_results() {
+fn guessing_timeout_without_guesses_requires_a_vote_and_awards_nothing_on_vote_timeout() {
     let mut room = room_with_players();
     reach_guessing(&mut room, 100);
     let event = room
         .advance_if_expired(200 + room.settings.guess_seconds * 1000)
         .unwrap();
     assert_eq!(event, Some(EngineEvent::PhaseChanged));
+    assert_eq!(room.phase, GamePhase::Voting);
+    assert!(room.round.votes.is_empty());
+    assert!(room.round.result.is_none());
+
+    room.advance_if_expired(room.deadline_ms.unwrap()).unwrap();
     assert_eq!(room.phase, GamePhase::Results);
-    assert!(room.round.result.is_some());
+    let result = room.round.result.as_ref().unwrap();
+    assert!(result.score_events.is_empty());
+    assert!(result.score_deltas.iter().all(|delta| delta.delta == 0));
 }
 
 #[test]
@@ -472,6 +487,71 @@ fn room_expires_only_after_everyone_disconnects_and_ttl_passes() {
     room.mark_disconnected("p3", 13);
     assert!(!room.is_expired(13 + ROOM_TTL_MS));
     assert!(room.is_expired(14 + ROOM_TTL_MS));
+}
+
+#[test]
+fn failed_between_rounds_timer_advance_does_not_starve_room_expiry() {
+    let mut room = room_with_players();
+    room.update_settings(custom_settings(), 50).unwrap();
+    room.handle_start_or_advance(100).unwrap();
+    submit_all_drawings(&mut room, 200);
+
+    for reveal in 0..3 {
+        play_guesses_then_vote_truth(&mut room, 300 + reveal * 100);
+        if reveal < 2 {
+            room.handle_start_or_advance(500 + reveal * 100).unwrap();
+        }
+    }
+    assert_eq!(room.phase, GamePhase::Results);
+    assert_eq!(room.current_round, 1);
+
+    room.mark_disconnected("display", 800);
+    room.mark_disconnected("p1", 801);
+    room.mark_disconnected("p2", 802);
+    room.mark_disconnected("p3", 803);
+    let last_player_activity = room.last_active_ms;
+    let deadline = room.deadline_ms.expect("results deadline");
+
+    for tick in [deadline, deadline + 1_000, deadline + 2_000] {
+        assert_eq!(
+            room.advance_if_expired(tick).unwrap_err().code,
+            "not_enough_players"
+        );
+    }
+
+    assert_eq!(room.phase, GamePhase::Results);
+    assert_eq!(room.last_active_ms, last_player_activity);
+    assert!(room.is_expired(last_player_activity + ROOM_TTL_MS + 1));
+}
+
+#[test]
+fn final_scores_unlock_deadline_does_not_starve_room_expiry() {
+    let mut room = room_with_players();
+    let mut settings = custom_settings();
+    settings.rounds = 1;
+    room.update_settings(settings, 50).unwrap();
+    room.handle_start_or_advance(100).unwrap();
+    submit_all_drawings(&mut room, 200);
+
+    for reveal in 0..3 {
+        play_guesses_then_vote_truth(&mut room, 300 + reveal * 100);
+        room.handle_start_or_advance(500 + reveal * 100).unwrap();
+    }
+    assert_eq!(room.phase, GamePhase::FinalScores);
+    let unlock_deadline = room.deadline_ms.expect("final scores unlock deadline");
+
+    room.mark_disconnected("display", 800);
+    room.mark_disconnected("p1", 801);
+    room.mark_disconnected("p2", 802);
+    room.mark_disconnected("p3", 803);
+    let last_player_activity = room.last_active_ms;
+
+    for tick in [unlock_deadline, unlock_deadline + 1_000] {
+        assert_eq!(room.advance_if_expired(tick).unwrap(), None);
+    }
+
+    assert_eq!(room.last_active_ms, last_player_activity);
+    assert!(room.is_expired(last_player_activity + ROOM_TTL_MS + 1));
 }
 
 #[test]
@@ -668,6 +748,7 @@ fn start_drawing_round_failure_does_not_promote_or_prune() {
     }
     room.phase = GamePhase::FinalScores;
     room.current_round = 1;
+    room.deadline_ms = None;
 
     let err = room.handle_start_or_advance(300).unwrap_err();
     assert_eq!(err.code, "not_enough_players");

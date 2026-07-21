@@ -6,6 +6,7 @@ import {
   type ReplayAction
 } from '../../controller';
 import { useRevealStage } from '../../hooks/useRevealStage';
+import { useServerTimedGate } from '../../hooks/useServerTimedGate';
 import { rematchPrompt } from '../../polish';
 import { Button } from '../../components/ui/Button';
 import { Deadline } from '../../components/ui/Deadline';
@@ -78,6 +79,13 @@ export function DisplayFinal(): React.JSX.Element {
   const { snapshot, status, errorMessage, clearError, send, setErrorMessage } = useGame();
   const [advancePending, setAdvancePending] = useState<ReplayAction | null>(null);
   const replay = snapshot ? finalReplayPlan(snapshot) : null;
+  const replayReady = useServerTimedGate(
+    snapshot?.phase === 'finalScores'
+      ? `${snapshot.roomCode}:${snapshot.phase}:${snapshot.turnToken}`
+      : '',
+    snapshot?.deadlineMs,
+    snapshot?.serverNowMs
+  );
 
   useEffect(() => {
     if (
@@ -115,7 +123,7 @@ export function DisplayFinal(): React.JSX.Element {
             id="advance-button"
             className="tv-action-fallback"
             variant="ghost"
-            disabled={!replay?.action || Boolean(advancePending)}
+            disabled={!replay?.action || !replayReady || Boolean(advancePending)}
             onClick={() => {
               const action = replay?.action;
               if (!action) return;
@@ -127,9 +135,17 @@ export function DisplayFinal(): React.JSX.Element {
               if (sent) setAdvancePending(action);
             }}
           >
-            {advancePending ? 'Starting from TV…' : `${replay?.label ?? 'Play Again'} from TV (fallback)`}
+            {advancePending
+              ? 'Starting from TV…'
+              : !replayReady && replay?.action
+                ? 'Podium first…'
+                : `${replay?.label ?? 'Play Again'} from TV (fallback)`}
           </Button>
-          <p className="muted">Use the host phone to start. {replay?.guidance}</p>
+          <p className="muted">
+            {replayReady
+              ? `Use the host phone to start. ${replay?.guidance}`
+              : 'Give the podium its moment. Replay unlocks shortly.'}
+          </p>
         </GlassPanel>
       </div>
       <ReactionBursts />

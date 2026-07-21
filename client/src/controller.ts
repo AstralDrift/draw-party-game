@@ -149,6 +149,7 @@ export interface PendingSubmission {
 export const SUBMISSION_WATCHDOG_MS = 5000;
 
 export interface PendingRenameIntent {
+  requestId: string;
   requestedName: string;
   canonicalNameAtRequest: string;
   state: 'queued' | 'sent';
@@ -161,13 +162,20 @@ export interface PendingRenameSnapshotResolution {
   sendName: string | null;
 }
 
+export interface PendingRenameAcknowledgementResolution
+  extends PendingRenameSnapshotResolution {
+  matched: boolean;
+}
+
 export function createPendingRenameIntent(
   requestedName: string,
   canonicalNameAtRequest: string,
   sent: boolean,
-  snapshotRevision: number
+  snapshotRevision: number,
+  requestId: string
 ): PendingRenameIntent {
   return {
+    requestId,
     requestedName,
     canonicalNameAtRequest,
     state: sent ? 'sent' : 'queued',
@@ -206,10 +214,8 @@ export function queuePendingRenameAfterDisconnect(
   }
   return {
     ...intent,
-    requestedName: pendingRenameDesiredName(intent),
     state: 'queued',
-    sentAfterSnapshotRevision: null,
-    latestRequestedName: null
+    sentAfterSnapshotRevision: null
   };
 }
 
@@ -227,7 +233,8 @@ export function markPendingRenameSent(
 export function reconcilePendingRenameSnapshot(
   intent: PendingRenameIntent | null,
   snapshotRevision: number,
-  canonicalName: string
+  canonicalName: string,
+  nextRequestId: string
 ): PendingRenameSnapshotResolution {
   if (!intent) {
     return { next: null, sendName: null };
@@ -253,9 +260,38 @@ export function reconcilePendingRenameSnapshot(
       latestRequestedName,
       canonicalName,
       false,
-      snapshotRevision
+      snapshotRevision,
+      nextRequestId
     ),
     sendName: latestRequestedName
+  };
+}
+
+/** Applies only the acknowledgement for the rename that is currently in flight. */
+export function reconcilePendingRenameAcknowledgement(
+  intent: PendingRenameIntent | null,
+  requestId: string,
+  canonicalName: string,
+  snapshotRevision: number,
+  nextRequestId: string
+): PendingRenameAcknowledgementResolution {
+  if (!intent || intent.requestId !== requestId) {
+    return { next: intent, sendName: null, matched: false };
+  }
+  const latestRequestedName = intent.latestRequestedName;
+  if (!latestRequestedName || latestRequestedName === canonicalName) {
+    return { next: null, sendName: null, matched: true };
+  }
+  return {
+    next: createPendingRenameIntent(
+      latestRequestedName,
+      canonicalName,
+      false,
+      snapshotRevision,
+      nextRequestId
+    ),
+    sendName: latestRequestedName,
+    matched: true
   };
 }
 

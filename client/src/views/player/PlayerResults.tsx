@@ -7,6 +7,7 @@ import {
   type ReplayAction
 } from '../../controller';
 import { stageVisible, useRevealStage } from '../../hooks/useRevealStage';
+import { useServerTimedGate } from '../../hooks/useServerTimedGate';
 import { isSelfHost } from '../../host';
 import { rematchPrompt } from '../../polish';
 import { Button } from '../../components/ui/Button';
@@ -118,6 +119,13 @@ export function PlayerFinal(): React.JSX.Element {
   const isHost = isSelfHost(snapshot?.players ?? [], clientId ?? '');
   const practice = (snapshot?.gameMode ?? 'party') === 'practice';
   const replay = snapshot ? finalReplayPlan(snapshot) : null;
+  const replayReady = useServerTimedGate(
+    snapshot?.phase === 'finalScores'
+      ? `${snapshot.roomCode}:${snapshot.phase}:${snapshot.turnToken}`
+      : '',
+    snapshot?.deadlineMs,
+    snapshot?.serverNowMs
+  );
 
   useEffect(() => {
     if (
@@ -134,6 +142,14 @@ export function PlayerFinal(): React.JSX.Element {
 
   return (
     <Shell title={practice ? 'Practice Complete' : 'Final Scores'}>
+      <ScoresPanel
+        scores={scores}
+        podium
+        role="player"
+        practice={practice}
+        onShareFailed={() => setErrorMessage('Could not export the podium card.')}
+      />
+
       {isHost ? (
         <GlassPanel className="advance-panel encore-panel" tone="soft">
           <p className="eyebrow">{practice ? 'Practice · scores off' : 'Host controls'}</p>
@@ -142,7 +158,7 @@ export function PlayerFinal(): React.JSX.Element {
             className="spotlight-button"
             wide
             icon={RotateCcw}
-            disabled={!replay?.action || Boolean(advancePending)}
+            disabled={!replay?.action || !replayReady || Boolean(advancePending)}
             onClick={() => {
               const action = replay?.action;
               if (!action) return;
@@ -154,23 +170,21 @@ export function PlayerFinal(): React.JSX.Element {
               if (sent) setAdvancePending(action);
             }}
           >
-            {advancePending ? 'Starting…' : replay?.label}
+            {advancePending
+              ? 'Starting…'
+              : !replayReady && replay?.action
+                ? 'Podium first…'
+                : replay?.label}
           </Button>
-          <p className="muted">{replay?.guidance}</p>
+          <p className="muted">
+            {replayReady ? replay?.guidance : 'Give the podium its moment. Replay unlocks shortly.'}
+          </p>
         </GlassPanel>
       ) : (
         <GlassPanel className="advance-panel" tone="soft">
           <p className="muted">Host decides. {replay?.guidance}</p>
         </GlassPanel>
       )}
-
-      <ScoresPanel
-        scores={scores}
-        podium
-        role="player"
-        practice={practice}
-        onShareFailed={() => setErrorMessage('Could not export the podium card.')}
-      />
     </Shell>
   );
 }

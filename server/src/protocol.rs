@@ -247,6 +247,8 @@ pub enum ClientMessage {
     },
     SetName {
         name: String,
+        #[serde(default)]
+        request_id: Option<String>,
     },
     UpdateRoomSettings {
         settings: RoomSettings,
@@ -297,6 +299,10 @@ pub enum ServerMessage {
     },
     PlayerListChanged {
         players: Vec<PlayerPublic>,
+    },
+    NameSet {
+        request_id: String,
+        canonical_name: String,
     },
     DrawingReveal {
         artist_id: String,

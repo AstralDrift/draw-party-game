@@ -241,7 +241,8 @@ fn play_again_preserves_prompt_history_while_unused_prompts_remain() {
     assert_eq!(room.phase, GamePhase::FinalScores);
     assert_eq!(room.used_prompt_keys.len(), 3);
 
-    room.handle_start_or_advance(60).unwrap();
+    room.handle_start_or_advance(room.deadline_ms.unwrap())
+        .unwrap();
 
     let replay_prompts: BTreeSet<String> = room
         .round

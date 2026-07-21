@@ -86,6 +86,36 @@ describe('protocol helpers', () => {
     });
   });
 
+  it('correlates rename requests with canonical-name acknowledgements', () => {
+    const requestId = '11111111-1111-4111-8111-111111111111';
+    const message = {
+      type: 'setName',
+      name: 'Bob',
+      requestId
+    } satisfies Extract<ClientMessage, { type: 'setName' }>;
+
+    expect(JSON.parse(JSON.stringify(message))).toEqual({
+      type: 'setName',
+      name: 'Bob',
+      requestId
+    });
+    expect(
+      isServerMessage({ type: 'nameSet', requestId, canonicalName: 'Bob 2' })
+    ).toBe(true);
+    expect(
+      isServerMessage({ type: 'nameSet', requestId: 'old-format', canonicalName: 'Bob 2' })
+    ).toBe(false);
+    expect(isServerMessage({ type: 'nameSet', requestId, canonicalName: 2 })).toBe(false);
+    expect(isServerMessage({ type: 'nameSet', requestId, canonicalName: '' })).toBe(false);
+    expect(isServerMessage({ type: 'nameSet', requestId, canonicalName: ' Bob 2 ' })).toBe(false);
+    expect(
+      isServerMessage({ type: 'nameSet', requestId, canonicalName: 'a'.repeat(25) })
+    ).toBe(false);
+    expect(
+      isServerMessage({ type: 'nameSet', requestId, canonicalName: '🎨'.repeat(24) })
+    ).toBe(true);
+  });
+
   it('recognizes valid server messages across types', () => {
     const snapshot = baseSnapshot();
     expect(isServerMessage({ type: 'pong', nowMs: 123 })).toBe(true);

@@ -1418,8 +1418,8 @@
 }
 
 /* On short TVs, let each punchline breathe: choices first, scoring second.
-   Reduced-motion users keep the compact all-at-once layout above. */
-@media (max-width: 1600px) and (max-height: 840px) and (prefers-reduced-motion: no-preference) {
+   Reduced motion removes transitions, but keeps these readable information beats. */
+@media (max-width: 1600px) and (max-height: 840px) {
   .results-panel[data-reveal-stage="hold"] .result-sidebar > *,
   .results-panel[data-reveal-stage="tally"] .score-deltas,
   .results-panel[data-reveal-stage="tally"] .result-controls,
@@ -1455,30 +1455,30 @@
     width: 26px;
     height: 26px;
     border-radius: 8px 10px 7px 11px;
-    font-size: 0.75rem;
+    font-size: var(--display-meta);
   }
 
   .results-panel[data-reveal-stage="tally"] .breakdown-kind,
   .results-panel[data-reveal-stage="correct"] .breakdown-kind {
-    font-size: 0.72rem;
+    font-size: var(--display-meta);
   }
 
   .results-panel[data-reveal-stage="tally"] .breakdown-answer,
   .results-panel[data-reveal-stage="correct"] .breakdown-answer {
-    font-size: 0.94rem;
+    font-size: var(--display-body);
     line-height: 1.12;
   }
 
   .results-panel[data-reveal-stage="tally"] .chip-label,
   .results-panel[data-reveal-stage="correct"] .chip-label {
     display: inline-flex;
-    font-size: 0.64rem;
+    font-size: var(--display-meta);
   }
 
   .results-panel[data-reveal-stage="tally"] .vote-chip,
   .results-panel[data-reveal-stage="correct"] .vote-chip {
     min-height: 20px;
-    font-size: 0.64rem;
+    font-size: var(--display-meta);
   }
 
   .results-panel[data-reveal-stage="deltas"] .causal-score-event,
@@ -1486,13 +1486,13 @@
   .results-panel[data-reveal-stage="complete"] .causal-score-event,
   .results-panel[data-reveal-stage="complete"] .score-event {
     padding: 4px 7px;
-    font-size: 0.78rem;
+    font-size: var(--display-meta);
   }
 
   .results-panel[data-reveal-stage="deltas"] .score-total,
   .results-panel[data-reveal-stage="complete"] .score-total {
     min-height: 22px;
-    font-size: 0.68rem;
+    font-size: var(--display-meta);
   }
 }
 

@@ -4,7 +4,7 @@ import {
 } from './controller';
 
 export const PENDING_RENAME_STORAGE_KEY = 'draw-party-pending-rename';
-export const PENDING_RENAME_VERSION = 1;
+export const PENDING_RENAME_VERSION = 2;
 export const PENDING_RENAME_TTL_MS = 3 * 60 * 60 * 1000;
 export const MAX_PENDING_RENAME_BYTES = 2048;
 
@@ -144,6 +144,7 @@ function isValidIntent(
   const latestValid =
     value.latestRequestedName === null || validName(value.latestRequestedName);
   return (
+    validRequestId(value.requestId) &&
     validName(value.requestedName) &&
     validName(value.canonicalNameAtRequest) &&
     stateValid &&
@@ -152,6 +153,13 @@ function isValidIntent(
     (value.state === 'queued'
       ? value.sentAfterSnapshotRevision === null
       : typeof value.sentAfterSnapshotRevision === 'number')
+  );
+}
+
+function validRequestId(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
   );
 }
 

@@ -54,7 +54,7 @@ for a fresh next start.
 Important fields:
 
 - `turnToken` — submissions and deadline extensions must match the current turn
-- `deadlineMs` / `serverNowMs` — client syncs countdowns to server time
+- `deadlineMs` / `serverNowMs` — client syncs countdowns to server time; in `finalScores`, the deadline is the earliest server-authorized replay time rather than an automatic phase transition
 - `gameMode` — current server-authoritative Party or Practice mode
 - `deadlineExtensionAvailable` — true before expiry when the timed turn has not received its one extension
 - `nailedIt` — per-recipient Voting marker; true only for a player whose normalized guess matched the prompt and whose correct vote was locked by the server
@@ -69,7 +69,7 @@ Voting snapshots remain redacted: `isCorrect` is false for every public option, 
 |------|---------|
 | `createRoom` | Display creates a room |
 | `joinRoom` | Player joins with `roomCode` + `name` |
-| `setName` | Rename player (no server phase gate; client exposes rename in lobby) |
+| `setName` | Rename player with a UUID `requestId` (no server phase gate; client exposes rename in lobby). The field is optional only for compatibility with older clients. |
 | `updateRoomSettings` | Display or host phone updates timers/rounds/pack (lobby only; numeric values are server-clamped) |
 | `startGame` | Starts Party, Continues the current mode after Results, or starts a Party replay |
 | `startPractice` | Starts/replays a one-phone, one-round, unscored Practice game |
@@ -90,6 +90,7 @@ Voting snapshots remain redacted: `isCorrect` is false for every public option, 
 | `phaseChanged` | Phase transition snapshot |
 | `promptAssigned` | Private prompt for a player |
 | `playerListChanged` | Roster update |
+| `nameSet` | Request-correlated rename acknowledgement with `requestId` + authoritative `canonicalName` (including truncation or duplicate-name suffixes) |
 | `drawingReveal` | Artist drawing for guess/vote |
 | `votingOptions` | Shuffled options (correct flag only where allowed) |
 | `roundResult` | Scores and breakdown |

@@ -18,6 +18,7 @@ import {
   pendingRenameDesiredName,
   playerActionAlert,
   queuePendingRenameAfterDisconnect,
+  reconcilePendingRenameAcknowledgement,
   reconcilePendingRenameSnapshot,
   reconcilePendingSubmission,
   retryPendingSubmission,
@@ -379,11 +380,18 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
           const renameResolution = reconcilePendingRenameSnapshot(
             renameIntent,
             snapshotRevision,
-            self.name
+            self.name,
+            crypto.randomUUID()
           );
           let nextRename = renameResolution.next;
           if (renameResolution.sendName && nextRename) {
-            if (send({ type: 'setName', name: renameResolution.sendName })) {
+            if (
+              send({
+                type: 'setName',
+                name: renameResolution.sendName,
+                requestId: nextRename.requestId
+              })
+            ) {
               nextRename = markPendingRenameSent(nextRename, snapshotRevision);
             }
           }
@@ -446,6 +454,43 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
             return { ...current, players: message.players };
           });
           break;
+        case 'nameSet': {
+          const renameResolution = reconcilePendingRenameAcknowledgement(
+            pendingRenameRef.current,
+            message.requestId,
+            message.canonicalName,
+            authoritativeSnapshotRevisionRef.current,
+            crypto.randomUUID()
+          );
+          if (!renameResolution.matched) {
+            break;
+          }
+          let nextRename = renameResolution.next;
+          if (renameResolution.sendName && nextRename) {
+            if (
+              send({
+                type: 'setName',
+                name: renameResolution.sendName,
+                requestId: nextRename.requestId
+              })
+            ) {
+              nextRename = markPendingRenameSent(
+                nextRename,
+                authoritativeSnapshotRevisionRef.current
+              );
+            }
+          }
+          commitPendingRename(nextRename);
+          if (nextRename) {
+            const desiredName = pendingRenameDesiredName(nextRename);
+            writeStoredValue('draw-party-name', desiredName);
+            setPlayerName(desiredName);
+          } else {
+            writeStoredValue('draw-party-name', message.canonicalName);
+            setPlayerName(message.canonicalName);
+          }
+          break;
+        }
         case 'drawingReveal':
           setSnapshot((current) =>
             current
@@ -562,7 +607,8 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       commitPendingRename,
       commitPendingSubmission,
       haptic,
-      hostTokens
+      hostTokens,
+      send
     ]
   );
 
@@ -783,12 +829,14 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       if (current?.state === 'sent') {
         next = coalescePendingRenameIntent(current, safeName);
       } else {
-        sent = send({ type: 'setName', name: safeName });
+        const requestId = crypto.randomUUID();
+        sent = send({ type: 'setName', name: safeName, requestId });
         next = createPendingRenameIntent(
           safeName,
           canonicalNameAtRequest,
           sent,
-          authoritativeSnapshotRevisionRef.current
+          authoritativeSnapshotRevisionRef.current,
+          requestId
         );
       }
       const roomCode = snapshotRef.current?.roomCode ?? pendingJoinRef.current?.roomCode;

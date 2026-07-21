@@ -524,7 +524,9 @@ async fn handle_client_message(state: &AppState, session: &SessionKey, message: 
         ClientMessage::JoinRoom { room_code, name } => {
             join_room(state, session, room_code, name).await
         }
-        ClientMessage::SetName { name } => set_name(state, session, name).await,
+        ClientMessage::SetName { name, request_id } => {
+            set_name(state, session, name, request_id).await
+        }
         ClientMessage::UpdateRoomSettings { settings } => {
             update_room_settings(state, session, settings).await
         }
@@ -663,12 +665,77 @@ async fn join_room(state: &AppState, session: &SessionKey, room_code: String, na
     .await;
 }
 
-async fn set_name(state: &AppState, session: &SessionKey, name: String) {
-    mutate_current_room(state, session, |room| {
-        room.set_name(session.client_id(), name, now_ms())?;
-        Ok(EngineEvent::PlayerListChanged)
-    })
-    .await;
+async fn set_name(
+    state: &AppState,
+    session: &SessionKey,
+    name: String,
+    request_id: Option<String>,
+) {
+    if request_id
+        .as_deref()
+        .is_some_and(|request_id| Uuid::parse_str(request_id).is_err())
+    {
+        send_error(
+            state,
+            session,
+            "invalid_message",
+            "Rename request ID was not understood.",
+        )
+        .await;
+        return;
+    }
+
+    let mut inner = state.inner.lock().await;
+    let Some(room_code) = inner
+        .connection(session)
+        .and_then(Connection::room_code_owned)
+    else {
+        let messages = targeted_error(&inner, session, "not_in_room", "Join a room first.");
+        deliver_many(messages);
+        return;
+    };
+
+    let now = now_ms();
+    let result = inner
+        .rooms
+        .get_mut(&room_code)
+        .map(|room| {
+            room.set_name(session.client_id(), name, now)?;
+            let canonical_name = room
+                .snapshot(now)
+                .players
+                .into_iter()
+                .find(|player| player.id == session.client_id())
+                .map(|player| player.name);
+            Ok((EngineEvent::PlayerListChanged, canonical_name))
+        })
+        .unwrap_or_else(|| {
+            Err(EngineError {
+                code: "room_not_found",
+                message: "That room does not exist.".to_string(),
+            })
+        });
+
+    let messages = match result {
+        Ok((event, canonical_name)) => {
+            let mut messages = Vec::new();
+            if let (Some(request_id), Some(canonical_name), Some(conn)) =
+                (request_id, canonical_name, inner.connection(session))
+            {
+                messages.push((
+                    conn.outbound(),
+                    ServerMessage::NameSet {
+                        request_id,
+                        canonical_name,
+                    },
+                ));
+            }
+            messages.extend(room_messages(&inner, &room_code, event));
+            messages
+        }
+        Err(error) => targeted_error(&inner, session, error.code, &error.message),
+    };
+    deliver_many(messages);
 }
 
 async fn update_room_settings(state: &AppState, session: &SessionKey, settings: RoomSettings) {
@@ -1233,6 +1300,23 @@ mod tests {
             .and_then(Value::as_str)
     }
 
+    #[test]
+    fn set_name_request_id_remains_optional_for_older_clients() {
+        let message = serde_json::from_value::<ClientMessage>(json!({
+            "type": "setName",
+            "name": "Ada"
+        }))
+        .unwrap();
+
+        assert_eq!(
+            message,
+            ClientMessage::SetName {
+                name: "Ada".to_string(),
+                request_id: None
+            }
+        );
+    }
+
     #[tokio::test]
     async fn retiring_the_current_connection_marks_its_player_disconnected() {
         let room_code = "ABCD".to_string();
@@ -1626,13 +1710,23 @@ mod tests {
 
         p2.send(text_message(json!({
             "type": "setName",
-            "name": "ADA"
+            "name": "ada",
+            "requestId": "11111111-1111-4111-8111-111111111111"
         })))
         .await
         .unwrap();
+        let acknowledged = read_until_type(&mut p2, "nameSet").await;
+        assert_eq!(
+            acknowledged.get("requestId").and_then(Value::as_str),
+            Some("11111111-1111-4111-8111-111111111111")
+        );
+        assert_eq!(
+            acknowledged.get("canonicalName").and_then(Value::as_str),
+            Some("ada 2")
+        );
         let renamed = read_until_type(&mut p2, "playerListChanged").await;
         assert_eq!(player_name(&renamed, "p1"), Some("Ada"));
-        assert_eq!(player_name(&renamed, "p2"), Some("ADA 2"));
+        assert_eq!(player_name(&renamed, "p2"), Some("ada 2"));
 
         p1.send(text_message(json!({ "type": "leaveRoom" })))
             .await
@@ -1654,13 +1748,13 @@ mod tests {
 
         let (_p3, third_join) = join_player_with_snapshot(&url, &room_code, "p3", "aDa").await;
         assert_eq!(player_name(&third_join, "p1"), Some("Ada"));
-        assert_eq!(player_name(&third_join, "p2"), Some("ADA 2"));
+        assert_eq!(player_name(&third_join, "p2"), Some("ada 2"));
         assert_eq!(player_name(&third_join, "p3"), Some("aDa 3"));
 
         let (_restored, reconnect) =
             join_player_with_snapshot(&url, &room_code, "p1", "Mallory").await;
         assert_eq!(player_name(&reconnect, "p1"), Some("Ada"));
-        assert_eq!(player_name(&reconnect, "p2"), Some("ADA 2"));
+        assert_eq!(player_name(&reconnect, "p2"), Some("ada 2"));
         assert_eq!(player_name(&reconnect, "p3"), Some("aDa 3"));
     }
 

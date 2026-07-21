@@ -238,6 +238,42 @@ fn guess_matching_truth_is_accepted_and_locks_a_scored_correct_vote() {
 }
 
 #[test]
+fn sole_truth_option_still_gives_an_unsubmitted_guesser_a_vote() {
+    let mut room = room_with_players();
+    reach_guessing(&mut room, 100);
+    let artist = room.round.current_artist_id.clone().unwrap();
+    let truth = room.round.prompts.get(&artist).unwrap().clone();
+    let voters = non_artist_ids(&room);
+
+    room.submit_guess(&voters[0], room.turn_token, truth, 300)
+        .unwrap();
+    let deadline = room.deadline_ms.expect("guessing deadline");
+    room.advance_if_expired(deadline).unwrap();
+
+    assert_eq!(room.phase, GamePhase::Voting);
+    let truth_option = truth_option_id(&room);
+    assert_eq!(room.round.votes.get(&voters[0]), Some(&truth_option));
+    assert_eq!(room.round.votes.get(&voters[1]), None);
+
+    room.submit_vote(
+        &voters[1],
+        room.turn_token,
+        truth_option.clone(),
+        deadline + 1,
+    )
+    .unwrap();
+    assert_eq!(room.phase, GamePhase::Results);
+    for voter in &voters {
+        assert_eq!(room.round.votes.get(voter), Some(&truth_option));
+        assert_eq!(deltas_map(&room).get(voter), Some(&200));
+    }
+    let result = room.round.result.as_ref().unwrap();
+    assert_eq!(result.correct_voter_names.len(), voters.len());
+    assert!(result.perfect_truth);
+    assert_eq!(deltas_map(&room).get(&artist), Some(&250));
+}
+
+#[test]
 fn duplicate_fakes_merge_block_all_coauthors_and_split_each_fooled_award() {
     let mut room = room_with_players();
     room.upsert_player("p4".to_string(), "Margaret".to_string(), 2)
@@ -372,13 +408,30 @@ fn reaches_final_scores_then_restart_resets_scores() {
 
     assert_eq!(room.phase, GamePhase::FinalScores);
     assert!(room.players.values().any(|player| player.score > 0));
+    let replay_unlock_ms = room.deadline_ms.expect("final scores unlock deadline");
+    assert_eq!(replay_unlock_ms, 3_500);
     let prior_scores: BTreeMap<_, _> = room
         .players
         .iter()
         .map(|(id, player)| (id.clone(), player.score))
         .collect();
 
-    room.handle_start_or_advance(600).unwrap();
+    assert_eq!(
+        room.handle_start_or_advance(replay_unlock_ms - 1)
+            .unwrap_err()
+            .code,
+        "final_scores_locked"
+    );
+    assert_eq!(room.phase, GamePhase::FinalScores);
+    assert_eq!(
+        room.players
+            .iter()
+            .map(|(id, player)| (id.clone(), player.score))
+            .collect::<BTreeMap<_, _>>(),
+        prior_scores
+    );
+
+    room.handle_start_or_advance(replay_unlock_ms).unwrap();
     assert_eq!(room.phase, GamePhase::Drawing);
     assert_eq!(room.current_round, 1);
     for (id, prior) in prior_scores {

@@ -52,11 +52,10 @@ export function revealTimeline(optionCount: number): RevealTimeline {
 export function revealStageAt(
   elapsedMs: number,
   optionCount: number,
-  reducedMotion = false
+  _reducedMotion = false
 ): RevealStage {
-  if (reducedMotion) {
-    return 'complete';
-  }
+  // Motion preference changes how each beat appears, not when shared-room information
+  // becomes visible or when the host may advance. CSS removes the transitions.
   const elapsed = Math.max(0, elapsedMs);
   const timeline = revealTimeline(optionCount);
   if (elapsed < timeline.tallyAt) return 'hold';
@@ -110,9 +109,6 @@ export function useRevealStage(
     const elapsed = () =>
       revealElapsedFromDeadline(deadlineMs, resultsSeconds, nowMs(), fallbackStartMs);
     setStage(revealStageAt(elapsed(), optionCount, reducedMotion));
-    if (reducedMotion) {
-      return;
-    }
 
     const timeline = revealTimeline(optionCount);
     const timers: number[] = [];

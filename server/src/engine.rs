@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use unicode_normalization::UnicodeNormalization;
 
+const FINAL_SCORES_CELEBRATION_SECONDS: u64 = 3;
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Player {
     pub id: String,
@@ -406,7 +408,12 @@ impl Room {
     pub fn handle_start_or_advance(&mut self, now_ms: u64) -> EngineResult<EngineEvent> {
         self.touch(now_ms);
         match self.phase {
-            GamePhase::Lobby | GamePhase::FinalScores => {
+            GamePhase::Lobby => {
+                self.start_drawing_round(now_ms, Some(GameMode::Party))?;
+                Ok(EngineEvent::PhaseChanged)
+            }
+            GamePhase::FinalScores => {
+                self.ensure_final_scores_unlocked(now_ms)?;
                 self.start_drawing_round(now_ms, Some(GameMode::Party))?;
                 Ok(EngineEvent::PhaseChanged)
             }
@@ -427,7 +434,12 @@ impl Room {
     pub fn handle_start_practice(&mut self, now_ms: u64) -> EngineResult<EngineEvent> {
         self.touch(now_ms);
         match self.phase {
-            GamePhase::Lobby | GamePhase::FinalScores => {
+            GamePhase::Lobby => {
+                self.start_drawing_round(now_ms, Some(GameMode::Practice))?;
+                Ok(EngineEvent::PhaseChanged)
+            }
+            GamePhase::FinalScores => {
+                self.ensure_final_scores_unlocked(now_ms)?;
                 self.start_drawing_round(now_ms, Some(GameMode::Practice))?;
                 Ok(EngineEvent::PhaseChanged)
             }
@@ -628,8 +640,7 @@ impl Room {
             return Ok(None);
         }
 
-        self.touch(now_ms);
-        match self.phase {
+        let event = match self.phase {
             GamePhase::Drawing => {
                 if self.round.drawings.is_empty() {
                     self.reset_to_lobby_after_empty_drawing_timeout();
@@ -654,7 +665,11 @@ impl Room {
                 }
             }
             _ => Ok(None),
+        };
+        if let Ok(Some(_)) = &event {
+            self.touch(now_ms);
         }
+        event
     }
 
     pub fn submit_reaction(
@@ -1103,7 +1118,7 @@ impl Room {
                 .votes
                 .insert(player_id, correct_option_id.clone());
         }
-        if self.round.voting_options.len() < 2 {
+        if self.round.voting_options.len() < 2 && self.connected_voters_done() {
             self.finish_voting(now_ms)?;
             return Ok(());
         }
@@ -1326,7 +1341,7 @@ impl Room {
 
         if self.current_round >= self.total_rounds() {
             self.phase = GamePhase::FinalScores;
-            self.deadline_ms = None;
+            self.deadline_ms = Some(deadline_after(now_ms, FINAL_SCORES_CELEBRATION_SECONDS));
             self.deadline_extension_used = false;
             return Ok(true);
         }
@@ -1529,6 +1544,19 @@ impl Room {
             && self
                 .deadline_ms
                 .is_some_and(|deadline_ms| now_ms < deadline_ms)
+    }
+
+    fn ensure_final_scores_unlocked(&self, now_ms: u64) -> EngineResult<()> {
+        if self
+            .deadline_ms
+            .is_some_and(|unlock_deadline_ms| now_ms < unlock_deadline_ms)
+        {
+            return Err(EngineError::new(
+                "final_scores_locked",
+                "Let the final scores land before starting again.",
+            ));
+        }
+        Ok(())
     }
 
     fn active_players(&self) -> impl Iterator<Item = &Player> {

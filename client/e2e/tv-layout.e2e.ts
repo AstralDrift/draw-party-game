@@ -160,7 +160,7 @@ test('TV layout gate: drawing and guessing phases fit key living-room sizes', as
   });
 });
 
-test('TV layout gate: eight-player long-answer results fit 720p, 768p, and 4K', async ({
+test('TV layout gate: reduced-motion eight-player results stay staged and readable through 4K', async ({
   baseURL,
   browser
 }) => {
@@ -168,7 +168,10 @@ test('TV layout gate: eight-player long-answer results fit 720p, 768p, and 4K', 
   const appUrl = makeAppUrl(baseURL);
   const contexts: BrowserContext[] = [];
   try {
-    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    const tvContext = await browser.newContext({
+      reducedMotion: 'reduce',
+      viewport: { width: 1280, height: 720 }
+    });
     contexts.push(tvContext);
     const tv = await tvContext.newPage();
     await tv.goto(appUrl('/'));
@@ -218,9 +221,21 @@ test('TV layout gate: eight-player long-answer results fit 720p, 768p, and 4K', 
     await expect(results.locator('.option-label')).toHaveText(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
     await assertDisplayPhaseFits(tv, { width: 1280, height: 720 });
     await assertAllWithinViewport(tv, ['.result-sidebar', '.breakdown-row', '.option-label']);
+    const shortTvAnswerSizes = await results
+      .locator('.breakdown-answer')
+      .evaluateAll((elements) => elements.map((element) => Number.parseFloat(getComputedStyle(element).fontSize)));
+    const shortTvMetaSizes = await results
+      .locator('.breakdown-kind, .option-label, .chip-label, .vote-chip')
+      .evaluateAll((elements) => elements.map((element) => Number.parseFloat(getComputedStyle(element).fontSize)));
+    expect(shortTvAnswerSizes.every((size) => size >= 16), JSON.stringify(shortTvAnswerSizes)).toBe(true);
+    expect(shortTvMetaSizes.every((size) => size >= 13), JSON.stringify(shortTvMetaSizes)).toBe(true);
 
     await expect(results).toHaveAttribute('data-reveal-stage', 'deltas', { timeout: 10_000 });
     await expect(results.locator('.causal-score-event')).not.toHaveCount(0);
+    const shortTvScoreSizes = await results
+      .locator('.causal-score-event, .score-total')
+      .evaluateAll((elements) => elements.map((element) => Number.parseFloat(getComputedStyle(element).fontSize)));
+    expect(shortTvScoreSizes.every((size) => size >= 13), JSON.stringify(shortTvScoreSizes)).toBe(true);
     for (const viewport of [
       { width: 1280, height: 720 },
       { width: 1366, height: 768 },

@@ -89,7 +89,9 @@ describe('server-synchronized reveal timing', () => {
     expect(revealElapsedFromDeadline(null, 10, 5_000, 4_200)).toBe(800);
   });
 
-  it('completes immediately for reduced motion', () => {
-    expect(revealStageAt(0, 8, true)).toBe('complete');
+  it('keeps the same reveal beats when motion is reduced', () => {
+    expect(revealStageAt(0, 8, true)).toBe('hold');
+    expect(revealStageAt(2_060, 8, true)).toBe('correct');
+    expect(revealStageAt(9_060, 8, true)).toBe('complete');
   });
 });

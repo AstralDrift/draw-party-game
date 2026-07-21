@@ -7,6 +7,7 @@ import {
   finalReplayPlan,
   markPendingRenameSent,
   pendingRenameDesiredName,
+  reconcilePendingRenameAcknowledgement,
   reconcilePendingRenameSnapshot,
   playerActionAlert,
   playerNeedsAction,
@@ -345,83 +346,146 @@ describe('pending submission reconciliation', () => {
 });
 
 describe('pending rename reconciliation', () => {
-  it('ignores an unrelated post-send snapshot until the canonical name changes', () => {
-    const intent = createPendingRenameIntent('Avery', 'Ava', true, 4);
-    expect(reconcilePendingRenameSnapshot(intent, 4, 'Ava')).toEqual({
+  const BOB_REQUEST = '11111111-1111-4111-8111-111111111111';
+  const CAROL_REQUEST = '22222222-2222-4222-8222-222222222222';
+
+  it('keeps an unchanged-canonical collision pending until the matching acknowledgement', () => {
+    const intent = createPendingRenameIntent('Bob', 'Bob 2', true, 4, BOB_REQUEST);
+    expect(reconcilePendingRenameSnapshot(intent, 5, 'Bob 2', CAROL_REQUEST)).toEqual({
       next: intent,
       sendName: null
     });
-    expect(reconcilePendingRenameSnapshot(intent, 5, 'Ava')).toEqual({
+    expect(
+      reconcilePendingRenameAcknowledgement(
+        intent,
+        BOB_REQUEST,
+        'Bob 2',
+        6,
+        CAROL_REQUEST
+      )
+    ).toEqual({
+      next: null,
+      sendName: null,
+      matched: true
+    });
+  });
+
+  it('uses a later changed snapshot as a compatibility acknowledgement for legacy servers', () => {
+    const intent = createPendingRenameIntent('Avery', 'Ava', true, 4, BOB_REQUEST);
+    expect(reconcilePendingRenameSnapshot(intent, 4, 'Ava', CAROL_REQUEST)).toEqual({
       next: intent,
       sendName: null
     });
-    expect(reconcilePendingRenameSnapshot(intent, 6, 'Avery')).toEqual({
+    expect(reconcilePendingRenameSnapshot(intent, 5, 'Ava', CAROL_REQUEST)).toEqual({
+      next: intent,
+      sendName: null
+    });
+    expect(reconcilePendingRenameSnapshot(intent, 6, 'Avery 2', CAROL_REQUEST)).toEqual({
+      next: null,
+      sendName: null
+    });
+
+    const noOp = createPendingRenameIntent('Ava', 'Ava', true, 4, BOB_REQUEST);
+    expect(reconcilePendingRenameSnapshot(noOp, 5, 'Ava', CAROL_REQUEST)).toEqual({
       next: null,
       sendName: null
     });
   });
 
   it('resends after rejoin and accepts the server-disambiguated canonical result', () => {
-    const queued = createPendingRenameIntent('Avery', 'Ava', false, 4);
-    expect(reconcilePendingRenameSnapshot(queued, 5, 'Ava')).toEqual({
+    const queued = createPendingRenameIntent('Avery', 'Ava', false, 4, BOB_REQUEST);
+    expect(reconcilePendingRenameSnapshot(queued, 5, 'Ava', CAROL_REQUEST)).toEqual({
       next: queued,
       sendName: 'Avery'
     });
 
     const sent = markPendingRenameSent(queued, 5);
-    expect(reconcilePendingRenameSnapshot(sent, 5, 'Ava')).toEqual({
+    expect(reconcilePendingRenameSnapshot(sent, 5, 'Ava', CAROL_REQUEST)).toEqual({
       next: sent,
       sendName: null
     });
-    expect(reconcilePendingRenameSnapshot(sent, 6, 'Avery 2')).toEqual({
-      next: null,
-      sendName: null
-    });
-    expect(reconcilePendingRenameSnapshot(null, 7, 'Avery 2')).toEqual({
+    expect(
+      reconcilePendingRenameAcknowledgement(
+        sent,
+        BOB_REQUEST,
+        'Avery 2',
+        6,
+        CAROL_REQUEST
+      )
+    ).toEqual({ next: null, sendName: null, matched: true });
+    expect(reconcilePendingRenameSnapshot(null, 7, 'Avery 2', CAROL_REQUEST)).toEqual({
       next: null,
       sendName: null
     });
   });
 
-  it('accepts a no-op rename and a truncated canonical result', () => {
-    const noOp = createPendingRenameIntent('Ava', 'Ava', true, 4);
-    expect(reconcilePendingRenameSnapshot(noOp, 5, 'Ava')).toEqual({
-      next: null,
-      sendName: null
-    });
-
-    const truncated = createPendingRenameIntent(
-      'A very very long party nickname',
-      'Ava',
-      true,
-      4
-    );
-    expect(reconcilePendingRenameSnapshot(truncated, 5, 'A very very long party')).toEqual({
-      next: null,
-      sendName: null
-    });
+  it('accepts a collision acknowledgement even when the canonical name did not change', () => {
+    const collision = createPendingRenameIntent('Bob', 'Bob 2', true, 4, BOB_REQUEST);
+    expect(
+      reconcilePendingRenameAcknowledgement(
+        collision,
+        BOB_REQUEST,
+        'Bob 2',
+        5,
+        CAROL_REQUEST
+      )
+    ).toEqual({ next: null, sendName: null, matched: true });
   });
 
   it('serializes rapid renames so the older response starts, but cannot acknowledge, the latest name', () => {
-    const bob = createPendingRenameIntent('Bob', 'Ava', true, 4);
+    const bob = createPendingRenameIntent('Bob', 'Ava', true, 4, BOB_REQUEST);
     const bobThenCarol = coalescePendingRenameIntent(bob, 'Carol');
 
     expect(pendingRenameDesiredName(bobThenCarol)).toBe('Carol');
-    const afterBobResponse = reconcilePendingRenameSnapshot(bobThenCarol, 5, 'Bob');
+    const afterBobResponse = reconcilePendingRenameAcknowledgement(
+      bobThenCarol,
+      BOB_REQUEST,
+      'Bob',
+      5,
+      CAROL_REQUEST
+    );
     expect(afterBobResponse).toEqual({
-      next: createPendingRenameIntent('Carol', 'Bob', false, 5),
-      sendName: 'Carol'
+      next: createPendingRenameIntent('Carol', 'Bob', false, 5, CAROL_REQUEST),
+      sendName: 'Carol',
+      matched: true
     });
 
     const carolSent = markPendingRenameSent(afterBobResponse.next!, 5);
     expect(queuePendingRenameAfterDisconnect(carolSent)).toEqual(
-      createPendingRenameIntent('Carol', 'Bob', false, 5)
+      createPendingRenameIntent('Carol', 'Bob', false, 5, CAROL_REQUEST)
     );
+
+    expect(
+      reconcilePendingRenameAcknowledgement(
+        carolSent,
+        BOB_REQUEST,
+        'Bob',
+        6,
+        '33333333-3333-4333-8333-333333333333'
+      )
+    ).toEqual({ next: carolSent, sendName: null, matched: false });
+
+    expect(
+      reconcilePendingRenameAcknowledgement(
+        null,
+        BOB_REQUEST,
+        'Bob',
+        7,
+        '44444444-4444-4444-8444-444444444444'
+      )
+    ).toEqual({ next: null, sendName: null, matched: false });
   });
 
-  it('requeues an uncertain sent rename after disconnect without changing the request', () => {
-    const sent: PendingRenameIntent = createPendingRenameIntent('Avery', 'Ava', true, 4);
+  it('requeues an uncertain sent rename after disconnect without changing its request correlation', () => {
+    const sent: PendingRenameIntent = createPendingRenameIntent(
+      'Avery',
+      'Ava',
+      true,
+      4,
+      BOB_REQUEST
+    );
     expect(queuePendingRenameAfterDisconnect(sent)).toEqual({
+      requestId: BOB_REQUEST,
       requestedName: 'Avery',
       canonicalNameAtRequest: 'Ava',
       state: 'queued',

@@ -15,7 +15,7 @@ import {
   type PlayerViewport
 } from './helpers';
 
-test('staged results reveal enables Continue after the show beat', async ({ baseURL, browser }) => {
+test('mixed motion preferences keep Continue behind the shared show beat', async ({ baseURL, browser }) => {
   const contexts: BrowserContext[] = [];
   const appUrl = makeAppUrl(baseURL);
   try {
@@ -29,6 +29,7 @@ test('staged results reveal enables Continue after the show beat', async ({ base
     const playerContext = await browser.newContext({
       hasTouch: true,
       isMobile: true,
+      reducedMotion: 'reduce',
       viewport: { width: 390, height: 844 }
     });
     contexts.push(playerContext);
@@ -50,7 +51,11 @@ test('staged results reveal enables Continue after the show beat', async ({ base
     await player.getByRole('button', { name: 'Submit Drawing' }).click();
     await expect(tv.locator('#advance-button')).toBeVisible();
     await expect(tv.locator('#advance-button')).toBeDisabled();
+    const playerContinue = player.getByRole('button', { name: 'Continue' });
+    await expect(playerContinue).toBeVisible();
+    await expect(playerContinue).toBeDisabled();
     await expect(tv.locator('#advance-button')).toBeEnabled({ timeout: 8000 });
+    await expect(playerContinue).toBeEnabled();
     await expect(tv.locator('.results-panel')).toHaveAttribute('data-reveal-stage', 'complete');
     const tvContinue = tv.getByRole('button', {
       name: 'Continue from TV (fallback)',
@@ -58,7 +63,6 @@ test('staged results reveal enables Continue after the show beat', async ({ base
     });
     await expect(tvContinue).toBeVisible();
     await expect(tvContinue).toHaveClass(/btn--ghost/);
-    await expect(player.getByRole('button', { name: 'Continue' })).toBeVisible();
     await expect(player.locator('.spotlight-button')).toBeVisible();
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
@@ -678,18 +682,25 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
     }
 
     await expect(tv.getByText('Final Podium')).toBeVisible();
-    const tvReplay = tv.getByRole('button', {
-      name: 'Play Again from TV (fallback)',
-      exact: true
-    });
+    const tvReplay = tv.locator('#advance-button');
+    const hostReplay = players[0].locator('.encore-panel .spotlight-button');
     await expect(tvReplay).toBeVisible();
-    await expect(tvReplay).toHaveClass(/btn--ghost/);
+    await expect(tvReplay).toBeDisabled();
+    await expect(tvReplay).toHaveText('Podium first…');
+    await expect(hostReplay).toBeVisible();
+    await expect(hostReplay).toBeDisabled();
+    await expect(hostReplay).toHaveText('Podium first…');
     await expect(tv.locator('.encore-title')).toHaveText(/won by|take it back|tied|settle it/i);
-    // Host phone keeps the spotlight CTA; TV Play Again stays secondary.
-    await expect(players[0].locator('.spotlight-button')).toBeVisible();
-    const hostReplay = await players[0].getByRole('button', { name: 'Play Again' }).boundingBox();
-    if (!hostReplay) throw new Error('Host rematch CTA must have a layout box.');
-    expect(hostReplay.y + hostReplay.height).toBeLessThanOrEqual(667);
+    const hostScoresBox = await players[0].locator('.scores-panel').boundingBox();
+    const hostReplayBox = await hostReplay.boundingBox();
+    if (!hostScoresBox || !hostReplayBox) throw new Error('Finale panels must have layout boxes.');
+    expect(hostScoresBox.y).toBeLessThan(hostReplayBox.y);
+    expect(hostReplayBox.y + hostReplayBox.height).toBeLessThanOrEqual(667);
+    await expect(hostReplay).toBeEnabled({ timeout: 5000 });
+    await expect(hostReplay).toHaveText('Play Again');
+    await expect(tvReplay).toBeEnabled();
+    await expect(tvReplay).toHaveText('Play Again from TV (fallback)');
+    await expect(tvReplay).toHaveClass(/btn--ghost/);
     for (const player of players.slice(1)) {
       await expect(player.locator('.advance-panel')).toContainText('Host decides.');
     }
@@ -723,6 +734,10 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
         playerViewports[index]?.height ?? 844
       );
     }
+
+    await hostReplay.click();
+    await expect(tv.getByText('Phones are drawing')).toBeVisible();
+    await expect(players[0].locator('canvas.draw-canvas')).toBeVisible();
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }
