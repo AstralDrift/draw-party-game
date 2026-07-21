@@ -591,7 +591,11 @@
     grid-template-rows: minmax(0, 1fr);
     height: 100dvh;
     min-height: 100dvh;
-    padding: 4px 0 max(4px, var(--safe-bottom));
+    padding:
+      max(4px, var(--safe-top))
+      max(0px, var(--safe-right))
+      max(4px, var(--safe-bottom))
+      max(0px, var(--safe-left));
     overflow: hidden;
   }
 
@@ -634,7 +638,7 @@
 
   .drawing-turn .canvas-stage {
     position: relative;
-    width: min(100vw, calc(75svh * 3 / 4));
+    width: min(100%, calc(75svh * 3 / 4));
     height: auto;
     max-height: none;
     aspect-ratio: 3 / 4;
@@ -690,7 +694,10 @@
   }
 
   .drawing-turn .tools-summary {
-    padding: 6px 0;
+    display: flex;
+    align-items: center;
+    min-height: var(--touch-target);
+    padding: 0;
   }
 
   .drawing-turn .draw-toolbar {
@@ -706,6 +713,20 @@
     padding: 2px 6px;
     border-radius: var(--radius-pill);
     background: color-mix(in srgb, var(--surface-glass-strong) 92%, transparent);
+  }
+}
+
+@media (max-width: 699px) and (orientation: landscape) {
+  .drawing-turn .canvas-stage {
+    width: min(100%, calc(70svh * 4 / 3));
+    aspect-ratio: 4 / 3;
+  }
+
+  .drawing-turn .draw-canvas {
+    position: static;
+    width: 100%;
+    height: auto;
+    transform: none;
   }
 }
 
