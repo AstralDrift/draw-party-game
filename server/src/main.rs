@@ -250,7 +250,12 @@ fn cache_control_for(uri: &Uri) -> Option<HeaderValue> {
     if path.starts_with("/api/") || path.starts_with("/ws") {
         return Some(HeaderValue::from_static("no-store"));
     }
-    if path == "/" || path == "/index.html" || path == "/sw.js" || path.starts_with("/join/") {
+    if path == "/"
+        || path == "/index.html"
+        || path == "/sw.js"
+        || path == "/join"
+        || path.starts_with("/join/")
+    {
         return Some(HeaderValue::from_static("no-cache"));
     }
     if path.starts_with("/assets/") {
@@ -1210,6 +1215,10 @@ mod tests {
         );
         assert_eq!(
             cache_control_for(&Uri::from_static("/join/ABCD")).unwrap(),
+            HeaderValue::from_static("no-cache")
+        );
+        assert_eq!(
+            cache_control_for(&Uri::from_static("/join")).unwrap(),
             HeaderValue::from_static("no-cache")
         );
         assert_eq!(

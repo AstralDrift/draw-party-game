@@ -81,6 +81,60 @@ function writeStoredValue(key: string, value: string): void {
   }
 }
 
+const ACTIVE_PLAYER_ROOM_KEY = 'draw-party-active-player-room';
+const TAB_RECOVERY_NAME_PREFIX = 'draw-party-tab:';
+const RETRYABLE_VOTE_ERROR_CODES = new Set([
+  'invalid_vote',
+  'own_guess',
+  'stale_turn',
+  'deadline_expired',
+  'invalid_phase',
+  'artist_action',
+  'spectator',
+  'not_round_player',
+  'not_connected',
+  'not_joined',
+  'not_in_room'
+]);
+
+function tabRecoveryId(): string {
+  if (window.name.startsWith(TAB_RECOVERY_NAME_PREFIX)) {
+    return window.name.slice(TAB_RECOVERY_NAME_PREFIX.length);
+  }
+  const id = crypto.randomUUID();
+  window.name = `${TAB_RECOVERY_NAME_PREFIX}${id}`;
+  return id;
+}
+
+function readActivePlayerRoom(tabId: string): string | null {
+  try {
+    const stored = sessionStorage.getItem(ACTIVE_PLAYER_ROOM_KEY);
+    if (!stored) return null;
+    const parsed = JSON.parse(stored) as { roomCode?: unknown; tabId?: unknown };
+    return parsed.tabId === tabId && typeof parsed.roomCode === 'string'
+      ? parsed.roomCode.trim().toUpperCase()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeActivePlayerRoom(roomCode: string, tabId: string): void {
+  try {
+    sessionStorage.setItem(ACTIVE_PLAYER_ROOM_KEY, JSON.stringify({ roomCode, tabId }));
+  } catch {
+    // Refresh recovery is optional when session storage is unavailable.
+  }
+}
+
+function clearActivePlayerRoom(): void {
+  try {
+    sessionStorage.removeItem(ACTIVE_PLAYER_ROOM_KEY);
+  } catch {
+    // There is no persistent recovery marker to clear.
+  }
+}
+
 function getStoredValue(key: string, fallback: () => string): string {
   const stored = readStoredValue(key);
   if (stored) {
@@ -92,7 +146,7 @@ function getStoredValue(key: string, fallback: () => string): string {
 }
 
 function detectRole(): { role: ClientRole; initialRoomCode: string } {
-  const joinMatch = window.location.pathname.match(/^\/join\/([A-Z0-9]{4})/i);
+  const joinMatch = window.location.pathname.match(/^\/join(?:\/([A-Z0-9]{4}))?\/?$/i);
   return {
     role: joinMatch ? 'player' : 'display',
     initialRoomCode: joinMatch?.[1]?.toUpperCase() ?? ''
@@ -106,13 +160,28 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
     () => getStoredValue('draw-party-session-token', () => crypto.randomUUID()),
     []
   );
+  const currentTabId = useMemo(() => tabRecoveryId(), []);
+  const storedPlayerName = useMemo(() => readStoredValue('draw-party-name') ?? '', []);
+  const activePlayerRoom = useMemo(() => readActivePlayerRoom(currentTabId), [currentTabId]);
+  const initialPendingJoin = useMemo<PendingJoin | null>(() => {
+    if (
+      boot.role !== 'player' ||
+      !boot.initialRoomCode ||
+      activePlayerRoom !== boot.initialRoomCode ||
+      !storedPlayerName
+    ) {
+      return null;
+    }
+    return { roomCode: boot.initialRoomCode, name: storedPlayerName };
+  }, [activePlayerRoom, boot.initialRoomCode, boot.role, storedPlayerName]);
   const socketRef = useRef<GameSocket | null>(null);
   const reconnectTimerRef = useRef(0);
   const lastPhaseRef = useRef('');
   const lastTickSecondRef = useRef(-1);
-  const pendingJoinRef = useRef<PendingJoin | null>(null);
+  const pendingJoinRef = useRef<PendingJoin | null>(initialPendingJoin);
   const snapshotRef = useRef<RoomSnapshot | null>(null);
   const reconnectSuppressedRef = useRef(false);
+  const connectRef = useRef<(roomCode?: string) => void>(() => undefined);
   const hostTokens = useMemo(() => new HostTokenCache(), []);
   const burstIdRef = useRef(0);
 
@@ -120,9 +189,9 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   const [prompt, setPrompt] = useState('');
   const [status, setStatus] = useState(boot.role === 'player' ? 'Ready to join' : 'Disconnected');
   const [errorMessage, setErrorMessage] = useState('');
-  const [playerName, setPlayerName] = useState(() => readStoredValue('draw-party-name') ?? '');
+  const [playerName, setPlayerName] = useState(storedPlayerName);
   const [roomCodeDraft, setRoomCodeDraft] = useState(boot.initialRoomCode);
-  const [pendingJoin, setPendingJoin] = useState<PendingJoin | null>(null);
+  const [pendingJoin, setPendingJoin] = useState<PendingJoin | null>(initialPendingJoin);
   const [selectedVote, setSelectedVote] = useState<{ turnToken: number; optionId: string } | null>(null);
   const [deadlineLabel, setDeadlineLabel] = useState('');
   const [deadlineUrgent, setDeadlineUrgent] = useState(false);
@@ -152,32 +221,53 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
     return socketRef.current?.send(message) ?? false;
   }, []);
 
-  const applySnapshot = useCallback((next: RoomSnapshot) => {
-    syncServerClock(next);
-    const phaseChanged = Boolean(lastPhaseRef.current && lastPhaseRef.current !== next.phase);
-    if (phaseChanged) {
-      playCue(next.phase === 'results' ? 'results' : next.phase === 'finalScores' ? 'podium' : 'phase');
-    }
-    lastPhaseRef.current = next.phase;
-    setSnapshot(next);
-    setSelectedVote((current) => {
-      if (next.phase !== 'voting' || current?.turnToken !== next.turnToken) {
-        return null;
+  const applySnapshot = useCallback(
+    (next: RoomSnapshot) => {
+      syncServerClock(next);
+      const phaseChanged = Boolean(lastPhaseRef.current && lastPhaseRef.current !== next.phase);
+      if (phaseChanged) {
+        playCue(next.phase === 'results' ? 'results' : next.phase === 'finalScores' ? 'podium' : 'phase');
       }
-      return current;
-    });
-  }, []);
+      lastPhaseRef.current = next.phase;
+      setSnapshot(next);
+      setSelectedVote((current) => {
+        if (next.phase !== 'voting' || current?.turnToken !== next.turnToken) {
+          return null;
+        }
+        return current;
+      });
+
+      if (boot.role === 'player') {
+        const self = next.players.find((player) => player.id === clientId);
+        if (self) {
+          writeActivePlayerRoom(next.roomCode, currentTabId);
+          writeStoredValue('draw-party-name', self.name);
+          setPlayerName(self.name);
+          setRoomCodeDraft(next.roomCode);
+          const confirmedJoin = { roomCode: next.roomCode, name: self.name };
+          pendingJoinRef.current = confirmedJoin;
+          setPendingJoin(confirmedJoin);
+          const canonicalPath = `/join/${next.roomCode}`;
+          if (window.location.pathname !== canonicalPath) {
+            window.history.replaceState(null, '', canonicalPath);
+          }
+        }
+      }
+    },
+    [boot.role, clientId, currentTabId]
+  );
 
   const handleServerMessage = useCallback(
     (message: ServerMessage) => {
-      setErrorMessage('');
       switch (message.type) {
         case 'roomCreated':
+          setErrorMessage('');
           hostTokens.set(message.snapshot.roomCode, message.hostToken);
           applySnapshot(message.snapshot);
           break;
         case 'roomSnapshot':
         case 'phaseChanged':
+          setErrorMessage('');
           applySnapshot(message.snapshot);
           break;
         case 'promptAssigned':
@@ -227,6 +317,9 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
         case 'pong':
           break;
         case 'error':
+          if (RETRYABLE_VOTE_ERROR_CODES.has(message.code)) {
+            setSelectedVote(null);
+          }
           if (message.code === 'session_in_use' || message.code === 'invalid_player_session') {
             reconnectSuppressedRef.current = true;
             setErrorMessage(
@@ -241,20 +334,26 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
             boot.role === 'display' &&
             (message.code === 'room_not_found' || message.code === 'unauthorized_display')
           ) {
-            const deadCode = snapshotRef.current?.roomCode;
+            const deadCode = snapshotRef.current?.roomCode ?? hostTokens.activeRoomCode();
             if (deadCode) {
               hostTokens.delete(deadCode);
             }
             setSnapshot(null);
             snapshotRef.current = null;
             setErrorMessage("Couldn't reattach to that room. Creating a fresh lobby…");
-            socketRef.current?.send({ type: 'createRoom' });
+            socketRef.current?.close();
+            connectRef.current();
             break;
           }
           setErrorMessage(message.message);
           if (['room_not_found', 'room_full'].includes(message.code)) {
+            clearActivePlayerRoom();
             setPendingJoin(null);
+            pendingJoinRef.current = null;
             setStatus('Ready to join');
+            if (boot.role === 'player' && window.location.pathname !== '/join') {
+              window.history.replaceState(null, '', '/join');
+            }
             socketRef.current?.close();
           }
           break;
@@ -271,7 +370,8 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   const connect = useCallback(
     (roomCode?: string) => {
       socketRef.current?.close();
-      const socket = new GameSocket({
+      let socket: GameSocket;
+      socket = new GameSocket({
         role: boot.role,
         clientId,
         sessionToken,
@@ -281,12 +381,15 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
             ? hostTokens.get(roomCode) ?? undefined
             : undefined,
         onOpen: () => {
+          if (socketRef.current !== socket) {
+            return;
+          }
           if (reconnectTimerRef.current) {
             window.clearTimeout(reconnectTimerRef.current);
             reconnectTimerRef.current = 0;
           }
           if (boot.role === 'display') {
-            if (snapshotRef.current?.roomCode) {
+            if (roomCode || snapshotRef.current?.roomCode) {
               return;
             }
             socket.send({ type: 'createRoom' });
@@ -299,6 +402,9 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
           }
         },
         onClose: () => {
+          if (socketRef.current !== socket) {
+            return;
+          }
           setSelectedVote(null);
           if (reconnectSuppressedRef.current) {
             return;
@@ -309,14 +415,27 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
           reconnectTimerRef.current = window.setTimeout(() => {
             reconnectTimerRef.current = 0;
             if (boot.role === 'display') {
-              connect(snapshotRef.current?.roomCode);
+              connect(
+                snapshotRef.current?.roomCode ??
+                  roomCode ??
+                  hostTokens.activeRoomCode() ??
+                  undefined
+              );
             } else if (pendingJoinRef.current) {
               connect(pendingJoinRef.current.roomCode);
             }
           }, 1200);
         },
-        onMessage: handleServerMessage,
-        onStatus: setStatus
+        onMessage: (message) => {
+          if (socketRef.current === socket) {
+            handleServerMessage(message);
+          }
+        },
+        onStatus: (nextStatus) => {
+          if (socketRef.current === socket) {
+            setStatus(nextStatus);
+          }
+        }
       });
       socketRef.current = socket;
       socket.connect();
@@ -324,9 +443,13 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
     [boot.role, clientId, handleServerMessage, hostTokens, sessionToken]
   );
 
+  connectRef.current = connect;
+
   useEffect(() => {
     if (boot.role === 'display') {
-      connect();
+      connect(hostTokens.activeRoomCode() ?? undefined);
+    } else if (initialPendingJoin) {
+      connect(initialPendingJoin.roomCode);
     }
     return () => {
       if (reconnectTimerRef.current) {
@@ -334,7 +457,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       }
       socketRef.current?.close();
     };
-  }, [boot.role, connect]);
+  }, [boot.role, connect, hostTokens, initialPendingJoin]);
 
   useEffect(() => {
     const tick = () => {
@@ -363,18 +486,21 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
 
   const joinRoom = useCallback(
     (roomCode: string, name: string) => {
-      writeStoredValue('draw-party-name', name);
-      setPlayerName(name);
-      setRoomCodeDraft(roomCode);
-      const next = { roomCode, name };
+      const normalizedRoomCode = roomCode.trim().toUpperCase();
+      const safeName = name.trim() || 'Player';
+      clearActivePlayerRoom();
+      writeStoredValue('draw-party-name', safeName);
+      setPlayerName(safeName);
+      setRoomCodeDraft(normalizedRoomCode);
+      const next = { roomCode: normalizedRoomCode, name: safeName };
       reconnectSuppressedRef.current = false;
       setPendingJoin(next);
       pendingJoinRef.current = next;
       const socket = socketRef.current;
       if (socket?.isOpen()) {
-        socket.send({ type: 'joinRoom', roomCode, name });
+        socket.send({ type: 'joinRoom', roomCode: normalizedRoomCode, name: safeName });
       } else {
-        connect(roomCode);
+        connect(normalizedRoomCode);
       }
       haptic(8);
     },
@@ -399,11 +525,16 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   );
 
   const cancelJoin = useCallback(() => {
+    clearActivePlayerRoom();
     setPendingJoin(null);
     pendingJoinRef.current = null;
     socketRef.current?.close();
     setSnapshot(null);
+    setRoomCodeDraft('');
     setStatus('Ready to join');
+    if (window.location.pathname !== '/join') {
+      window.history.replaceState(null, '', '/join');
+    }
   }, []);
 
   const updateSettings = useCallback(

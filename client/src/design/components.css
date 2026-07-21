@@ -400,6 +400,34 @@
   align-content: start;
 }
 
+.player-action-form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.join-url.manual-join {
+  max-width: 48ch;
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  font-size: clamp(0.875rem, 1.1vw, 1.25rem);
+  line-height: 1.4;
+  word-break: normal;
+}
+
+.manual-join-url,
+.manual-join-code {
+  color: var(--color-action-high);
+  font-family: var(--font-mono);
+}
+
+.manual-join-url {
+  overflow-wrap: anywhere;
+}
+
+.manual-join-code {
+  letter-spacing: 0.08em;
+}
+
 .reveal-canvas,
 .phone-canvas {
   width: 100%;

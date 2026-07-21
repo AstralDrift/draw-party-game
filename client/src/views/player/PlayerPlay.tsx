@@ -14,6 +14,7 @@ import { Shell } from '../../components/ui/Shell';
 export function PlayerGuessing(): React.JSX.Element {
   const { snapshot, clientId, send, setErrorMessage, haptic } = useGame();
   const [guess, setGuess] = useState('');
+  const [submissionError, setSubmissionError] = useState('');
 
   if (!snapshot) {
     return (
@@ -26,6 +27,21 @@ export function PlayerGuessing(): React.JSX.Element {
   const isArtist = snapshot.currentArtistId === clientId;
   const submitted = snapshot.guessSubmittedIds.includes(clientId);
   const turnToken = snapshot.turnToken;
+  const submitGuess = () => {
+    const next = guess.trim();
+    if (!next) {
+      setErrorMessage('Enter a fake title first.');
+      return;
+    }
+    if (!send({ type: 'submitGuess', turnToken, guess: next })) {
+      setSubmissionError('Connection lost—submit again when Connected.');
+      return;
+    }
+    setSubmissionError('');
+    setErrorMessage('');
+    playCue('submit');
+    haptic(10);
+  };
 
   return (
     <Shell title="Guess">
@@ -42,32 +58,37 @@ export function PlayerGuessing(): React.JSX.Element {
         {isArtist ? (
           <div className="success-box">You’re the artist. Sit back and enjoy the chaos.</div>
         ) : (
-          <>
+          <form
+            className="player-action-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitGuess();
+            }}
+          >
+            {submissionError ? (
+              <div className="error" role="alert">
+                {submissionError}
+              </div>
+            ) : null}
             <Field label="Fake title">
               <TextInput
                 maxLength={60}
                 placeholder="Something that sounds legit…"
                 disabled={submitted}
                 value={guess}
+                enterKeyHint="send"
                 onChange={(event) => setGuess(event.target.value)}
               />
             </Field>
-            <Button wide icon={Send} disabled={submitted}
-              onClick={() => {
-                const next = guess.trim();
-                if (!next) {
-                  setErrorMessage('Enter a fake title first.');
-                  return;
-                }
-                send({ type: 'submitGuess', turnToken, guess: next });
-                playCue('submit');
-                haptic(10);
-              }}
-            >
+            <Button wide type="submit" icon={Send} disabled={submitted}>
               Submit Fake Title
             </Button>
-            {submitted ? <p className="success-box">Title locked in. Waiting for the room…</p> : null}
-          </>
+            {submitted ? (
+              <p className="success-box" role="status" aria-live="polite">
+                Title locked in. Waiting for the room…
+              </p>
+            ) : null}
+          </form>
         )}
         <ReactionBar />
       </GlassPanel>
@@ -77,7 +98,16 @@ export function PlayerGuessing(): React.JSX.Element {
 }
 
 export function PlayerVoting(): React.JSX.Element {
-  const { snapshot, clientId, selectedVote, setSelectedVote, send, haptic } = useGame();
+  const {
+    snapshot,
+    clientId,
+    selectedVote,
+    setSelectedVote,
+    send,
+    setErrorMessage,
+    haptic
+  } = useGame();
+  const [submissionError, setSubmissionError] = useState('');
 
   if (!snapshot) {
     return (
@@ -104,6 +134,11 @@ export function PlayerVoting(): React.JSX.Element {
         </div>
         <p className="action-hint">{playerActionHint('voting', isArtist)}</p>
         <DrawingCanvas drawing={snapshot.currentDrawing} className="reveal-canvas phone-canvas" />
+        {submissionError ? (
+          <div className="error" role="alert">
+            {submissionError}
+          </div>
+        ) : null}
         {isArtist ? (
           <div className="success-box">You’re the artist. Watch who takes the bait.</div>
         ) : (
@@ -121,8 +156,11 @@ export function PlayerVoting(): React.JSX.Element {
                   disabled={disabled}
                   onClick={() => {
                     if (!send({ type: 'submitVote', turnToken, optionId: option.id })) {
+                      setSubmissionError('Connection lost—choose again when Connected.');
                       return;
                     }
+                    setSubmissionError('');
+                    setErrorMessage('');
                     setSelectedVote({ turnToken, optionId: option.id });
                     playCue('submit');
                     haptic(10);

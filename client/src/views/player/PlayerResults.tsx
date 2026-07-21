@@ -57,7 +57,7 @@ export function PlayerFinal(): React.JSX.Element {
         <HostAdvanceControls
           label="Play Again"
           onAdvance={() => send({ type: 'startGame' })}
-          hint="Same room. Same phones. Fresh prompts."
+          hint="Same room. Same phones. Run it back."
         />
       ) : null}
     </Shell>

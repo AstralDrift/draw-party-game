@@ -1,4 +1,4 @@
-import { finalWinnerText, podiumTitles } from '../../polish';
+import { competitionRank, finalWinnerText, ordinalRank, podiumTitles } from '../../polish';
 import type { ClientRole } from '../../app/GameProvider';
 import type { ScoreEntry } from '../../protocol';
 import { exportShareCard, podiumShareLabel } from '../../share-card';
@@ -13,20 +13,19 @@ interface ScoresPanelProps {
   onShareFailed?: () => void;
 }
 
-function podiumRank(index: number): string {
-  return ['1st', '2nd', '3rd'][index] ?? `${index + 1}th`;
-}
-
 export function ScoresPanel({
   scores,
   podium,
   role,
   onShareFailed
 }: ScoresPanelProps): React.JSX.Element {
-  const topScores = podium ? scores.slice(0, 3) : [];
+  const topScores = podium
+    ? scores.filter((score) => competitionRank(scores, score) <= 3)
+    : [];
   const winner = scores[0];
-  const listedScores = podium && role === 'player' ? scores.slice(3) : scores;
-  const rankOffset = podium && role === 'player' ? 3 : 0;
+  const listedScores = podium
+    ? scores.filter((score) => competitionRank(scores, score) > 3)
+    : scores;
   const titles = new Map(podiumTitles(scores).map((entry) => [entry.playerId, entry.title]));
   const shareLabel = podiumShareLabel();
 
@@ -42,28 +41,32 @@ export function ScoresPanel({
       ) : null}
       <div className="panel-title">{podium ? 'Final Podium' : 'Scores'}</div>
       {podium ? (
-        <div className="podium">
-          {topScores.map((score, index) => (
-            <div key={score.playerId} className={`podium-place place-${index + 1}`}>
-              <span className="podium-rank">{podiumRank(index)}</span>
-              <strong>{score.name}</strong>
-              <span className="podium-title">{titles.get(score.playerId) ?? ''}</span>
-              <span>{score.score} pts</span>
-            </div>
-          ))}
+        <div className={`podium${topScores.length > 3 ? ' is-crowded' : ''}`}>
+          {topScores.map((score) => {
+            const rank = competitionRank(scores, score);
+            return (
+              <div key={score.playerId} className={`podium-place place-${rank}`}>
+                <span className="podium-rank">{ordinalRank(rank)}</span>
+                <strong>{score.name}</strong>
+                <span className="podium-title">{titles.get(score.playerId) ?? ''}</span>
+                <span>{score.score} pts</span>
+              </div>
+            );
+          })}
         </div>
       ) : null}
       {listedScores.length > 0 ? (
         <div className="score-list">
-          {listedScores.map((score, index) => {
+          {listedScores.map((score) => {
             const title = titles.get(score.playerId);
+            const rank = competitionRank(scores, score);
             return (
               <div
                 key={score.playerId}
-                className={`score-row ${rankOffset + index === 0 ? 'winner' : ''}`}
+                className={`score-row ${rank === 1 ? 'winner' : ''}`}
               >
                 <span>
-                  {rankOffset + index + 1}. {score.name}
+                  {rank}. {score.name}
                   {title ? ` · ${title}` : ''}
                 </span>
                 <span className="pill">{score.score} pts</span>

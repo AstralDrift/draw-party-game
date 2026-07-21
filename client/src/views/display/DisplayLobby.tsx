@@ -15,6 +15,7 @@ export function DisplayLobby(): React.JSX.Element {
   }
 
   const joinUrl = `${window.location.origin}/join/${snapshot.roomCode}`;
+  const manualJoinUrl = `${window.location.origin}/join`;
   const connectedPlayers = activePlayers(snapshot.players);
   const canStart = connectedPlayers.length >= snapshot.minPlayers;
   const host = roomHost(snapshot.players);
@@ -40,7 +41,10 @@ export function DisplayLobby(): React.JSX.Element {
         <div className="qr-stage">
           <QrCode url={joinUrl} />
         </div>
-        <p className="join-url">{joinUrl}</p>
+        <p className="join-url manual-join">
+          Can’t scan? Open <strong className="manual-join-url">{manualJoinUrl}</strong> and enter{' '}
+          <strong className="manual-join-code">{snapshot.roomCode}</strong>.
+        </p>
         <Button
           className="start-button"
           icon={Play}

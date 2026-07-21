@@ -38,6 +38,7 @@ export function ResultsPanel({
   showReactions = false
 }: ResultsPanelProps): React.JSX.Element {
   const activeDeltas = result.scoreDeltas.filter((delta) => delta.delta > 0);
+  const truthVisible = stageVisible(stage, 'correct');
   const showConfetti =
     includeDrawing && (stage === 'correct' || stage === 'deltas' || stage === 'complete');
 
@@ -49,19 +50,34 @@ export function ResultsPanel({
     >
       {showConfetti ? <Confetti variant="result" /> : null}
       <p className="eyebrow">Drawing by {result.artistName}</p>
-      <div className={holdStageClass(stage)}>
+      <div className={holdStageClass(stage)} aria-hidden={stage !== 'hold'}>
         <p className="reveal-hold-line">Votes locked in…</p>
       </div>
-      <div className={`round-outcome ${stageClass(stage, 'correct')}`}>{roundOutcomeText(result)}</div>
-      <h2 className={stageClass(stage, 'correct')}>The real prompt was</h2>
-      <div className={`prompt reveal-prompt ${stageClass(stage, 'correct')}`}>{result.correctAnswer}</div>
+      <div
+        className={`round-outcome ${stageClass(stage, 'correct')}`}
+        aria-hidden={!truthVisible}
+      >
+        {roundOutcomeText(result)}
+      </div>
+      <h2 className={stageClass(stage, 'correct')} aria-hidden={!truthVisible}>
+        The real prompt was
+      </h2>
+      <div
+        className={`prompt reveal-prompt ${stageClass(stage, 'correct')}`}
+        aria-hidden={!truthVisible}
+      >
+        {result.correctAnswer}
+      </div>
       {includeDrawing ? (
         <DrawingCanvas
           drawing={drawing}
           className={`reveal-canvas result-canvas ${drawingStageClass(stage)}`}
         />
       ) : null}
-      <div className={`${stageClass(stage, 'deltas')} score-deltas${activeDeltas.length === 0 ? ' muted' : ''}`}>
+      <div
+        className={`${stageClass(stage, 'deltas')} score-deltas${activeDeltas.length === 0 ? ' muted' : ''}`}
+        aria-hidden={!stageVisible(stage, 'deltas')}
+      >
         {activeDeltas.length === 0
           ? 'No points this reveal.'
           : activeDeltas.map((delta) => (
@@ -70,15 +86,23 @@ export function ResultsPanel({
               </span>
             ))}
       </div>
-      <div className={`breakdown ${stageClass(stage, 'tally')}`}>
+      <div
+        className={`breakdown ${stageClass(stage, 'tally')}`}
+        aria-hidden={!stageVisible(stage, 'tally')}
+      >
         {result.breakdown.map((item) => (
-          <div key={item.optionId} className={`breakdown-row ${item.isCorrect ? 'correct' : ''}`}>
+          <div
+            key={item.optionId}
+            className={`breakdown-row ${truthVisible && item.isCorrect ? 'correct' : ''}`}
+          >
             <div className="breakdown-kind">
-              {item.isCorrect
-                ? 'Correct answer'
-                : item.authorName
-                  ? `Fake by ${item.authorName}`
-                  : 'Fake answer'}
+              {truthVisible
+                ? item.isCorrect
+                  ? 'Correct answer'
+                  : item.authorName
+                    ? `Fake by ${item.authorName}`
+                    : 'Fake answer'
+                : 'Answer'}
             </div>
             <div className="breakdown-answer">{item.optionText}</div>
             {item.voterNames.length === 0 ? (

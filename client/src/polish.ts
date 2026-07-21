@@ -101,24 +101,48 @@ export type PodiumTitle = {
   title: string;
 };
 
+/** Competition ranking keeps equal scores level and leaves the next rank skipped: 1, 1, 3. */
+export function competitionRank(scores: ScoreEntry[], score: ScoreEntry): number {
+  return 1 + scores.filter((candidate) => candidate.score > score.score).length;
+}
+
+export function ordinalRank(rank: number): string {
+  const mod100 = rank % 100;
+  if (mod100 >= 11 && mod100 <= 13) {
+    return `${rank}th`;
+  }
+  switch (rank % 10) {
+    case 1:
+      return `${rank}st`;
+    case 2:
+      return `${rank}nd`;
+    case 3:
+      return `${rank}rd`;
+    default:
+      return `${rank}th`;
+  }
+}
+
 export function podiumTitles(scores: ScoreEntry[]): PodiumTitle[] {
   if (scores.length === 0) {
     return [];
   }
-  const titles: PodiumTitle[] = [];
-  const champion = scores[0];
-  if (champion) {
-    titles.push({ playerId: champion.playerId, title: 'Champion' });
-  }
-  if (scores[1]) {
-    titles.push({ playerId: scores[1].playerId, title: 'Runner-up' });
-  }
-  if (scores[2]) {
-    titles.push({ playerId: scores[2].playerId, title: 'Crowd Favorite' });
-  }
-  const underdog = [...scores].sort((a, b) => a.score - b.score)[0];
-  if (underdog && underdog.playerId !== champion?.playerId && scores.length > 3) {
-    titles.push({ playerId: underdog.playerId, title: 'Dark Horse' });
-  }
-  return titles;
+
+  const lowestScore = Math.min(...scores.map((score) => score.score));
+  return scores.flatMap((score) => {
+    const rank = competitionRank(scores, score);
+    if (rank === 1) {
+      return [{ playerId: score.playerId, title: 'Champion' }];
+    }
+    if (rank === 2) {
+      return [{ playerId: score.playerId, title: 'Runner-up' }];
+    }
+    if (rank === 3) {
+      return [{ playerId: score.playerId, title: 'Crowd Favorite' }];
+    }
+    if (scores.length > 3 && score.score === lowestScore) {
+      return [{ playerId: score.playerId, title: 'Dark Horse' }];
+    }
+    return [];
+  });
 }

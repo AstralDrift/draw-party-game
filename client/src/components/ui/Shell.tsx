@@ -75,6 +75,9 @@ export function Shell({ title, children }: ShellProps): React.JSX.Element {
         </header>
         {statusStrip}
       </div>
+      <div className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+        {snapshot ? `${phaseLabel(snapshot.phase)}. ${status}.` : connection}
+      </div>
       {children}
     </div>
   );

@@ -1,8 +1,9 @@
 {
   "name": "Draw Party",
   "short_name": "Draw Party",
+  "id": "/",
   "description": "A TV and phone drawing party game for fast, funny rounds.",
-  "start_url": ".",
+  "start_url": "/join",
   "scope": ".",
   "display": "fullscreen",
   "orientation": "any",

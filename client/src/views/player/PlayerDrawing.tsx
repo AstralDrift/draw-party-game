@@ -11,9 +11,10 @@ import { GlassPanel } from '../../components/ui/GlassPanel';
 import { Shell } from '../../components/ui/Shell';
 
 export function PlayerDrawing(): React.JSX.Element {
-  const { snapshot, clientId, prompt, send, setErrorMessage, haptic } = useGame();
+  const { snapshot, clientId, prompt, status, send, setErrorMessage, haptic } = useGame();
   const padRef = useRef<DrawingPad | null>(null);
   const [ready, setReady] = useState(false);
+  const [submissionError, setSubmissionError] = useState('');
   const onReadyChange = useCallback((next: boolean) => setReady(next), []);
 
   if (!snapshot) {
@@ -47,7 +48,9 @@ export function PlayerDrawing(): React.JSX.Element {
         <GlassPanel className="play-panel player-turn-panel drawing-turn">
           {heading}
           <p className="action-hint">{playerActionHint('drawing', false)}</p>
-          <div className="success-box">Drawing submitted. Watch the TV.</div>
+          <div className="success-box" role="status" aria-live="polite">
+            Drawing submitted. Watch the TV.
+          </div>
         </GlassPanel>
       </Shell>
     );
@@ -58,6 +61,13 @@ export function PlayerDrawing(): React.JSX.Element {
       <GlassPanel className="play-panel player-turn-panel drawing-turn">
         {heading}
         <p className="action-hint">{playerActionHint('drawing', false)}</p>
+        {submissionError ? (
+          <div className="error drawing-submit-status" role="alert">
+            {status === 'Connected'
+              ? 'Back online—submit your drawing again.'
+              : 'Connection lost—reconnecting…'}
+          </div>
+        ) : null}
         <DrawingPadHost padRef={padRef} onReadyChange={onReadyChange}>
           <div className={`submit-dock${ready ? ' is-ready' : ''}`}>
             <Button
@@ -70,7 +80,12 @@ export function PlayerDrawing(): React.JSX.Element {
                   setErrorMessage('Draw at least one stroke before submitting.');
                   return;
                 }
-                send({ type: 'submitDrawing', turnToken, drawing: pad.getDrawing() });
+                if (!send({ type: 'submitDrawing', turnToken, drawing: pad.getDrawing() })) {
+                  setSubmissionError('retry');
+                  return;
+                }
+                setSubmissionError('');
+                setErrorMessage('');
                 playCue('submit');
                 haptic(12);
               }}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  competitionRank,
   displayLobbyStartNote,
   finalWinnerText,
   playerActionHint,
@@ -68,6 +69,23 @@ describe('party polish copy', () => {
     expect(podiumTitles(scores([['Ava', 3], ['Bo', 2], ['Cy', 1]])).some((t) => t.title === 'Dark Horse')).toBe(
       false
     );
+
+    const tied = scores([
+      ['Ava', 400],
+      ['Bo', 400],
+      ['Cy', 200],
+      ['Di', 200],
+      ['Eli', 50]
+    ]);
+    expect(tied.map((score) => competitionRank(tied, score))).toEqual([1, 1, 3, 3, 5]);
+    expect(podiumTitles(tied)).toEqual([
+      { playerId: 'p0', title: 'Champion' },
+      { playerId: 'p1', title: 'Champion' },
+      { playerId: 'p2', title: 'Crowd Favorite' },
+      { playerId: 'p3', title: 'Crowd Favorite' },
+      { playerId: 'p4', title: 'Dark Horse' }
+    ]);
+    expect(podiumTitles(tied).some((title) => title.title === 'Runner-up')).toBe(false);
 
     expect(playerActionHint('voting', true)).toMatch(/can’t vote/);
     expect(playerActionHint('guessing', false)).toMatch(/Fooling people/);

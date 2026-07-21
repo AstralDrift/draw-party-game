@@ -1,4 +1,4 @@
-import { finalWinnerText, podiumTitles } from './polish';
+import { competitionRank, finalWinnerText, ordinalRank, podiumTitles } from './polish';
 import type { ScoreEntry } from './protocol';
 
 const BG_DEEP = '#05060a';
@@ -144,12 +144,12 @@ export function drawShareCard(
   const rows = scores.slice(0, 8);
   rows.forEach((score, index) => {
     const y = 510 + index * 88;
-    const rank = index < 3 ? ['1st', '2nd', '3rd'][index] : `${index + 1}.`;
+    const rank = competitionRank(scores, score);
     const title = titles.get(score.playerId);
 
-    ctx.fillStyle = index === 0 ? ACCENT : TEXT_SECONDARY;
+    ctx.fillStyle = rank === 1 ? ACCENT : TEXT_SECONDARY;
     ctx.font = `700 28px ${FONT_BODY}`;
-    ctx.fillText(rank, 88, y);
+    ctx.fillText(ordinalRank(rank), 88, y);
 
     ctx.fillStyle = TEXT_PRIMARY;
     ctx.font = `600 36px ${FONT_BODY}`;

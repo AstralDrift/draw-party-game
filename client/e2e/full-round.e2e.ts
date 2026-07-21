@@ -29,6 +29,7 @@ test('one TV and three phones complete a full drawing round', async ({ baseURL, 
 
     await tv.getByRole('button', { name: 'Start Game' }).click();
     await expect(tv.getByText('Phones are drawing')).toBeVisible();
+    await expect(tv.getByRole('status')).toHaveText(/Drawing\. Connected\./);
 
     for (const [index, player] of players.entries()) {
       await expect(player.page.locator('#prompt-text')).toContainText(/^Draw:/);
@@ -50,7 +51,11 @@ test('one TV and three phones complete a full drawing round', async ({ baseURL, 
         await guesser.page
           .getByPlaceholder('Something that sounds legit…')
           .fill(`wrong answer ${turn} ${guesser.name}`);
-        await guesser.page.getByRole('button', { name: 'Submit Fake Title' }).click();
+        if (guessIndex === 0) {
+          await guesser.page.getByPlaceholder('Something that sounds legit…').press('Enter');
+        } else {
+          await guesser.page.getByRole('button', { name: 'Submit Fake Title' }).click();
+        }
         if (guessIndex < guessers.length - 1) {
           await expect(guesser.page.getByText('Title locked in. Waiting for the room…')).toBeVisible();
         }

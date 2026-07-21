@@ -14,6 +14,25 @@ const blockedStorage = {
 };
 
 describe('HostTokenCache', () => {
+  it('restores the active display room across a page reload and clears it with the credential', () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key)
+    };
+
+    const firstPage = new HostTokenCache(storage);
+    firstPage.set('ABCD', 'host-token');
+
+    const reloadedPage = new HostTokenCache(storage);
+    expect(reloadedPage.activeRoomCode()).toBe('ABCD');
+    expect(reloadedPage.get('ABCD')).toBe('host-token');
+
+    reloadedPage.delete('ABCD');
+    expect(new HostTokenCache(storage).activeRoomCode()).toBeNull();
+  });
+
   it('keeps the current host credential available when storage is blocked', () => {
     const cache = new HostTokenCache(blockedStorage);
 

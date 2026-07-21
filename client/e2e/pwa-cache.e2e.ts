@@ -12,10 +12,25 @@ test('serves the service worker as JavaScript with cache handling', async ({ req
   expect(body).toContain("url.pathname.startsWith('/api/')");
 });
 
+test('installs into the manual phone join route', async ({ request }) => {
+  const response = await request.get('/manifest.webmanifest');
+  expect(response.ok()).toBe(true);
+  await expect(response.json()).resolves.toMatchObject({
+    id: '/',
+    start_url: '/join'
+  });
+});
+
 test('keeps app routes on the browser shell and API routes on JSON', async ({ page, request }) => {
+  const manualJoinResponse = await request.get('/join');
+  expect(manualJoinResponse.ok()).toBe(true);
+  expect(manualJoinResponse.headers()['content-type']).toMatch(/text\/html/);
+  expect(manualJoinResponse.headers()['cache-control']).toBe('no-cache');
+
   const joinResponse = await request.get('/join/ABCD');
   expect(joinResponse.ok()).toBe(true);
   expect(joinResponse.headers()['content-type']).toMatch(/text\/html/);
+  expect(joinResponse.headers()['cache-control']).toBe('no-cache');
   expect(await joinResponse.text()).toContain('<div id="app"></div>');
 
   const healthResponse = await request.get('/api/health');
@@ -24,6 +39,10 @@ test('keeps app routes on the browser shell and API routes on JSON', async ({ pa
     ok: true,
     service: 'draw-party-server'
   });
+
+  await page.goto('/join');
+  await expect(page.getByText('Join Game')).toBeVisible();
+  await expect(page.locator('input.code-input')).toHaveValue('');
 
   await page.goto('/join/ABCD');
   await expect(page.getByText('Join Game')).toBeVisible();

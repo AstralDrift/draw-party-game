@@ -86,6 +86,13 @@ test('TV lobby gives room code and QR the showcase hierarchy', async ({ baseURL,
     await expect(page.getByRole('button', { name: 'Start Game' })).toBeVisible();
     await expect(page.getByText('Everybody draws. Everybody guesses.')).toBeVisible();
     await expect(page.locator('.settings-panel')).toBeVisible();
+    const roomCode = (await page.locator('.room-code').innerText()).trim();
+    await expect(page.locator('.manual-join')).toContainText('/join');
+    await expect(page.locator('.manual-join')).toContainText(roomCode);
+    const manualJoinFontSize = await page
+      .locator('.manual-join')
+      .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
+    expect(manualJoinFontSize).toBeGreaterThanOrEqual(14);
     await expectNoVerticalOverflow(page);
 
     const roomPanel = await page.locator('.room-panel').boundingBox();
@@ -173,6 +180,32 @@ test('phone drawing screen prioritizes canvas before controls on mobile', async 
     await expect(ava.locator('.tools-summary')).toContainText('Tools');
     await expect(ava.locator('.draw-toolbar')).toBeHidden();
     await expect(bo.locator('canvas.draw-canvas')).toBeVisible();
+
+    const toolsContrast = await ava.locator('.tools-summary').evaluate((summary) => {
+      const drawer = summary.closest('.tools-drawer');
+      if (!drawer) {
+        throw new Error('Drawing tools summary must be inside its drawer.');
+      }
+
+      const parseRgb = (value: string): number[] =>
+        (value.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+      const luminance = (rgb: number[]): number => {
+        const channels = rgb.map((channel) => {
+          const normalized = channel / 255;
+          return normalized <= 0.04045
+            ? normalized / 12.92
+            : ((normalized + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * (channels[0] ?? 0) + 0.7152 * (channels[1] ?? 0) + 0.0722 * (channels[2] ?? 0);
+      };
+
+      const foreground = luminance(parseRgb(getComputedStyle(summary).color));
+      const background = luminance(parseRgb(getComputedStyle(drawer).backgroundColor));
+      const lighter = Math.max(foreground, background);
+      const darker = Math.min(foreground, background);
+      return (lighter + 0.05) / (darker + 0.05);
+    });
+    expect(toolsContrast).toBeGreaterThanOrEqual(4.5);
 
     const canvasBox = await ava.locator('canvas.draw-canvas').boundingBox();
     const drawerBox = await ava.locator('.tools-drawer').boundingBox();
@@ -468,7 +501,10 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
     await expect(players[0].locator('.spotlight-button')).toBeVisible();
     await expect(tv.getByRole('button', { name: /Podium/ })).toBeVisible();
     await expect(tv.locator('.podium-place')).toHaveCount(2);
-    await expect(tv.locator('.score-row')).toHaveCount(2);
+    await expect(tv.locator('.podium-rank')).toHaveText(['1st', '1st']);
+    await expect(tv.locator('.podium-title')).toHaveText(['Champion', 'Champion']);
+    await expect(tv.getByText('Runner-up')).toHaveCount(0);
+    await expect(tv.locator('.score-row')).toHaveCount(0);
 
     const scoresPanel = await tv.locator('.scores-panel').boundingBox();
     if (!scoresPanel) {
