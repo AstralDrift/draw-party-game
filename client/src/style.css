@@ -4332,3 +4332,39 @@ input:focus-visible,
     transform: none;
   }
 }
+
+/* A phone drawing turn is a focused task: reserve the viewport for ink first. */
+@media (max-width: 699px) {
+  .app-shell.player.phase-drawing {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .player.phase-drawing .player-turn-panel {
+    min-height: 0;
+    height: 100%;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .player.phase-drawing .drawing-pad {
+    min-height: 0;
+    height: 100%;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .player.phase-drawing .canvas-stage {
+    min-height: 0;
+    height: 100%;
+  }
+
+  .player.phase-drawing .draw-canvas {
+    aspect-ratio: auto;
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+  }
+}
