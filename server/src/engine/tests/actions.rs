@@ -23,6 +23,65 @@ fn rejects_stale_same_phase_turn_token() {
 }
 
 #[test]
+fn drawing_submission_obeys_deadline_boundary() {
+    let mut room = room_with_players();
+    room.handle_start_or_advance(100).unwrap();
+    let turn_token = room.turn_token;
+    let deadline = room.deadline_ms.expect("drawing deadline");
+
+    room.submit_drawing("p1", turn_token, drawing(), deadline - 1)
+        .unwrap();
+    let before_late_submission = room.clone();
+
+    for now_ms in [deadline, deadline + 1] {
+        let error = room
+            .submit_drawing("p2", turn_token, drawing(), now_ms)
+            .unwrap_err();
+        assert_eq!(error.code, "deadline_expired");
+        assert_eq!(
+            error.message,
+            "Time is up for this turn. Wait for the next action."
+        );
+        assert_eq!(room, before_late_submission);
+    }
+}
+
+#[test]
+fn guess_submission_obeys_deadline_boundary() {
+    let mut room = room_with_players();
+    reach_guessing(&mut room, 100);
+    let voters = non_artist_ids(&room);
+    let turn_token = room.turn_token;
+    let deadline = room.deadline_ms.expect("guessing deadline");
+
+    room.submit_guess(
+        &voters[0],
+        turn_token,
+        "before the buzzer".to_string(),
+        deadline - 1,
+    )
+    .unwrap();
+    let before_late_submission = room.clone();
+
+    for now_ms in [deadline, deadline + 1] {
+        let error = room
+            .submit_guess(
+                &voters[1],
+                turn_token,
+                "after the buzzer".to_string(),
+                now_ms,
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "deadline_expired");
+        assert_eq!(
+            error.message,
+            "Time is up for this turn. Wait for the next action."
+        );
+        assert_eq!(room, before_late_submission);
+    }
+}
+
+#[test]
 fn artist_cannot_guess_during_guessing_phase() {
     let mut room = room_with_players();
     reach_guessing(&mut room, 100);
@@ -80,6 +139,31 @@ fn vote_rejects_own_fake_answer() {
         .code,
         "own_guess"
     );
+}
+
+#[test]
+fn vote_submission_obeys_deadline_boundary_without_late_scoring() {
+    let mut room = room_with_players();
+    let voters = reach_voting(&mut room, 100);
+    let turn_token = room.turn_token;
+    let deadline = room.deadline_ms.expect("voting deadline");
+    let truth = truth_option_id(&room);
+
+    room.submit_vote(&voters[0], turn_token, truth.clone(), deadline - 1)
+        .unwrap();
+    let before_late_submission = room.clone();
+
+    for now_ms in [deadline, deadline + 1] {
+        let error = room
+            .submit_vote(&voters[1], turn_token, truth.clone(), now_ms)
+            .unwrap_err();
+        assert_eq!(error.code, "deadline_expired");
+        assert_eq!(
+            error.message,
+            "Time is up for this turn. Wait for the next action."
+        );
+        assert_eq!(room, before_late_submission);
+    }
 }
 
 #[test]

@@ -49,6 +49,31 @@ fn rejects_settings_update_after_lobby() {
 }
 
 #[test]
+fn drawing_retry_allows_timer_changes_but_keeps_its_prompt_pack() {
+    let mut room = room_with_players();
+    room.handle_start_or_advance(100).unwrap();
+    room.advance_if_expired(room.deadline_ms.unwrap()).unwrap();
+    assert_eq!(room.phase, GamePhase::Lobby);
+
+    let mut changed_pack = room.settings.clone();
+    changed_pack.prompt_pack_id = PARTY_CHAOS_PROMPT_PACK_ID.to_string();
+    assert_eq!(
+        room.update_settings(changed_pack, 200).unwrap_err().code,
+        "prompt_pack_locked"
+    );
+
+    let mut longer_timer = room.settings.clone();
+    longer_timer.draw_seconds += 15;
+    room.update_settings(longer_timer.clone(), 201).unwrap();
+    room.handle_start_or_advance(300).unwrap();
+    assert_eq!(room.settings, longer_timer);
+    assert_eq!(
+        room.deadline_ms,
+        Some(300 + longer_timer.draw_seconds * 1000)
+    );
+}
+
+#[test]
 fn rejects_invalid_room_settings() {
     let mut room = room_with_players();
 

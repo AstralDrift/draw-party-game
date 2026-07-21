@@ -213,6 +213,66 @@ fn reconnect_during_drawing_then_submit_advances() {
 }
 
 #[test]
+fn round_transition_keeps_a_disconnected_players_slot_and_score() {
+    let mut room = room_with_players();
+    room.settings.rounds = 2;
+    room.handle_start_or_advance(100).unwrap();
+    submit_all_drawings(&mut room, 200);
+
+    for reveal in 0..3 {
+        play_guesses_then_vote_truth(&mut room, 300 + reveal * 100);
+        if reveal == 2 {
+            room.mark_disconnected("p3", 550);
+        }
+        room.handle_start_or_advance(600 + reveal * 100).unwrap();
+    }
+
+    assert_eq!(room.phase, GamePhase::Drawing);
+    assert_eq!(room.current_round, 2);
+    let retained = room.players.get("p3").expect("player slot retained");
+    assert!(!retained.connected);
+    assert!(retained.spectator);
+    assert!(retained.score > 0);
+    let retained_score = retained.score;
+    assert!(!room.round.prompts.contains_key("p3"));
+    assert!(!room.round.order.contains(&"p3".to_string()));
+
+    room.upsert_player("p3".to_string(), "Linus Back".to_string(), 900)
+        .unwrap();
+    assert_eq!(room.players.get("p3").unwrap().score, retained_score);
+    assert!(room.players.get("p3").unwrap().spectator);
+    assert_eq!(
+        room.submit_drawing("p3", room.turn_token, drawing(), 901)
+            .unwrap_err()
+            .code,
+        "spectator"
+    );
+
+    let round_token = room.turn_token;
+    room.submit_drawing("p1", round_token, drawing(), 902)
+        .unwrap();
+    room.submit_drawing("p2", round_token, drawing(), 903)
+        .unwrap();
+    assert_eq!(room.phase, GamePhase::Guessing);
+    assert_eq!(
+        room.submit_guess("p3", room.turn_token, "late fake".to_string(), 904)
+            .unwrap_err()
+            .code,
+        "spectator"
+    );
+
+    play_guesses_then_vote_truth(&mut room, 905);
+    assert!(room.round.result.as_ref().unwrap().perfect_truth);
+    assert_eq!(
+        room.final_scores()
+            .iter()
+            .find(|score| score.player_id == "p3")
+            .map(|score| score.score),
+        Some(retained_score)
+    );
+}
+
+#[test]
 fn start_allows_one_connected_player() {
     let mut room = room_with_players();
     room.mark_disconnected("p2", 10);
@@ -255,7 +315,7 @@ fn start_prunes_disconnected_lobby_players() {
 }
 
 #[test]
-fn drawing_timeout_without_submissions_returns_to_lobby() {
+fn drawing_timeout_without_submissions_suspends_the_round_in_lobby() {
     let mut room = room_with_players();
     room.handle_start_or_advance(100).unwrap();
     let event = room
@@ -263,8 +323,9 @@ fn drawing_timeout_without_submissions_returns_to_lobby() {
         .unwrap();
     assert_eq!(event, Some(EngineEvent::PhaseChanged));
     assert_eq!(room.phase, GamePhase::Lobby);
-    assert_eq!(room.current_round, 0);
+    assert_eq!(room.current_round, 1);
     assert!(room.deadline_ms.is_none());
+    assert!(room.pending_drawing_retry.is_some());
 }
 
 #[test]
@@ -451,6 +512,52 @@ fn late_join_during_drawing_is_spectator_until_next_round() {
     assert!(!room.players.get("p4").unwrap().spectator);
     assert!(room.round.prompts.contains_key("p4"));
     assert!(room.round.order.contains(&"p4".to_string()));
+}
+
+#[test]
+fn late_join_during_an_empty_round_retry_waits_as_a_spectator() {
+    let mut room = room_with_players();
+    room.handle_start_or_advance(100).unwrap();
+    let assigned_prompts = room.round.prompts.clone();
+    room.advance_if_expired(room.deadline_ms.unwrap()).unwrap();
+    assert_eq!(room.phase, GamePhase::Lobby);
+
+    room.upsert_player("p4".to_string(), "Spect".to_string(), 200)
+        .unwrap();
+    assert!(room.players.get("p4").unwrap().spectator);
+
+    room.handle_start_or_advance(300).unwrap();
+    assert_eq!(room.round.prompts, assigned_prompts);
+    assert!(!room.round.prompts.contains_key("p4"));
+    assert!(!room.round.order.contains(&"p4".to_string()));
+}
+
+#[test]
+fn connected_replacement_can_resume_when_every_assigned_player_left() {
+    let mut room = room_with_players();
+    room.handle_start_or_advance(100).unwrap();
+    let assigned_prompts: BTreeSet<String> = room.round.prompts.values().cloned().collect();
+    let used_prompts = room.used_prompt_keys.clone();
+    room.advance_if_expired(room.deadline_ms.unwrap()).unwrap();
+
+    for player_id in ["p1", "p2", "p3"] {
+        room.mark_disconnected(player_id, 200);
+    }
+    room.upsert_player("p4".to_string(), "New Player".to_string(), 201)
+        .unwrap();
+    assert!(room.players.get("p4").unwrap().spectator);
+
+    room.handle_start_or_advance(300).unwrap();
+
+    assert_eq!(room.phase, GamePhase::Drawing);
+    assert!(!room.players.get("p4").unwrap().spectator);
+    assert!(assigned_prompts.contains(room.round.prompts.get("p4").unwrap()));
+    assert_eq!(room.used_prompt_keys, used_prompts);
+    assert_eq!(room.round.prompts.len(), 3);
+
+    room.submit_drawing("p4", room.turn_token, drawing(), 301)
+        .unwrap();
+    assert_ne!(room.phase, GamePhase::Drawing);
 }
 
 #[test]

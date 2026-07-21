@@ -6,6 +6,7 @@ mod actions;
 mod drawing_validation;
 mod host;
 mod phases_reconnect;
+mod prompts;
 mod reactions;
 mod scoring;
 mod settings;

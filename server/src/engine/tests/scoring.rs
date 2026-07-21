@@ -118,41 +118,108 @@ fn vote_timeout_with_zero_votes_awards_nobody_found() {
 }
 
 #[test]
-fn guess_matching_truth_is_deduped_out_of_options() {
+fn guess_matching_truth_is_rejected_without_consuming_submission() {
     let mut room = room_with_players();
     reach_guessing(&mut room, 100);
     let artist = room.round.current_artist_id.clone().unwrap();
     let truth = room.round.prompts.get(&artist).unwrap().clone();
     let voters = non_artist_ids(&room);
     let token = room.turn_token;
-    room.submit_guess(&voters[0], token, format!("  {truth}  "), 300)
-        .unwrap();
-    room.submit_guess(&voters[1], token, truth.to_uppercase(), 301)
-        .unwrap();
-    assert_eq!(room.phase, GamePhase::Results);
-    assert_eq!(room.round.voting_options.len(), 1);
-    assert!(room.round.voting_options[0].is_correct);
+    let error = room
+        .submit_guess(
+            &voters[0],
+            token,
+            format!("  {}  ", truth.to_uppercase()),
+            300,
+        )
+        .unwrap_err();
+
+    assert_eq!(error.code, "guess_conflict");
+    assert_eq!(
+        error.message,
+        "That title can't be used. Try a different one."
+    );
+    assert!(!room.round.guesses.contains_key(&voters[0]));
+    assert_eq!(room.phase, GamePhase::Guessing);
 }
 
 #[test]
-fn duplicate_normalized_guesses_collapse_to_one_option() {
+fn duplicate_normalized_fake_is_rejected_without_consuming_submission() {
     let mut room = room_with_players();
     reach_guessing(&mut room, 100);
     let voters = non_artist_ids(&room);
     let token = room.turn_token;
     room.submit_guess(&voters[0], token, "  Same Fake  ".to_string(), 300)
         .unwrap();
-    room.submit_guess(&voters[1], token, "same fake".to_string(), 301)
+    let error = room
+        .submit_guess(&voters[1], token, "same   fake".to_string(), 301)
+        .unwrap_err();
+
+    assert_eq!(error.code, "guess_conflict");
+    assert_eq!(
+        error.message,
+        "That title can't be used. Try a different one."
+    );
+    assert!(!room.round.guesses.contains_key(&voters[1]));
+    assert_eq!(room.phase, GamePhase::Guessing);
+}
+
+#[test]
+fn canonically_equivalent_unicode_guess_is_rejected_as_the_truth() {
+    let mut room = room_with_players();
+    reach_guessing(&mut room, 100);
+    let artist = room.round.current_artist_id.clone().unwrap();
+    room.round
+        .prompts
+        .insert(artist, "piñata hosting a reunion".to_string());
+    let voter = non_artist_ids(&room).remove(0);
+
+    let error = room
+        .submit_guess(
+            &voter,
+            room.turn_token,
+            "pin\u{0303}ata hosting a reunion".to_string(),
+            300,
+        )
+        .unwrap_err();
+
+    assert_eq!(error.code, "guess_conflict");
+    assert!(!room.round.guesses.contains_key(&voter));
+}
+
+#[test]
+fn rejected_collision_can_be_replaced_and_each_accepted_fake_keeps_its_author() {
+    let mut room = room_with_players();
+    reach_guessing(&mut room, 100);
+    let voters = non_artist_ids(&room);
+    let token = room.turn_token;
+
+    room.submit_guess(&voters[0], token, "First Fake".to_string(), 300)
         .unwrap();
+    room.submit_guess(&voters[1], token, " first fake ".to_string(), 301)
+        .unwrap_err();
+    room.submit_guess(&voters[1], token, "Replacement Fake".to_string(), 302)
+        .unwrap();
+
     assert_eq!(room.phase, GamePhase::Voting);
-    let fake_options: Vec<_> = room
-        .round
-        .voting_options
-        .iter()
-        .filter(|option| !option.is_correct)
-        .collect();
-    assert_eq!(fake_options.len(), 1);
-    assert_eq!(fake_options[0].text, "Same Fake");
+    for (player_id, expected_text) in [
+        (voters[0].as_str(), "First Fake"),
+        (voters[1].as_str(), "Replacement Fake"),
+    ] {
+        let option = room
+            .round
+            .voting_options
+            .iter()
+            .find(|option| option.author_player_id.as_deref() == Some(player_id))
+            .expect("accepted fake is present in voting");
+        assert_eq!(option.text, expected_text);
+        assert_eq!(
+            option.author_name.as_deref(),
+            room.players
+                .get(player_id)
+                .map(|player| player.name.as_str())
+        );
+    }
 }
 
 #[test]
