@@ -1,9 +1,10 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Send } from 'lucide';
 import { useGame } from '../../app/GameProvider';
 import { playerSubmissionAccepted } from '../../controller';
 import type { DrawingPad } from '../../drawing';
 import { playerActionHint } from '../../polish';
+import { TurnDraftCache } from '../../turn-draft-cache';
 import { Button } from '../../components/ui/Button';
 import { Deadline } from '../../components/ui/Deadline';
 import { DrawingPadHost } from '../../components/ui/DrawingPadHost';
@@ -15,8 +16,42 @@ export function PlayerDrawing(): React.JSX.Element {
   const { snapshot, clientId, prompt, status, pendingSubmission, submitAction, setErrorMessage } =
     useGame();
   const padRef = useRef<DrawingPad | null>(null);
+  const draftCache = useMemo(() => new TurnDraftCache(), []);
+  const [restoredDrawing] = useState(() => {
+    const draft = snapshot ? draftCache.restore(snapshot, clientId) : null;
+    return draft?.phase === 'drawing' ? draft.drawing : null;
+  });
   const [ready, setReady] = useState(false);
+  const turnToken = snapshot?.turnToken ?? -1;
+  const submission =
+    pendingSubmission?.kind === 'drawing' && pendingSubmission.turnToken === turnToken
+      ? pendingSubmission
+      : null;
+  const submitted = snapshot
+    ? playerSubmissionAccepted(snapshot, clientId, 'drawing', pendingSubmission)
+    : false;
+  const sending = submission?.state === 'sending';
+  const retrying = submission?.state === 'retry';
   const onReadyChange = useCallback((next: boolean) => setReady(next), []);
+  const onDrawingChange = useCallback(
+    (drawing: ReturnType<DrawingPad['getDrawing']>) => {
+      if (snapshot) {
+        draftCache.saveDrawing(snapshot, clientId, drawing);
+      }
+    },
+    [clientId, draftCache, snapshot]
+  );
+
+  useEffect(() => {
+    if (!snapshot) {
+      return;
+    }
+    if (submitted) {
+      draftCache.clear();
+      return;
+    }
+    draftCache.restore(snapshot, clientId);
+  }, [clientId, draftCache, snapshot, submitted]);
 
   if (!snapshot) {
     return (
@@ -26,14 +61,6 @@ export function PlayerDrawing(): React.JSX.Element {
     );
   }
 
-  const turnToken = snapshot.turnToken;
-  const submission =
-    pendingSubmission?.kind === 'drawing' && pendingSubmission.turnToken === turnToken
-      ? pendingSubmission
-      : null;
-  const submitted = playerSubmissionAccepted(snapshot, clientId, 'drawing', pendingSubmission);
-  const sending = submission?.state === 'sending';
-  const retrying = submission?.state === 'retry';
   const practice = snapshot.gameMode === 'practice';
 
   const heading = (
@@ -83,7 +110,13 @@ export function PlayerDrawing(): React.JSX.Element {
               : 'Connection lost—reconnecting…'}
           </div>
         ) : null}
-        <DrawingPadHost padRef={padRef} onReadyChange={onReadyChange} locked={sending}>
+        <DrawingPadHost
+          padRef={padRef}
+          initialDrawing={restoredDrawing}
+          onDrawingChange={onDrawingChange}
+          onReadyChange={onReadyChange}
+          locked={sending}
+        >
           <div className={`submit-dock${ready ? ' is-ready' : ''}`}>
             <Button
               wide

@@ -110,6 +110,52 @@ fn prompt_pack_change_abandons_a_blank_retry_without_erasing_prompt_history() {
 }
 
 #[test]
+fn prompt_pack_change_makes_connected_turnover_players_eligible_in_the_fresh_lobby() {
+    let mut room = room_with_players();
+    room.handle_start_or_advance(100).unwrap();
+    room.advance_if_expired(room.deadline_ms.unwrap()).unwrap();
+
+    for player_id in ["p1", "p2", "p3"] {
+        room.mark_disconnected(player_id, 200);
+    }
+    for (index, player_id) in ["p4", "p5", "p6"].into_iter().enumerate() {
+        room.upsert_player(
+            player_id.to_string(),
+            format!("Replacement {index}"),
+            201 + index as u64,
+        )
+        .unwrap();
+        assert!(room.players.get(player_id).unwrap().spectator);
+    }
+    assert_eq!(
+        room.players
+            .values()
+            .filter(|player| player.connected && !player.spectator)
+            .count(),
+        0
+    );
+
+    let mut changed_pack = room.settings.clone();
+    changed_pack.prompt_pack_id = PARTY_CHAOS_PROMPT_PACK_ID.to_string();
+    room.update_settings(changed_pack, 210).unwrap();
+
+    assert_eq!(room.phase, GamePhase::Lobby);
+    assert!(room.pending_drawing_retry.is_none());
+    for player_id in ["p4", "p5", "p6"] {
+        let replacement = room.players.get(player_id).unwrap();
+        assert!(replacement.connected);
+        assert!(!replacement.spectator);
+    }
+
+    room.handle_start_or_advance(300).unwrap();
+    assert_eq!(room.phase, GamePhase::Drawing);
+    assert_eq!(room.round.prompts.len(), 3);
+    for player_id in ["p4", "p5", "p6"] {
+        assert!(room.round.prompts.contains_key(player_id));
+    }
+}
+
+#[test]
 fn clamps_legacy_numeric_settings_and_rejects_invalid_prompt_pack() {
     let mut room = room_with_players();
 

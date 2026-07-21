@@ -120,7 +120,7 @@ export async function assertDisplayLobbyLayout(
 ): Promise<LobbyLayoutMetrics> {
   await expect(page.locator('.room-code')).toHaveText(/[A-Z]{4}/);
   await expect(page.locator('.qr')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Start Party' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start from TV (fallback)' })).toBeVisible();
   await expect(page.getByText('Everybody draws. Everybody guesses.')).toBeVisible();
   await expectNoHorizontalOverflow(page);
   await expectNoVerticalOverflow(page);

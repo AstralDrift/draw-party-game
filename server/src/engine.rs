@@ -440,7 +440,8 @@ impl Room {
         }
     }
 
-    pub fn extend_deadline(&mut self, now_ms: u64) -> EngineResult<EngineEvent> {
+    pub fn extend_deadline(&mut self, turn_token: u64, now_ms: u64) -> EngineResult<EngineEvent> {
+        self.ensure_turn_token(turn_token)?;
         match self.phase {
             GamePhase::Drawing | GamePhase::Guessing | GamePhase::Voting => {}
             GamePhase::Lobby | GamePhase::Results | GamePhase::FinalScores => {
@@ -1223,6 +1224,10 @@ impl Room {
         self.pending_drawing_retry = None;
         self.current_round = 0;
         self.current_round_prompt_viewers.clear();
+        // The hidden retry made new arrivals spectators so they could not join its preserved
+        // assignment. Once that assignment is abandoned, this is a fresh lobby again and every
+        // connected phone must count toward Party / Practice readiness.
+        self.promote_spectators();
     }
 
     fn advance_after_results(&mut self, now_ms: u64) -> EngineResult<bool> {

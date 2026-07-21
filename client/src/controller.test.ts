@@ -1,16 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   acknowledgeDuplicateSubmission,
+  createPendingRenameIntent,
   deadlineExtensionResolution,
   finalReplayPlan,
+  markPendingRenameSent,
+  pendingRenameSnapshotAction,
   playerActionAlert,
   playerNeedsAction,
   playerSubmissionAccepted,
+  queuePendingRenameAfterDisconnect,
   reconcilePendingSubmission,
   retryPendingSubmission,
+  scheduleSubmissionWatchdog,
   shouldResetPendingServerAction,
+  SUBMISSION_WATCHDOG_MS,
   supportsPracticeMode,
   voteOptionAccessibleName,
+  type PendingRenameIntent,
   type PendingSubmission
 } from './controller';
 import { defaultRoomSettings, type RoomSnapshot } from './protocol';
@@ -332,5 +339,105 @@ describe('pending submission reconciliation', () => {
         null
       )
     ).toBe(true);
+  });
+});
+
+describe('pending rename reconciliation', () => {
+  it('ignores an unrelated post-send snapshot until the canonical name changes', () => {
+    const intent = createPendingRenameIntent('Avery', 'Ava', true, 4);
+    expect(pendingRenameSnapshotAction(intent, 4, 'Ava')).toBe('wait');
+    expect(pendingRenameSnapshotAction(intent, 5, 'Ava')).toBe('wait');
+    expect(pendingRenameSnapshotAction(intent, 6, 'Avery')).toBe('accept');
+  });
+
+  it('resends after rejoin and accepts the server-disambiguated canonical result', () => {
+    const queued = createPendingRenameIntent('Avery', 'Ava', false, 4);
+    expect(pendingRenameSnapshotAction(queued, 5, 'Ava')).toBe('send');
+
+    const sent = markPendingRenameSent(queued, 5);
+    expect(pendingRenameSnapshotAction(sent, 5, 'Ava')).toBe('wait');
+    expect(pendingRenameSnapshotAction(sent, 6, 'Avery 2')).toBe('accept');
+    expect(pendingRenameSnapshotAction(null, 7, 'Avery 2')).toBe('wait');
+  });
+
+  it('accepts a no-op rename and a truncated canonical result', () => {
+    const noOp = createPendingRenameIntent('Ava', 'Ava', true, 4);
+    expect(pendingRenameSnapshotAction(noOp, 5, 'Ava')).toBe('accept');
+
+    const truncated = createPendingRenameIntent(
+      'A very very long party nickname',
+      'Ava',
+      true,
+      4
+    );
+    expect(pendingRenameSnapshotAction(truncated, 5, 'A very very long party')).toBe('accept');
+  });
+
+  it('requeues an uncertain sent rename after disconnect without changing the request', () => {
+    const sent: PendingRenameIntent = createPendingRenameIntent('Avery', 'Ava', true, 4);
+    expect(queuePendingRenameAfterDisconnect(sent)).toEqual({
+      requestedName: 'Avery',
+      canonicalNameAtRequest: 'Ava',
+      state: 'queued',
+      sentAfterSnapshotRevision: null
+    });
+    expect(queuePendingRenameAfterDisconnect(null)).toBeNull();
+  });
+});
+
+describe('pending submission watchdog', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('expires a matching sending action after five seconds', () => {
+    vi.useFakeTimers();
+    const current: PendingSubmission = {
+      kind: 'guess',
+      turnToken: 8,
+      state: 'sending'
+    };
+    const onExpire = vi.fn();
+    scheduleSubmissionWatchdog(current, () => current, onExpire);
+
+    vi.advanceTimersByTime(SUBMISSION_WATCHDOG_MS - 1);
+    expect(onExpire).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onExpire).toHaveBeenCalledOnce();
+  });
+
+  it('does not expire an accepted, retryable, stale, or cancelled action', () => {
+    vi.useFakeTimers();
+    let current: PendingSubmission | null = {
+      kind: 'vote',
+      turnToken: 9,
+      state: 'sending'
+    };
+    const onExpire = vi.fn();
+    scheduleSubmissionWatchdog(current, () => current, onExpire);
+    current = { ...current, state: 'retry' };
+    vi.advanceTimersByTime(SUBMISSION_WATCHDOG_MS);
+    expect(onExpire).not.toHaveBeenCalled();
+
+    current = { kind: 'vote', turnToken: 9, state: 'sending' };
+    scheduleSubmissionWatchdog(current, () => current, onExpire);
+    current = { ...current, state: 'accepted' };
+    vi.advanceTimersByTime(SUBMISSION_WATCHDOG_MS);
+    expect(onExpire).not.toHaveBeenCalled();
+
+    current = { kind: 'vote', turnToken: 9, state: 'sending' };
+    scheduleSubmissionWatchdog(current, () => current, onExpire);
+    current = { kind: 'vote', turnToken: 10, state: 'sending' };
+    vi.advanceTimersByTime(SUBMISSION_WATCHDOG_MS);
+    expect(onExpire).not.toHaveBeenCalled();
+
+    const cancel = scheduleSubmissionWatchdog(
+      { kind: 'vote', turnToken: 10 },
+      () => current,
+      onExpire
+    );
+    cancel();
+    vi.advanceTimersByTime(SUBMISSION_WATCHDOG_MS);
+    expect(onExpire).not.toHaveBeenCalled();
   });
 });

@@ -5,25 +5,32 @@ import type { DrawingDoc } from '../../protocol';
 
 interface DrawingPadHostProps {
   onReadyChange: (ready: boolean) => void;
+  onDrawingChange?: (drawing: DrawingDoc) => void;
   padRef: React.MutableRefObject<DrawingPad | null>;
+  initialDrawing?: DrawingDoc | null;
   locked?: boolean;
   children?: ReactNode;
 }
 
 export function DrawingPadHost({
   onReadyChange,
+  onDrawingChange,
   padRef,
+  initialDrawing = null,
   locked = false,
   children
 }: DrawingPadHostProps): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null);
+  const initialDrawingRef = useRef(initialDrawing);
   const onReadyChangeRef = useRef(onReadyChange);
+  const onDrawingChangeRef = useRef(onDrawingChange);
   const lockedRef = useRef(locked);
   const [portalTarget, setPortalTarget] = useState<HTMLDivElement | null>(null);
 
   useLayoutEffect(() => {
     onReadyChangeRef.current = onReadyChange;
-  }, [onReadyChange]);
+    onDrawingChangeRef.current = onDrawingChange;
+  }, [onDrawingChange, onReadyChange]);
 
   useLayoutEffect(() => {
     lockedRef.current = locked;
@@ -44,7 +51,11 @@ export function DrawingPadHost({
 
     const pad = new DrawingPad(() => {
       onReadyChangeRef.current(pad.hasInk());
+      onDrawingChangeRef.current?.(pad.getDrawing());
     }, submitSlot);
+    if (initialDrawingRef.current) {
+      pad.restoreDrawing(initialDrawingRef.current);
+    }
     pad.setLocked(lockedRef.current);
     padRef.current = pad;
     host.replaceChildren(pad.root);

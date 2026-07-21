@@ -149,7 +149,7 @@ test('TV lobby gives room code and QR the showcase hierarchy', async ({ baseURL,
 
     await expect(page.locator('.room-code')).toHaveText(/[A-Z]{4}/);
     await expect(page.locator('.qr')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Start Party' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Start from TV (fallback)' })).toBeVisible();
     await expect(page.getByText('Everybody draws. Everybody guesses.')).toBeVisible();
     await expect(page.locator('.settings-panel')).toBeVisible();
     const roomCode = (await page.locator('.room-code').innerText()).trim();
@@ -164,7 +164,7 @@ test('TV lobby gives room code and QR the showcase hierarchy', async ({ baseURL,
     const roomPanel = await page.locator('.room-panel').boundingBox();
     const settingsPanel = await page.locator('.settings-panel').boundingBox();
     const qr = await page.locator('.qr').boundingBox();
-    const start = await page.getByRole('button', { name: 'Start Party' }).boundingBox();
+    const start = await page.getByRole('button', { name: 'Start from TV (fallback)' }).boundingBox();
     if (!roomPanel || !settingsPanel || !qr || !start) {
       throw new Error('TV lobby panels must have layout boxes.');
     }
@@ -203,7 +203,7 @@ test('large-phone lobby presents player-ready hierarchy without clipping', async
     await expect(ava.getByRole('button', { name: 'Edit name' })).toBeVisible();
     await expect(ava.locator('.players-panel')).toBeVisible();
     await expect(bo.locator('.player-lobby-card')).toBeVisible();
-    await expect(tv.getByRole('button', { name: 'Start Party' })).toBeDisabled();
+    await expect(tv.getByRole('button', { name: 'Start from TV (fallback)' })).toBeDisabled();
     await expectNoHorizontalOverflow(ava);
 
     const [cy] = await createPlayers(browser, contexts, appUrl, roomCode, ['Cy'], [
@@ -212,7 +212,7 @@ test('large-phone lobby presents player-ready hierarchy without clipping', async
     await expect(ava.getByRole('button', { name: 'Start Party' })).toBeEnabled();
     await expect(bo.getByText('Party is ready')).toBeVisible();
     await expect(cy.getByText('Party is ready')).toBeVisible();
-    await expect(tv.getByRole('button', { name: 'Start Party' })).toBeEnabled();
+    await expect(tv.getByRole('button', { name: 'Start from TV (fallback)' })).toBeEnabled();
 
     await ava.getByRole('button', { name: 'Edit name' }).click();
     await ava.getByLabel('Your name').fill('Ava Renamed');

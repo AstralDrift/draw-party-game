@@ -140,7 +140,7 @@ export type ClientMessage =
   | { type: 'updateRoomSettings'; settings: RoomSettings }
   | { type: 'startGame' }
   | { type: 'startPractice' }
-  | { type: 'extendDeadline' }
+  | { type: 'extendDeadline'; turnToken: number }
   | { type: 'submitDrawing'; turnToken: number; drawing: DrawingDoc }
   | { type: 'submitGuess'; turnToken: number; guess: string }
   | { type: 'submitVote'; turnToken: number; optionId: string }

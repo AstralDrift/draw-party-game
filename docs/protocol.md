@@ -37,8 +37,9 @@ Room settings (`RoomSettings`) carry rounds and timer fields plus `promptPackId`
 clamps numeric values to the ranges above before storing and broadcasting the authoritative
 snapshot. This keeps one-release cached clients compatible without permitting unsafe pacing;
 an unknown prompt pack is still rejected. During a suspended blank-drawing retry, changing only
-timers preserves the assignment; selecting another valid prompt pack abandons that hidden retry
-and broadcasts settings for a fresh next start.
+timers preserves the assignment; selecting another valid prompt pack abandons that hidden retry,
+promotes connected replacement spectators into the fresh lobby roster, and broadcasts settings
+for a fresh next start.
 
 ## Roles and phases
 
@@ -52,7 +53,7 @@ and broadcasts settings for a fresh next start.
 
 Important fields:
 
-- `turnToken` — submissions must match the current turn
+- `turnToken` — submissions and deadline extensions must match the current turn
 - `deadlineMs` / `serverNowMs` — client syncs countdowns to server time
 - `gameMode` — current server-authoritative Party or Practice mode
 - `deadlineExtensionAvailable` — true before expiry when the timed turn has not received its one extension
@@ -69,7 +70,7 @@ Important fields:
 | `updateRoomSettings` | Display or host phone updates timers/rounds/pack (lobby only; numeric values are server-clamped) |
 | `startGame` | Starts Party, Continues the current mode after Results, or starts a Party replay |
 | `startPractice` | Starts/replays a one-phone, one-round, unscored Practice game |
-| `extendDeadline` | Adds 30 seconds once to the active Drawing/Guessing/Voting turn |
+| `extendDeadline` | `turnToken`; adds 30 seconds once to that active Drawing/Guessing/Voting turn |
 | `submitDrawing` | `turnToken` + `drawing` |
 | `submitGuess` | `turnToken` + `guess` |
 | `submitVote` | `turnToken` + `optionId` |
@@ -91,7 +92,7 @@ Important fields:
 | `roundResult` | Scores and breakdown |
 | `finalScores` | End-of-game podium data |
 | `reactionBurst` | Ephemeral reaction |
-| `pong` | Heartbeat reply (`nowMs` unused by client; countdown sync uses snapshot `serverNowMs`) |
+| `pong` | Heartbeat reply; the client samples `nowMs` alongside snapshot `serverNowMs` and keeps the least-delayed/max offset estimate for countdowns |
 | `error` | `code` + `message` |
 
 ## Client guards

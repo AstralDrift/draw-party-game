@@ -31,10 +31,14 @@ export function playerLobbyReadyNote(connectedCount: number, minPlayers: number)
     const invite = RECOMMENDED_PARTY_SIZE - connectedCount;
     return `Invite ${invite} more for better voting.`;
   }
-  return 'The TV can start the game.';
+  return 'The host phone can start the game.';
 }
 
 export function roundOutcomeText(result: RoundOutcomeInput): string {
+  const noVotes = result.breakdown.every((entry) => entry.voterNames.length === 0);
+  if (noVotes && !result.nobodyFoundIt && !result.perfectTruth) {
+    return 'No votes came in — no bonus awarded';
+  }
   if (result.nobodyFoundIt) {
     return 'Nobody got it — artist wins the room';
   }

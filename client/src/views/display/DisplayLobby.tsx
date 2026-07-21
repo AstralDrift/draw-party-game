@@ -50,14 +50,14 @@ export function DisplayLobby(): React.JSX.Element {
           <strong className="manual-join-code">{snapshot.roomCode}</strong>.
         </p>
         <Button
-          className="start-button"
+          className="start-button tv-start-fallback"
           icon={Play}
-          variant="secondary"
+          variant="ghost"
           wide
           disabled={!canStartParty}
           onClick={() => send({ type: 'startGame' })}
         >
-          Start Party
+          Start from TV (fallback)
         </Button>
         <p className={canStartParty ? 'start-note ready' : 'start-note'}>
           {canStartParty

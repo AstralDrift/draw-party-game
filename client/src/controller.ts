@@ -146,6 +146,92 @@ export interface PendingSubmission {
   optionId?: string;
 }
 
+export const SUBMISSION_WATCHDOG_MS = 5000;
+
+export interface PendingRenameIntent {
+  requestedName: string;
+  canonicalNameAtRequest: string;
+  state: 'queued' | 'sent';
+  sentAfterSnapshotRevision: number | null;
+}
+
+export type PendingRenameSnapshotAction = 'wait' | 'send' | 'accept';
+
+export function createPendingRenameIntent(
+  requestedName: string,
+  canonicalNameAtRequest: string,
+  sent: boolean,
+  snapshotRevision: number
+): PendingRenameIntent {
+  return {
+    requestedName,
+    canonicalNameAtRequest,
+    state: sent ? 'sent' : 'queued',
+    sentAfterSnapshotRevision: sent ? snapshotRevision : null
+  };
+}
+
+export function queuePendingRenameAfterDisconnect(
+  intent: PendingRenameIntent | null
+): PendingRenameIntent | null {
+  if (!intent) {
+    return null;
+  }
+  return { ...intent, state: 'queued', sentAfterSnapshotRevision: null };
+}
+
+export function markPendingRenameSent(
+  intent: PendingRenameIntent,
+  snapshotRevision: number
+): PendingRenameIntent {
+  return {
+    ...intent,
+    state: 'sent',
+    sentAfterSnapshotRevision: snapshotRevision
+  };
+}
+
+export function pendingRenameSnapshotAction(
+  intent: PendingRenameIntent | null,
+  snapshotRevision: number,
+  canonicalName: string
+): PendingRenameSnapshotAction {
+  if (!intent) {
+    return 'wait';
+  }
+  if (intent.state === 'queued') {
+    return 'send';
+  }
+  const isLaterSnapshot =
+    intent.sentAfterSnapshotRevision !== null &&
+    snapshotRevision > intent.sentAfterSnapshotRevision;
+  const isNoOp = intent.requestedName === intent.canonicalNameAtRequest;
+  const canonicalNameChanged = canonicalName !== intent.canonicalNameAtRequest;
+  return isLaterSnapshot && (isNoOp || canonicalNameChanged)
+    ? 'accept'
+    : 'wait';
+}
+
+type SubmissionWatchdogIdentity = Pick<PendingSubmission, 'kind' | 'turnToken'>;
+
+export function scheduleSubmissionWatchdog(
+  expected: SubmissionWatchdogIdentity,
+  readCurrent: () => PendingSubmission | null,
+  onExpire: () => void
+): () => void {
+  const timeout = globalThis.setTimeout(() => {
+    const current = readCurrent();
+    if (
+      current?.state === 'sending' &&
+      current.kind === expected.kind &&
+      current.turnToken === expected.turnToken
+    ) {
+      onExpire();
+    }
+  }, SUBMISSION_WATCHDOG_MS);
+  return () => globalThis.clearTimeout(timeout);
+}
+
 export interface SubmissionReconciliation {
   next: PendingSubmission | null;
   newlyAccepted: boolean;

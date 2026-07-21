@@ -251,7 +251,9 @@ pub enum ClientMessage {
     },
     StartGame,
     StartPractice,
-    ExtendDeadline,
+    ExtendDeadline {
+        turn_token: u64,
+    },
     SubmitDrawing {
         turn_token: u64,
         drawing: DrawingDoc,

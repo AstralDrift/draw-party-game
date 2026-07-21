@@ -530,7 +530,9 @@ async fn handle_client_message(state: &AppState, session: &SessionKey, message: 
         }
         ClientMessage::StartGame => start_or_advance(state, session).await,
         ClientMessage::StartPractice => start_practice(state, session).await,
-        ClientMessage::ExtendDeadline => extend_deadline(state, session).await,
+        ClientMessage::ExtendDeadline { turn_token } => {
+            extend_deadline(state, session, turn_token).await
+        }
         ClientMessage::SubmitDrawing {
             turn_token,
             drawing,
@@ -720,7 +722,7 @@ async fn start_practice(state: &AppState, session: &SessionKey) {
     .await;
 }
 
-async fn extend_deadline(state: &AppState, session: &SessionKey) {
+async fn extend_deadline(state: &AppState, session: &SessionKey, turn_token: u64) {
     let Some(room_code) = authorized_controller_room_code(state, session).await else {
         send_error(
             state,
@@ -732,7 +734,7 @@ async fn extend_deadline(state: &AppState, session: &SessionKey) {
         return;
     };
     mutate_room(state, session, &room_code, |room| {
-        room.extend_deadline(now_ms())
+        room.extend_deadline(turn_token, now_ms())
     })
     .await;
 }
@@ -1567,15 +1569,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn websocket_controller_extends_a_deadline_once_and_guest_is_rejected() {
+    async fn websocket_controller_rejects_guest_duplicate_and_stale_deadline_extensions() {
         let url = spawn_ws_server().await;
         let (mut display, _) = connect_async(format!("{url}?role=display&clientId=display"))
             .await
             .unwrap();
         let (room_code, _, _) = create_test_room(&mut display).await;
-        let _host = join_player(&url, &room_code, "p1", "Ada").await;
+        let mut host = join_player(&url, &room_code, "p1", "Ada").await;
         let mut guest = join_player(&url, &room_code, "p2", "Grace").await;
-        let _third = join_player(&url, &room_code, "p3", "Linus").await;
+        let mut third = join_player(&url, &room_code, "p3", "Linus").await;
 
         display
             .send(text_message(json!({ "type": "startGame" })))
@@ -1584,6 +1586,10 @@ mod tests {
         let phase = read_until_type(&mut display, "phaseChanged").await;
         let original_deadline = phase
             .pointer("/snapshot/deadlineMs")
+            .and_then(Value::as_u64)
+            .unwrap();
+        let drawing_turn_token = phase
+            .pointer("/snapshot/turnToken")
             .and_then(Value::as_u64)
             .unwrap();
         assert_eq!(
@@ -1601,7 +1607,10 @@ mod tests {
         );
 
         guest
-            .send(text_message(json!({ "type": "extendDeadline" })))
+            .send(text_message(json!({
+                "type": "extendDeadline",
+                "turnToken": drawing_turn_token
+            })))
             .await
             .unwrap();
         let unauthorized = read_until_type(&mut guest, "error").await;
@@ -1611,7 +1620,10 @@ mod tests {
         );
 
         display
-            .send(text_message(json!({ "type": "extendDeadline" })))
+            .send(text_message(json!({
+                "type": "extendDeadline",
+                "turnToken": drawing_turn_token
+            })))
             .await
             .unwrap();
         let extended = read_until_type(&mut display, "roomSnapshot").await;
@@ -1629,13 +1641,71 @@ mod tests {
         );
 
         display
-            .send(text_message(json!({ "type": "extendDeadline" })))
+            .send(text_message(json!({
+                "type": "extendDeadline",
+                "turnToken": drawing_turn_token
+            })))
             .await
             .unwrap();
         let duplicate = read_until_type(&mut display, "error").await;
         assert_eq!(
             duplicate.get("code").and_then(Value::as_str),
             Some("deadline_extension_used")
+        );
+
+        for player in [&mut host, &mut guest, &mut third] {
+            player
+                .send(text_message(json!({
+                    "type": "submitDrawing",
+                    "turnToken": drawing_turn_token,
+                    "drawing": drawing_value()
+                })))
+                .await
+                .unwrap();
+        }
+        let guessing = read_until_type(&mut display, "phaseChanged").await;
+        let guessing_deadline = guessing
+            .pointer("/snapshot/deadlineMs")
+            .and_then(Value::as_u64)
+            .unwrap();
+        let guessing_turn_token = guessing
+            .pointer("/snapshot/turnToken")
+            .and_then(Value::as_u64)
+            .unwrap();
+        assert_ne!(guessing_turn_token, drawing_turn_token);
+
+        display
+            .send(text_message(json!({
+                "type": "extendDeadline",
+                "turnToken": drawing_turn_token
+            })))
+            .await
+            .unwrap();
+        let stale = read_until_type(&mut display, "error").await;
+        assert_eq!(
+            stale.get("code").and_then(Value::as_str),
+            Some("stale_turn")
+        );
+
+        display
+            .send(text_message(json!({
+                "type": "extendDeadline",
+                "turnToken": guessing_turn_token
+            })))
+            .await
+            .unwrap();
+        let next_turn_extended = read_until_type(&mut display, "roomSnapshot").await;
+        assert_eq!(
+            next_turn_extended
+                .pointer("/snapshot/deadlineMs")
+                .and_then(Value::as_u64),
+            Some(guessing_deadline + 30_000)
+        );
+        assert_eq!(
+            next_turn_extended
+                .pointer("/snapshot/deadlineExtensionAvailable")
+                .and_then(Value::as_bool),
+            Some(false)
         );
     }
 

@@ -1,6 +1,6 @@
 # Draw Party Design System
 
-Implementation lives under `client/src/design/` (tokens, base, components, drawing, layout, motion). This document is the product design source of truth; keep CSS tokens aligned when either side changes.
+Implementation lives under `client/src/design/` (tokens, base, components, drawing, layout, motion, and the final glass layer). This document is the product design source of truth; keep CSS tokens aligned when either side changes.
 
 ## 1. Atmosphere & Identity
 

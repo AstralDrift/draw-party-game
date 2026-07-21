@@ -65,7 +65,7 @@ export async function runPopulatedLobbyScenario(opts: {
       contexts.push(context);
       const roomCode = (await tv.locator('.room-code').innerText()).trim();
       await createPlayers(opts.browser, contexts, appUrl, roomCode, ['Ava', 'Bo', 'Cy']);
-      await expect(tv.getByRole('button', { name: 'Start Party' })).toBeEnabled();
+      await expect(tv.getByRole('button', { name: 'Start from TV (fallback)' })).toBeEnabled();
       await opts.assert({ page: tv, viewport, shotName: `${viewport.name}-populated-lobby.png` });
     } finally {
       await Promise.all(contexts.map((context) => context.close()));

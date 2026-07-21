@@ -46,7 +46,7 @@ export function HostTimeExtension(): React.JSX.Element | null {
           return;
         }
         clearError();
-        if (!send({ type: 'extendDeadline' })) {
+        if (!send({ type: 'extendDeadline', turnToken: snapshot.turnToken })) {
           return;
         }
         requestedSnapshotRef.current = snapshot;

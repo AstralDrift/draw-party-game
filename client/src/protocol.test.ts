@@ -5,6 +5,7 @@ import {
   isReactionEmoji,
   isServerMessage,
   phaseLabel,
+  type ClientMessage,
   type GamePhase,
   type RoomSnapshot
 } from './protocol';
@@ -73,6 +74,18 @@ const validRoundResult = {
 };
 
 describe('protocol helpers', () => {
+  it('binds deadline extensions to the requested turn', () => {
+    const message = {
+      type: 'extendDeadline',
+      turnToken: 42
+    } satisfies Extract<ClientMessage, { type: 'extendDeadline' }>;
+
+    expect(JSON.parse(JSON.stringify(message))).toEqual({
+      type: 'extendDeadline',
+      turnToken: 42
+    });
+  });
+
   it('recognizes valid server messages across types', () => {
     const snapshot = baseSnapshot();
     expect(isServerMessage({ type: 'pong', nowMs: 123 })).toBe(true);

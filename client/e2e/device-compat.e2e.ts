@@ -144,7 +144,7 @@ test('TV remote focus stays visible for liquid glass living-room navigation', as
       await player.getByRole('button', { name: 'Join the Party' }).click();
     }
 
-    const startButton = tv.getByRole('button', { name: 'Start Party' });
+    const startButton = tv.getByRole('button', { name: 'Start from TV (fallback)' });
     await expect(startButton).toBeEnabled();
     await startButton.focus();
 
@@ -161,7 +161,7 @@ test('TV remote focus stays visible for liquid glass living-room navigation', as
         innerHeight: window.innerHeight
       };
     });
-    expect(focus.text).toContain('Start Party');
+    expect(focus.text).toContain('Start from TV');
     expect(focus.outline).not.toBe('none');
     expect(focus.top).toBeGreaterThanOrEqual(0);
     expect(focus.bottom).toBeLessThanOrEqual(focus.innerHeight + 4);
@@ -200,8 +200,8 @@ test('TV guessing phase fits 720p without page scroll', async ({ baseURL, browse
       players.push(player);
     }
 
-    await expect(tv.getByRole('button', { name: 'Start Party' })).toBeEnabled();
-    await tv.getByRole('button', { name: 'Start Party' }).click();
+    await expect(tv.getByRole('button', { name: 'Start from TV (fallback)' })).toBeEnabled();
+    await tv.getByRole('button', { name: 'Start from TV (fallback)' }).click();
     for (const player of players) {
       await expect(player.locator('canvas.draw-canvas')).toBeVisible({ timeout: 15_000 });
       await drawStroke(player);

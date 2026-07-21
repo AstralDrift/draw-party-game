@@ -64,14 +64,14 @@ Every award also produces a typed causal score event. Per-player event sums equa
 - Disconnected players remain on the roster with `connected: false`.
 - Progress does not wait forever on disconnected players: once all **connected** eligible players have submitted (draw / guess / vote), the engine can advance.
 - Player re-join sets `connected: true`; display re-attach re-registers the display via host token. Heartbeats are keepalive only (`Pong`); they do not flip `connected`.
-- The first connected phone is the room host (`players[].isHost`) and may change lobby settings, start the game, Continue results, or Play Again. Host is sticky while that player stays connected; if they disconnect, the engine promotes the earliest-joined connected non-spectator, otherwise the earliest-joined connected player. The TV display remains authorized too (optional remote / e2e), but party play should not require a TV remote after the room code appears.
+- The first connected phone is the room host (`players[].isHost`) and may change lobby settings, start the game, add 30 seconds to a timed turn, Continue results, or Play Again. Host is sticky while that player stays connected; if they disconnect, the engine promotes the earliest-joined connected non-spectator, otherwise the earliest-joined connected player. The client renders the +30 control only on the host phone. The TV display remains server-authorized as an optional remote / e2e fallback, but party play should not require a TV remote after the room code appears.
 - If a display reconnects to an expired room (`room_not_found`), the client clears the stale host token and creates a fresh lobby.
-- A blank Drawing timeout suspends that mode's assignments for a same-mode retry. Explicitly starting the other mode abandons the suspended assignment and begins a fresh game at round one with the currently connected roster. Selecting another valid prompt pack in this retry lobby also abandons the hidden assignment so the next start is fresh.
+- A blank Drawing timeout suspends that mode's assignments for a same-mode retry. Explicitly starting the other mode abandons the suspended assignment and begins a fresh game at round one with the currently connected roster. Selecting another valid prompt pack in this retry lobby also abandons the hidden assignment, promotes connected replacement spectators into the active fresh-lobby roster, and makes the next start fresh.
 
 ## Spectators and seat limits
 
 - `MAX_PLAYERS` (8) includes spectators. Late joiners still consume a seat.
-- Mid-game joiners arrive as `PlayerPublic.spectator: true` until the next drawing round, when the engine promotes them.
+- Mid-game joiners arrive as `PlayerPublic.spectator: true` until the next drawing round, when the engine promotes them. A replacement waiting on a suspended blank-drawing retry remains a spectator only while that retry is preserved; abandoning it promotes connected replacements in the resulting fresh lobby.
 - Practice never promotes a late joiner during that game; it remains a one-player drawing round.
 - Lobby readiness and progress panels should count **active** (non-spectator) players only. Client helpers live in `client/src/spectator.ts`.
 

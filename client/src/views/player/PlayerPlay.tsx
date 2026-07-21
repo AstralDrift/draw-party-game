@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Send } from 'lucide';
 import { useGame } from '../../app/GameProvider';
 import { playerSubmissionAccepted, voteOptionAccessibleName } from '../../controller';
 import { optionLabel } from '../../option-label';
 import { playerActionHint } from '../../polish';
+import { TurnDraftCache } from '../../turn-draft-cache';
 import { Button } from '../../components/ui/Button';
 import { Deadline } from '../../components/ui/Deadline';
 import { DrawingCanvas } from '../../components/ui/DrawingPadHost';
@@ -15,7 +16,33 @@ import { Shell } from '../../components/ui/Shell';
 
 export function PlayerGuessing(): React.JSX.Element {
   const { snapshot, clientId, pendingSubmission, submitAction, setErrorMessage } = useGame();
-  const [guess, setGuess] = useState('');
+  const draftCache = useMemo(() => new TurnDraftCache(), []);
+  const [guess, setGuess] = useState(() => {
+    const draft = snapshot ? draftCache.restore(snapshot, clientId) : null;
+    return draft?.phase === 'guessing' ? draft.guess : '';
+  });
+  const isArtist = snapshot?.currentArtistId === clientId;
+  const turnToken = snapshot?.turnToken ?? -1;
+  const submission =
+    pendingSubmission?.kind === 'guess' && pendingSubmission.turnToken === turnToken
+      ? pendingSubmission
+      : null;
+  const submitted = snapshot
+    ? playerSubmissionAccepted(snapshot, clientId, 'guess', pendingSubmission)
+    : false;
+  const sending = submission?.state === 'sending';
+  const retrying = submission?.state === 'retry';
+
+  useEffect(() => {
+    if (!snapshot) {
+      return;
+    }
+    if (submitted) {
+      draftCache.clear();
+      return;
+    }
+    draftCache.restore(snapshot, clientId);
+  }, [clientId, draftCache, snapshot, submitted]);
 
   if (!snapshot) {
     return (
@@ -25,15 +52,6 @@ export function PlayerGuessing(): React.JSX.Element {
     );
   }
 
-  const isArtist = snapshot.currentArtistId === clientId;
-  const turnToken = snapshot.turnToken;
-  const submission =
-    pendingSubmission?.kind === 'guess' && pendingSubmission.turnToken === turnToken
-      ? pendingSubmission
-      : null;
-  const submitted = playerSubmissionAccepted(snapshot, clientId, 'guess', pendingSubmission);
-  const sending = submission?.state === 'sending';
-  const retrying = submission?.state === 'retry';
   const submitGuess = () => {
     const next = guess.trim();
     if (!next) {
@@ -82,7 +100,11 @@ export function PlayerGuessing(): React.JSX.Element {
                 disabled={submitted || sending}
                 value={guess}
                 enterKeyHint="send"
-                onChange={(event) => setGuess(event.target.value)}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setGuess(next);
+                  draftCache.saveGuess(snapshot, clientId, next);
+                }}
               />
             </Field>
             <Button wide type="submit" icon={Send} disabled={submitted || sending}>
@@ -112,6 +134,13 @@ export function PlayerGuessing(): React.JSX.Element {
 
 export function PlayerVoting(): React.JSX.Element {
   const { snapshot, clientId, pendingSubmission, submitAction, setErrorMessage } = useGame();
+  const draftCache = useMemo(() => new TurnDraftCache(), []);
+
+  useEffect(() => {
+    if (snapshot) {
+      draftCache.restore(snapshot, clientId);
+    }
+  }, [clientId, draftCache, snapshot]);
 
   if (!snapshot) {
     return (

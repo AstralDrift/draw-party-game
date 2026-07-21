@@ -51,6 +51,58 @@ export function estimateDrawingBytes(drawing: DrawingDoc): number {
   return new Blob([JSON.stringify(drawing)]).size;
 }
 
+/**
+ * Accepts only documents this drawing pad can create, then returns a deep clone.
+ * Draft recovery treats browser storage as untrusted input, even within one tab.
+ */
+export function cloneValidDrawing(drawing: unknown): DrawingDoc | null {
+  if (!isRecord(drawing) || drawing.width !== CANVAS_WIDTH || drawing.height !== CANVAS_HEIGHT) {
+    return null;
+  }
+  if (!Array.isArray(drawing.strokes) || drawing.strokes.length > MAX_STROKES) {
+    return null;
+  }
+
+  const strokes: Stroke[] = [];
+  for (const candidate of drawing.strokes) {
+    if (
+      !isRecord(candidate) ||
+      typeof candidate.color !== 'string' ||
+      !COLORS.includes(candidate.color) ||
+      typeof candidate.size !== 'number' ||
+      !SIZES.includes(candidate.size) ||
+      !Array.isArray(candidate.points) ||
+      candidate.points.length < 2 ||
+      candidate.points.length > MAX_POINTS_PER_STROKE
+    ) {
+      return null;
+    }
+
+    const points: Point[] = [];
+    for (const candidatePoint of candidate.points) {
+      if (
+        !isRecord(candidatePoint) ||
+        typeof candidatePoint.x !== 'number' ||
+        typeof candidatePoint.y !== 'number' ||
+        !Number.isFinite(candidatePoint.x) ||
+        !Number.isFinite(candidatePoint.y) ||
+        !Number.isSafeInteger(candidatePoint.x) ||
+        !Number.isSafeInteger(candidatePoint.y) ||
+        candidatePoint.x < 0 ||
+        candidatePoint.x > CANVAS_WIDTH ||
+        candidatePoint.y < 0 ||
+        candidatePoint.y > CANVAS_HEIGHT
+      ) {
+        return null;
+      }
+      points.push({ x: candidatePoint.x, y: candidatePoint.y });
+    }
+    strokes.push({ color: candidate.color, size: candidate.size, points });
+  }
+
+  return { width: CANVAS_WIDTH, height: CANVAS_HEIGHT, strokes };
+}
+
 export function renderDrawing(
   canvas: HTMLCanvasElement,
   drawing: DrawingDoc | null | undefined,
@@ -253,6 +305,26 @@ export class DrawingPad {
 
   hasInk(): boolean {
     return this.drawing.strokes.length > 0;
+  }
+
+  restoreDrawing(drawing: unknown): boolean {
+    const restored = cloneValidDrawing(drawing);
+    if (!restored) {
+      return false;
+    }
+
+    this.disarmClear();
+    const activePointerId = this.activePointerId;
+    this.currentStroke = null;
+    this.activePointerId = null;
+    if (activePointerId !== null) {
+      safelyReleasePointerCapture(this.canvas, activePointerId);
+    }
+    this.drawing.strokes.splice(0, this.drawing.strokes.length, ...restored.strokes);
+    this.limitMessage = '';
+    this.redraw();
+    this.updateStatus();
+    return true;
   }
 
   setLocked(locked: boolean): void {
@@ -581,6 +653,10 @@ function clamp(value: number, min: number, max: number): number {
     return min;
   }
   return Math.min(max, Math.max(min, value));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 export const drawingTestExports = {

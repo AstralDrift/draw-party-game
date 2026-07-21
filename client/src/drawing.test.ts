@@ -2,7 +2,13 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from './protocol';
-import { DrawingPad, createEmptyDrawing, drawingTestExports, estimateDrawingBytes } from './drawing';
+import {
+  DrawingPad,
+  cloneValidDrawing,
+  createEmptyDrawing,
+  drawingTestExports,
+  estimateDrawingBytes
+} from './drawing';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -31,6 +37,81 @@ describe('drawing utilities', () => {
     }
     // Worst-case compact stroke doc must stay well under a megabyte for WS frames.
     expect(estimateDrawingBytes(drawing)).toBeLessThan(1024 * 1024);
+  });
+
+  it('validates and deep-clones only drawings this pad can produce', () => {
+    const drawing = {
+      width: CANVAS_WIDTH,
+      height: CANVAS_HEIGHT,
+      strokes: [
+        {
+          color: '#111111',
+          size: 6,
+          points: [
+            { x: 0, y: 0 },
+            { x: CANVAS_WIDTH, y: CANVAS_HEIGHT }
+          ]
+        }
+      ]
+    };
+    const cloned = cloneValidDrawing(drawing);
+
+    expect(cloned).toEqual(drawing);
+    expect(cloned).not.toBe(drawing);
+    expect(cloned?.strokes[0]).not.toBe(drawing.strokes[0]);
+    expect(cloned?.strokes[0]?.points[0]).not.toBe(drawing.strokes[0]?.points[0]);
+
+    drawing.strokes[0]!.points[0]!.x = 12;
+    expect(cloned?.strokes[0]?.points[0]?.x).toBe(0);
+
+    const invalidDrawings = [
+      { ...drawing, width: CANVAS_WIDTH - 1 },
+      { ...drawing, height: CANVAS_HEIGHT - 1 },
+      {
+        ...drawing,
+        strokes: [{ ...drawing.strokes[0], color: '#abcdef' }]
+      },
+      {
+        ...drawing,
+        strokes: [{ ...drawing.strokes[0], size: 5 }]
+      },
+      {
+        ...drawing,
+        strokes: [{ ...drawing.strokes[0], points: [{ x: 1, y: 1 }] }]
+      },
+      {
+        ...drawing,
+        strokes: [{ ...drawing.strokes[0], points: [{ x: -1, y: 0 }, { x: 1, y: 1 }] }]
+      },
+      {
+        ...drawing,
+        strokes: [{ ...drawing.strokes[0], points: [{ x: 0, y: Number.NaN }, { x: 1, y: 1 }] }]
+      },
+      {
+        ...drawing,
+        strokes: [{ ...drawing.strokes[0], points: [{ x: 0.5, y: 0 }, { x: 1, y: 1 }] }]
+      },
+      {
+        ...drawing,
+        strokes: Array.from({ length: drawingTestExports.MAX_STROKES + 1 }, () => drawing.strokes[0])
+      },
+      {
+        ...drawing,
+        strokes: [
+          {
+            ...drawing.strokes[0],
+            points: Array.from({ length: drawingTestExports.MAX_POINTS_PER_STROKE + 1 }, () => ({
+              x: 1,
+              y: 1
+            }))
+          }
+        ]
+      }
+    ];
+
+    for (const invalid of invalidDrawings) {
+      expect(cloneValidDrawing(invalid)).toBeNull();
+    }
   });
 
   it('clamps coordinates and rejects non-finite input', () => {
@@ -213,6 +294,24 @@ describe('drawing utilities', () => {
     tap(3, 300, 200);
     expect(pad.getDrawing().strokes).toHaveLength(2);
     expect(onChange).toHaveBeenCalledTimes(2);
+
+    const restored = captured;
+    expect(pad.restoreDrawing(restored)).toBe(true);
+    restored.strokes[0]!.points[0]!.x = 999;
+    expect(pad.getDrawing().strokes[0]?.points[0]?.x).not.toBe(999);
+    expect(pad.root.querySelector('.draw-status')?.textContent).toBe('1 stroke');
+
+    const undo = pad.root.querySelector<HTMLButtonElement>('button[aria-label="Undo last stroke"]');
+    undo?.click();
+    expect(pad.hasInk()).toBe(false);
+    expect(onChange).toHaveBeenCalledTimes(3);
+
+    expect(pad.restoreDrawing(captured)).toBe(true);
+    const clear = pad.root.querySelector<HTMLButtonElement>('button[aria-label="Clear drawing"]');
+    clear?.click();
+    pad.root.querySelector<HTMLButtonElement>('button[aria-label="Tap again to clear drawing"]')?.click();
+    expect(pad.hasInk()).toBe(false);
+    expect(onChange).toHaveBeenCalledTimes(4);
 
     pad.destroy();
     expect(mediaLists[0]?.removeEventListener).toHaveBeenCalledWith('change', expect.any(Function));

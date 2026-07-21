@@ -26,7 +26,12 @@ describe('party polish copy', () => {
     expect(roundOutcomeText(roundResult(['Ava', 'Bo', 'Cy'], ['Ava', 'Bo', 'Cy']))).toBe(
       '3 players cracked it'
     );
-    expect(roundOutcomeText(roundResult([], [], {}))).toBe('Nobody got it — artist wins the room');
+    expect(roundOutcomeText(roundResult([], [], {}))).toBe(
+      'No votes came in — no bonus awarded'
+    );
+    expect(roundOutcomeText(roundResult([], [], { nobodyFoundIt: true }))).toBe(
+      'Nobody got it — artist wins the room'
+    );
   });
 
   it('summarizes final winners and ties', () => {
@@ -60,7 +65,7 @@ describe('party polish copy', () => {
     expect(playerLobbyReadyNote(0, 1)).toBe('Need 1 more player.');
     expect(playerLobbyReadyNote(1, 1)).toBe('Invite 2 more for better voting.');
     expect(playerLobbyReadyNote(2, 1)).toBe('Invite 1 more for better voting.');
-    expect(playerLobbyReadyNote(3, 1)).toBe('The TV can start the game.');
+    expect(playerLobbyReadyNote(3, 1)).toBe('The host phone can start the game.');
   });
 
   it('assigns podium titles and phase action hints', () => {
