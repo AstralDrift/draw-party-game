@@ -189,6 +189,8 @@ test('phone drawing screen prioritizes canvas before controls on mobile', async 
     await expect(ava.locator('.submit-help')).toHaveText('Ready when you are.');
     await ava.locator('.tools-summary').click();
     await expect(ava.locator('.draw-toolbar')).toBeVisible();
+    await ava.locator('.swatch').nth(1).click();
+    await expect(ava.locator('.swatch').nth(1)).toHaveClass(/is-selected/);
     await expect(ava.getByRole('button', { name: /eraser/i })).toBeVisible();
     await ava.getByRole('button', { name: 'Clear drawing' }).click();
     await expect(ava.getByRole('button', { name: 'Tap again to clear drawing' })).toBeVisible();

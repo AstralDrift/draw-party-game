@@ -16,6 +16,7 @@ type PlayerTarget = {
   viewport: Viewport;
   deviceScaleFactor?: number;
   isMobile?: boolean;
+  minCanvasHeightRatio?: number;
   minCanvasWidth: number;
   minBackingRatio?: number;
 };
@@ -26,7 +27,8 @@ const PLAYER_TARGETS: PlayerTarget[] = [
     viewport: { width: 375, height: 667 },
     deviceScaleFactor: 2,
     isMobile: true,
-    minCanvasWidth: 300,
+    minCanvasHeightRatio: 0.74,
+    minCanvasWidth: 370,
     minBackingRatio: 2
   },
   {
@@ -34,7 +36,8 @@ const PLAYER_TARGETS: PlayerTarget[] = [
     viewport: { width: 390, height: 844 },
     deviceScaleFactor: 3,
     isMobile: true,
-    minCanvasWidth: 340,
+    minCanvasHeightRatio: 0.6,
+    minCanvasWidth: 385,
     minBackingRatio: 2
   },
   {
@@ -42,7 +45,8 @@ const PLAYER_TARGETS: PlayerTarget[] = [
     viewport: { width: 430, height: 932 },
     deviceScaleFactor: 3,
     isMobile: true,
-    minCanvasWidth: 370,
+    minCanvasHeightRatio: 0.6,
+    minCanvasWidth: 425,
     minBackingRatio: 2
   },
   {
@@ -50,7 +54,8 @@ const PLAYER_TARGETS: PlayerTarget[] = [
     viewport: { width: 412, height: 915 },
     deviceScaleFactor: 3,
     isMobile: true,
-    minCanvasWidth: 350,
+    minCanvasHeightRatio: 0.59,
+    minCanvasWidth: 407,
     minBackingRatio: 2
   },
   {
@@ -228,6 +233,9 @@ test('phone, Fire tablet, and iPad drawing layouts keep canvas and submit reacha
 
       expect(metrics.scrollWidth).toBeLessThanOrEqual(target.viewport.width + 1);
       expect(metrics.canvas.width).toBeGreaterThanOrEqual(target.minCanvasWidth);
+      if (target.minCanvasHeightRatio) {
+        expect(metrics.canvas.height).toBeGreaterThanOrEqual(target.viewport.height * target.minCanvasHeightRatio);
+      }
       // Phones stack canvas above submit; tablets place them side-by-side (same row top).
       if (target.viewport.width < 700) {
         expect(metrics.canvas.top).toBeLessThanOrEqual(metrics.submit.top);
@@ -237,8 +245,9 @@ test('phone, Fire tablet, and iPad drawing layouts keep canvas and submit reacha
       expect(metrics.submit.bottom).toBeLessThanOrEqual(target.viewport.height + 4);
       expect(metrics.tools.bottom).toBeLessThanOrEqual(target.viewport.height + 4);
       const aspect = metrics.canvas.width / Math.max(1, metrics.canvas.height);
-      expect(aspect).toBeGreaterThan(4 / 3 - 0.08);
-      expect(aspect).toBeLessThan(4 / 3 + 0.08);
+      const expectedAspect = target.viewport.width < 700 ? 3 / 4 : 4 / 3;
+      expect(aspect).toBeGreaterThan(expectedAspect - 0.08);
+      expect(aspect).toBeLessThan(expectedAspect + 0.08);
       if (target.minBackingRatio) {
         expect(metrics.backingRatio).toBeGreaterThanOrEqual(target.minBackingRatio);
       }

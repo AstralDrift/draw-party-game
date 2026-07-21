@@ -112,6 +112,7 @@ All spacing derives from 4px.
 - **States**: empty, has ink, submitted, focus-visible.
 - **Accessibility**: focus outline and non-color stroke-count feedback.
 - **Motion**: the drawing surface itself remains stable.
+- **Phone portrait**: rotate the fixed 4:3 drawing document into a 3:4 physical surface and inverse-map touch input, preserving the drawing's geometry when it appears on the TV.
 
 ### Empty State
 

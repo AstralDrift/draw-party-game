@@ -1,13 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { finalWinnerText, roundHighlightCards, roundOutcomeText } from './polish';
+import {
+  displayLobbyStartNote,
+  finalWinnerText,
+  playerActionHint,
+  playerLobbyReadyNote,
+  podiumTitles,
+  roundOutcomeText
+} from './polish';
 import type { RoundResult, ScoreEntry } from './protocol';
 
 describe('party polish copy', () => {
   it('summarizes round outcomes from correct voters', () => {
-    expect(roundOutcomeText(roundResult([], ['Ava', 'Bo']))).toBe('No one found it');
-    expect(roundOutcomeText(roundResult(['Ava'], ['Ava', 'Bo']))).toBe('Ava found it');
-    expect(roundOutcomeText(roundResult(['Ava', 'Bo'], ['Ava', 'Bo']))).toBe('Everyone found it');
-    expect(roundOutcomeText(roundResult(['Ava', 'Bo'], ['Ava', 'Bo', 'Cy']))).toBe('Ava and Bo found it');
+    expect(roundOutcomeText(roundResult([], ['Ava', 'Bo'], { nobodyFoundIt: true }))).toBe(
+      'Nobody got it — artist wins the room'
+    );
+    expect(roundOutcomeText(roundResult(['Ava'], ['Ava', 'Bo']))).toBe('Ava cracked it');
+    expect(roundOutcomeText(roundResult(['Ava', 'Bo'], ['Ava', 'Bo'], { perfectTruth: true }))).toBe(
+      'Everyone saw through it — perfect!'
+    );
+    expect(roundOutcomeText(roundResult(['Ava', 'Bo'], ['Ava', 'Bo', 'Cy']))).toBe(
+      'Ava and Bo cracked it'
+    );
+    expect(roundOutcomeText(roundResult(['Ava', 'Bo', 'Cy'], ['Ava', 'Bo', 'Cy']))).toBe(
+      '3 players cracked it'
+    );
+    expect(roundOutcomeText(roundResult([], [], {}))).toBe('Nobody got it — artist wins the room');
   });
 
   it('summarizes final winners and ties', () => {
@@ -17,104 +34,56 @@ describe('party polish copy', () => {
     expect(finalWinnerText(scores([['Ava', 100], ['Bo', 100], ['Cy', 100]]))).toBe('3 players tie');
   });
 
-  it('turns a reveal into party highlight cards', () => {
-    expect(
-      roundHighlightCards({
-        artistId: 'artist',
-        artistName: 'Ada',
-        correctAnswer: 'vampire dentist',
-        correctVoterNames: [],
-        breakdown: [
-          {
-            optionId: 'truth',
-            optionText: 'vampire dentist',
-            voterNames: [],
-            isCorrect: true,
-            authorName: null
-          },
-          {
-            optionId: 'fake',
-            optionText: 'a haunted toothbrush',
-            voterNames: ['Ava', 'Bo'],
-            isCorrect: false,
-            authorName: 'Cy'
-          }
-        ],
-        scoreDeltas: [
-          { playerId: 'artist', name: 'Ada', delta: 0 },
-          { playerId: 'cy', name: 'Cy', delta: 100 }
-        ]
-      })
-    ).toEqual([
-      {
-        label: 'Table stumper',
-        title: 'Nobody found the real prompt',
-        detail: 'The room got completely fooled.',
-        tone: 'truth'
-      },
-      {
-        label: 'Best fake',
-        title: "Cy's bluff",
-        detail: '“a haunted toothbrush” pulled 2 votes.',
-        tone: 'fake'
-      },
-      {
-        label: 'Biggest jump',
-        title: 'Cy +100',
-        detail: 'Largest score gain this reveal.',
-        tone: 'score'
-      }
-    ]);
+  it('guides hosts toward a fuller party while keeping solo startable', () => {
+    expect(displayLobbyStartNote(0, 1)).toBe('Scan the QR (or type the code). Need 1+ phones.');
+    expect(displayLobbyStartNote(1, 3)).toBe('Need 2 more phones before kickoff.');
+    expect(displayLobbyStartNote(1, 1)).toBe(
+      '1 ready — playable now, best with 3+ for votes and fakes.'
+    );
+    expect(displayLobbyStartNote(2, 1)).toBe(
+      '2 ready — playable now, best with 3+ for votes and fakes.'
+    );
+    expect(displayLobbyStartNote(3, 1)).toBe('3 ready — hit Start when the couch is full.');
+    expect(playerLobbyReadyNote(0, 1)).toBe('Need 1 more player.');
+    expect(playerLobbyReadyNote(1, 1)).toBe('Invite 2 more for better voting.');
+    expect(playerLobbyReadyNote(2, 1)).toBe('Invite 1 more for better voting.');
+    expect(playerLobbyReadyNote(3, 1)).toBe('The TV can start the game.');
   });
 
-  it('celebrates clean sweeps without inventing a fake-answer highlight', () => {
-    const highlights = roundHighlightCards({
-      artistId: 'artist',
-      artistName: 'Ada',
-      correctAnswer: 'robot doing yoga',
-      correctVoterNames: ['Ava', 'Bo'],
-      breakdown: [
-        {
-          optionId: 'truth',
-          optionText: 'robot doing yoga',
-          voterNames: ['Ava', 'Bo'],
-          isCorrect: true,
-          authorName: null
-        },
-        {
-          optionId: 'fake',
-          optionText: 'a sleepy toaster',
-          voterNames: [],
-          isCorrect: false,
-          authorName: 'Cy'
-        }
-      ],
-      scoreDeltas: [
-        { playerId: 'artist', name: 'Ada', delta: 200 },
-        { playerId: 'ava', name: 'Ava', delta: 200 },
-        { playerId: 'bo', name: 'Bo', delta: 200 }
-      ]
-    });
+  it('assigns podium titles and phase action hints', () => {
+    expect(podiumTitles([])).toEqual([]);
+    expect(podiumTitles(scores([['Ava', 10]]))).toEqual([{ playerId: 'p0', title: 'Champion' }]);
+    const four = scores([
+      ['Ava', 400],
+      ['Bo', 300],
+      ['Cy', 200],
+      ['Di', 50]
+    ]);
+    expect(podiumTitles(four)).toEqual([
+      { playerId: 'p0', title: 'Champion' },
+      { playerId: 'p1', title: 'Runner-up' },
+      { playerId: 'p2', title: 'Crowd Favorite' },
+      { playerId: 'p3', title: 'Dark Horse' }
+    ]);
+    expect(podiumTitles(scores([['Ava', 3], ['Bo', 2], ['Cy', 1]])).some((t) => t.title === 'Dark Horse')).toBe(
+      false
+    );
 
-    expect(highlights).toContainEqual({
-      label: 'Clean sweep',
-      title: 'Everyone found it',
-      detail: 'The fakes did not stand a chance.',
-      tone: 'truth'
-    });
-    expect(highlights.some((highlight) => highlight.label === 'Best fake')).toBe(false);
-    expect(highlights).toContainEqual({
-      label: 'Biggest jump',
-      title: '3 players +200',
-      detail: 'Ada, Ava, and Bo had the largest score gain this reveal.',
-      tone: 'score'
-    });
+    expect(playerActionHint('voting', true)).toMatch(/can’t vote/);
+    expect(playerActionHint('guessing', false)).toMatch(/Fooling people/);
+    expect(playerActionHint('finalScores', false)).toMatch(/podium/);
   });
 });
 
-function roundResult(correctVoterNames: string[], voterNames: string[]): Pick<RoundResult, 'breakdown' | 'correctVoterNames'> {
+function roundResult(
+  correctVoterNames: string[],
+  voterNames: string[],
+  flags: Partial<Pick<RoundResult, 'nobodyFoundIt' | 'perfectTruth'>> = {}
+): Pick<RoundResult, 'breakdown' | 'correctVoterNames' | 'nobodyFoundIt' | 'perfectTruth'> {
   return {
     correctVoterNames,
+    nobodyFoundIt: flags.nobodyFoundIt ?? false,
+    perfectTruth: flags.perfectTruth ?? false,
     breakdown: [
       {
         optionId: 'option-0',

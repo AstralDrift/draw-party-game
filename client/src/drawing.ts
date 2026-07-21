@@ -281,8 +281,13 @@ export class DrawingPad {
 
   private getPoint(event: PointerEvent): Point {
     const rect = this.canvas.getBoundingClientRect();
-    const x = Math.round(((event.clientX - rect.left) / rect.width) * CANVAS_WIDTH);
-    const y = Math.round(((event.clientY - rect.top) / rect.height) * CANVAS_HEIGHT);
+    const portraitDrawing = window.matchMedia('(max-width: 699px) and (orientation: portrait)').matches;
+    const x = portraitDrawing
+      ? Math.round(((event.clientY - rect.top) / rect.height) * CANVAS_WIDTH)
+      : Math.round(((event.clientX - rect.left) / rect.width) * CANVAS_WIDTH);
+    const y = portraitDrawing
+      ? Math.round(((rect.right - event.clientX) / rect.width) * CANVAS_HEIGHT)
+      : Math.round(((event.clientY - rect.top) / rect.height) * CANVAS_HEIGHT);
     return {
       x: clamp(x, 0, CANVAS_WIDTH),
       y: clamp(y, 0, CANVAS_HEIGHT)
