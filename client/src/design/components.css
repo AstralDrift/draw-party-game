@@ -406,11 +406,14 @@
 }
 
 .join-url.manual-join {
+  grid-column: 1;
+  justify-self: start;
   max-width: 48ch;
   color: var(--color-text-primary);
   font-family: var(--font-body);
   font-size: clamp(0.875rem, 1.1vw, 1.25rem);
   line-height: 1.4;
+  text-align: left;
   word-break: normal;
 }
 

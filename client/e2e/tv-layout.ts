@@ -67,6 +67,8 @@ export async function expectNoVerticalOverflow(page: Page): Promise<void> {
 export type LobbyLayoutMetrics = {
   emptyState: Box | null;
   hero: Box;
+  heroLineCount: number;
+  manualJoin: Box;
   playerRows: Box[];
   playersCount: Box;
   qr: Box;
@@ -91,6 +93,14 @@ export async function readLobbyLayout(page: Page): Promise<LobbyLayoutMetrics> {
     return {
       emptyState: optionalRect('.players-panel .empty-state'),
       hero: rect('.room-hero-copy h2'),
+      heroLineCount: (() => {
+        const heading = document.querySelector('.room-hero-copy h2');
+        if (!heading) throw new Error('Missing lobby heading');
+        const range = document.createRange();
+        range.selectNodeContents(heading);
+        return range.getClientRects().length;
+      })(),
+      manualJoin: rect('.manual-join'),
       playerRows: Array.from(document.querySelectorAll('.players-panel .player-row')).map((row) =>
         row.getBoundingClientRect().toJSON()
       ),
@@ -124,6 +134,13 @@ export async function assertDisplayLobbyLayout(
   // Hero must stay inside the room panel (no top-edge clip).
   expect(metrics.hero.top).toBeGreaterThanOrEqual(metrics.roomPanel.top + 4);
   expect(metrics.hero.bottom).toBeLessThanOrEqual(metrics.roomCode.top + 2);
+  if (viewport.width <= 1366) {
+    expect(metrics.heroLineCount).toBeLessThanOrEqual(2);
+  }
+
+  // Manual joining stays legible without squeezing the hero or colliding with the QR/CTA.
+  expect(boxesOverlap(metrics.manualJoin, metrics.qr)).toBe(false);
+  expect(metrics.manualJoin.bottom).toBeLessThanOrEqual(metrics.start.top + 2);
 
   // Players meta must stack cleanly — never paint on the same box.
   if (metrics.emptyState) {
