@@ -33,6 +33,7 @@ export function ScoresPanel({
       : scores;
   const titles = new Map(podiumTitles(scores).map((entry) => [entry.playerId, entry.title]));
   const shareLabel = podiumShareLabel();
+  const displayShareFallback = role === 'display';
 
   return (
     <GlassPanel className="scores-panel" id="scores-panel">
@@ -87,9 +88,9 @@ export function ScoresPanel({
       ) : null}
       {showPodium ? (
         <Button
-          variant="secondary"
-          wide
-          className="tool-button share-card-button"
+          variant={displayShareFallback ? 'ghost' : 'secondary'}
+          wide={!displayShareFallback}
+          className={`${displayShareFallback ? 'tv-action-fallback' : 'tool-button'} share-card-button`}
           onClick={() => {
             void exportShareCard(scores).then((result) => {
               if (result === 'failed') {
@@ -98,7 +99,7 @@ export function ScoresPanel({
             });
           }}
         >
-          {shareLabel}
+          {displayShareFallback ? `${shareLabel} from TV (fallback)` : shareLabel}
         </Button>
       ) : null}
     </GlassPanel>

@@ -30,7 +30,7 @@ const NUMERIC_SETTING_FIELDS = [
   { key: 'drawSeconds', label: 'Drawing seconds', min: 45, max: 120 },
   { key: 'guessSeconds', label: 'Guessing seconds', min: 20, max: 60 },
   { key: 'voteSeconds', label: 'Voting seconds', min: 15, max: 40 },
-  { key: 'resultsSeconds', label: 'Results seconds', min: 6, max: 15 }
+  { key: 'resultsSeconds', label: 'Results seconds', min: 10, max: 15 }
 ] as const;
 
 type NumericSettingKey = (typeof NUMERIC_SETTING_FIELDS)[number]['key'];
@@ -127,7 +127,7 @@ export function RoomSettingsPanel({
       voteSeconds: clamp(numericDraft.voteSeconds, 15, 40, settings.voteSeconds),
       resultsSeconds: clamp(
         numericDraft.resultsSeconds,
-        6,
+        10,
         15,
         settings.resultsSeconds ?? defaults.resultsSeconds
       ),

@@ -1,4 +1,6 @@
-# Draw Party Design System
+# Draw Party Historical Design Reference
+
+> **Historical reference only.** The implementation-binding design contract is [`docs/design.md`](docs/design.md). When the two documents differ, `docs/design.md` wins; add or change product design rules there, not here.
 
 ## 1. Atmosphere & Identity
 
@@ -85,7 +87,7 @@ All spacing derives from 4px.
 - The display lobby uses a primary join stage plus a narrower utility rail.
 - Player layouts use one column on phones and task-oriented columns on tablets.
 - Breakpoints: 520px compact phone, 700px tablet, 1120px narrow display, 1600×840 low-height TV, 1800px large TV, 3200px 4K.
-- Host screens must not scroll at supported TV targets; drawing remains the largest player surface; touch controls remain at least 44px.
+- Host screens must not scroll at supported TV targets; drawing remains the largest player surface; touch controls remain at least 52px.
 - Results are a two-column TV scene: drawing and truth on the left, labeled answers and causal score events on the right, with a compact always-visible Continue/next rail. Phones use a single-column look-up companion.
 
 ## 5. Components
@@ -105,7 +107,7 @@ All spacing derives from 4px.
 - **Variants**: standard, wide, spotlight, disabled.
 - **Spacing**: `--space-3` block and `--space-5` inline.
 - **States**: default, hover, active, focus-visible, disabled.
-- **Accessibility**: visible text, 44px minimum target, high-contrast focus halo.
+- **Accessibility**: visible text, 52px minimum target, high-contrast focus halo.
 - **Motion**: scale and translate response between 140ms and 220ms.
 
 ### Status Capsule

@@ -7,7 +7,8 @@ import {
   cloneValidDrawing,
   createEmptyDrawing,
   drawingTestExports,
-  estimateDrawingBytes
+  estimateDrawingBytes,
+  renderDrawing
 } from './drawing';
 
 afterEach(() => {
@@ -155,6 +156,115 @@ describe('drawing utilities', () => {
       expect(recoveredScreenRatio.x).toBeCloseTo((screenPoint.x - rect.left) / rect.width, 3);
       expect(recoveredScreenRatio.y).toBeCloseTo((screenPoint.y - rect.top) / rect.height, 3);
     }
+  });
+
+  it('keeps asymmetric portrait landmarks upright in stored and TV coordinates', () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation((query: string) =>
+      ({
+        matches: query === '(max-width: 699px) and (orientation: portrait)',
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(() => true)
+      }) as unknown as MediaQueryList
+    );
+
+    const context = {
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      transform: vi.fn(),
+      beginPath: vi.fn(),
+      arc: vi.fn(),
+      fill: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 1,
+      lineCap: 'butt',
+      lineJoin: 'miter'
+    } as unknown as CanvasRenderingContext2D;
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context);
+
+    const pad = new DrawingPad(vi.fn());
+    const canvas = pad.root.querySelector('canvas.draw-canvas');
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      throw new Error('Drawing pad must include its canvas.');
+    }
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(
+      DOMRect.fromRect({ x: 0, y: 0, width: 300, height: 400 })
+    );
+
+    const drawStroke = (
+      pointerId: number,
+      start: { x: number; y: number },
+      end: { x: number; y: number }
+    ) => {
+      canvas.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          cancelable: true,
+          pointerId,
+          buttons: 1,
+          clientX: start.x,
+          clientY: start.y
+        })
+      );
+      canvas.dispatchEvent(
+        new PointerEvent('pointermove', {
+          bubbles: true,
+          cancelable: true,
+          pointerId,
+          buttons: 1,
+          clientX: end.x,
+          clientY: end.y
+        })
+      );
+      canvas.dispatchEvent(
+        new PointerEvent('pointerup', {
+          bubbles: true,
+          cancelable: true,
+          pointerId,
+          buttons: 0,
+          clientX: end.x,
+          clientY: end.y
+        })
+      );
+    };
+
+    // A horizontal mark near the phone's top and a vertical mark near its left
+    // make a rotation or mirror regression unambiguous.
+    drawStroke(1, { x: 75, y: 40 }, { x: 225, y: 40 });
+    drawStroke(2, { x: 30, y: 100 }, { x: 30, y: 300 });
+
+    const stored = pad.getDrawing();
+    expect(stored.strokes[0]?.points).toEqual([
+      { x: 368, y: 77 },
+      { x: 656, y: 77 }
+    ]);
+    expect(stored.strokes[1]?.points).toEqual([
+      { x: 282, y: 192 },
+      { x: 282, y: 576 }
+    ]);
+
+    vi.mocked(context.transform).mockClear();
+    vi.mocked(context.moveTo).mockClear();
+    vi.mocked(context.lineTo).mockClear();
+    renderDrawing(document.createElement('canvas'), stored);
+
+    expect(context.transform).not.toHaveBeenCalled();
+    expect(context.moveTo).toHaveBeenNthCalledWith(1, 368, 77);
+    expect(context.lineTo).toHaveBeenNthCalledWith(1, 656, 77);
+    expect(context.moveTo).toHaveBeenNthCalledWith(2, 282, 192);
+    expect(context.lineTo).toHaveBeenNthCalledWith(2, 282, 576);
+
+    pad.destroy();
   });
 
   it('keeps landscape and tablet touches mapped across the full canonical canvas', () => {

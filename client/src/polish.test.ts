@@ -14,7 +14,7 @@ import type { RoundResult, ScoreEntry } from './protocol';
 describe('party polish copy', () => {
   it('summarizes round outcomes from correct voters', () => {
     expect(roundOutcomeText(roundResult([], ['Ava', 'Bo'], { nobodyFoundIt: true }))).toBe(
-      'Nobody got it — artist wins the room'
+      'Nobody found the truth — artist +50'
     );
     expect(roundOutcomeText(roundResult(['Ava'], ['Ava', 'Bo']))).toBe('Ava cracked it');
     expect(roundOutcomeText(roundResult(['Ava', 'Bo'], ['Ava', 'Bo'], { perfectTruth: true }))).toBe(
@@ -30,7 +30,7 @@ describe('party polish copy', () => {
       'No votes came in — no bonus awarded'
     );
     expect(roundOutcomeText(roundResult([], [], { nobodyFoundIt: true }))).toBe(
-      'Nobody got it — artist wins the room'
+      'Nobody found the truth — artist +50'
     );
   });
 

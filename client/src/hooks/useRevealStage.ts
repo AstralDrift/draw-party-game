@@ -9,8 +9,14 @@ const STAGE_ORDER: RevealStage[] = ['hold', 'tally', 'correct', 'deltas', 'compl
 const HOLD_MS = 600;
 export const OPTION_STAGGER_MS = 120;
 const READING_BEAT_MS = 500;
-const TRUTH_BEAT_MS = 750;
-const SCORE_BEAT_MS = 650;
+const LARGE_OPTION_COUNT = 6;
+const MEDIUM_OPTION_COUNT = 4;
+const SMALL_TRUTH_BEAT_MS = 1500;
+const SMALL_SCORE_BEAT_MS = 2000;
+const MEDIUM_TRUTH_BEAT_MS = 2000;
+const MEDIUM_SCORE_BEAT_MS = 3000;
+const LARGE_TRUTH_BEAT_MS = 3000;
+const LARGE_SCORE_BEAT_MS = 4000;
 
 export interface RevealTimeline {
   tallyAt: number;
@@ -19,16 +25,27 @@ export interface RevealTimeline {
   completeAt: number;
 }
 
+function revealReadingBeats(optionCount: number): { truthMs: number; scoreMs: number } {
+  if (optionCount >= LARGE_OPTION_COUNT) {
+    return { truthMs: LARGE_TRUTH_BEAT_MS, scoreMs: LARGE_SCORE_BEAT_MS };
+  }
+  if (optionCount >= MEDIUM_OPTION_COUNT) {
+    return { truthMs: MEDIUM_TRUTH_BEAT_MS, scoreMs: MEDIUM_SCORE_BEAT_MS };
+  }
+  return { truthMs: SMALL_TRUTH_BEAT_MS, scoreMs: SMALL_SCORE_BEAT_MS };
+}
+
 export function revealTimeline(optionCount: number): RevealTimeline {
   const safeOptionCount = Math.max(0, Math.floor(optionCount));
+  const beats = revealReadingBeats(safeOptionCount);
   const tallyAt = HOLD_MS;
   const correctAt = tallyAt + safeOptionCount * OPTION_STAGGER_MS + READING_BEAT_MS;
-  const deltasAt = correctAt + TRUTH_BEAT_MS;
+  const deltasAt = correctAt + beats.truthMs;
   return {
     tallyAt,
     correctAt,
     deltasAt,
-    completeAt: deltasAt + SCORE_BEAT_MS
+    completeAt: deltasAt + beats.scoreMs
   };
 }
 
@@ -70,7 +87,7 @@ export function useRevealStage(
   result: RoundResult | null | undefined,
   turnToken: number,
   deadlineMs?: number | null,
-  resultsSeconds = 8
+  resultsSeconds = 10
 ): { stage: RevealStage; complete: boolean } {
   const key = result ? `${result.artistId}:${result.correctAnswer}:${turnToken}` : '';
   const [stage, setStage] = useState<RevealStage>('hold');

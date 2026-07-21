@@ -226,11 +226,15 @@ export async function completeCurrentReveal(
 
   await expect(tv.locator('.results-panel.display-results')).toBeVisible();
   await expect(tv.locator('.results-panel.display-results')).toHaveAttribute('data-reveal-stage', 'complete', {
-    timeout: 10_000
+    timeout: 12_000
   });
   if (continueAfter) {
-    await expect(tv.getByRole('button', { name: 'Continue' })).toBeEnabled({ timeout: 10_000 });
-    await tv.getByRole('button', { name: 'Continue' }).click();
+    const tvContinue = tv.getByRole('button', {
+      name: 'Continue from TV (fallback)',
+      exact: true
+    });
+    await expect(tvContinue).toBeEnabled({ timeout: 12_000 });
+    await tvContinue.click();
   }
 }
 

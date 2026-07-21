@@ -247,6 +247,11 @@ test('phone, Fire tablet, and iPad drawing layouts keep canvas and submit reacha
       }
       expect(metrics.submit.bottom).toBeLessThanOrEqual(target.viewport.height + 4);
       expect(metrics.tools.bottom).toBeLessThanOrEqual(target.viewport.height + 4);
+      expect(metrics.interactiveTargets.length).toBeGreaterThan(0);
+      for (const interactiveTarget of metrics.interactiveTargets) {
+        expect(interactiveTarget.width, `${target.name}: ${interactiveTarget.label} width`).toBeGreaterThanOrEqual(52);
+        expect(interactiveTarget.height, `${target.name}: ${interactiveTarget.label} height`).toBeGreaterThanOrEqual(52);
+      }
       const aspect = metrics.canvas.width / Math.max(1, metrics.canvas.height);
       const expectedAspect = target.viewport.width < 700 ? 3 / 4 : 4 / 3;
       expect(aspect).toBeGreaterThan(expectedAspect - 0.08);
@@ -301,6 +306,7 @@ async function startSoloDrawing(
 async function playerMetrics(page: Page): Promise<{
   backingRatio: number;
   canvas: DOMRect;
+  interactiveTargets: Array<{ height: number; label: string; width: number }>;
   scrollWidth: number;
   submit: DOMRect;
   tools: DOMRect;
@@ -321,6 +327,14 @@ async function playerMetrics(page: Page): Promise<{
     return {
       backingRatio: canvas.width / canvasRect.width,
       canvas: canvasRect,
+      interactiveTargets: Array.from(document.querySelectorAll<HTMLElement>('.drawing-turn button, .drawing-turn summary'))
+        .map((element) => ({ element, target: element.getBoundingClientRect() }))
+        .filter(({ target }) => target.width > 0 && target.height > 0)
+        .map(({ element, target }) => ({
+          height: target.height,
+          label: `${element.tagName.toLowerCase()}.${element.className}`,
+          width: target.width
+        })),
       scrollWidth: document.documentElement.scrollWidth,
       submit: rect('.submit-dock'),
       tools: rect('.tools-drawer')

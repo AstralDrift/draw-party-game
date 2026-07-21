@@ -159,6 +159,7 @@ export function PlayerVoting(): React.JSX.Element {
   const submitted = playerSubmissionAccepted(snapshot, clientId, 'vote', pendingSubmission);
   const sending = submission?.state === 'sending';
   const retrying = submission?.state === 'retry';
+  const nailedIt = Boolean(snapshot.nailedIt);
 
   return (
     <Shell title="Vote">
@@ -173,7 +174,9 @@ export function PlayerVoting(): React.JSX.Element {
             <HostTimeExtension />
           </div>
         </div>
-        <p className="action-hint">{playerActionHint('voting', isArtist)}</p>
+        <p className="action-hint">
+          {nailedIt ? 'Your title matched the prompt, so the server locked the correct vote.' : playerActionHint('voting', isArtist)}
+        </p>
         <DrawingCanvas drawing={snapshot.currentDrawing} className="reveal-canvas phone-canvas" />
         {retrying ? (
           <div className="error" role="alert">
@@ -182,6 +185,10 @@ export function PlayerVoting(): React.JSX.Element {
         ) : null}
         {isArtist ? (
           <div className="success-box">You’re the artist. Watch who takes the bait.</div>
+        ) : nailedIt ? (
+          <div className="success-box" role="status" aria-live="polite">
+            Nailed it — correct vote locked.
+          </div>
         ) : (
           <div className="vote-list compact player-vote-list">
             {snapshot.votingOptions.map((option, index) => {
@@ -235,12 +242,12 @@ export function PlayerVoting(): React.JSX.Element {
             })}
           </div>
         )}
-        {!isArtist && sending ? (
+        {!isArtist && !nailedIt && sending ? (
           <p className="submission-state is-pending" role="status" aria-busy="true">
             Sending your vote…
           </p>
         ) : null}
-        {!isArtist && submitted ? (
+        {!isArtist && !nailedIt && submitted ? (
           <p className="submission-state is-accepted" role="status" aria-live="polite">
             Vote locked!
           </p>

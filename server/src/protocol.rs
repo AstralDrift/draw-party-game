@@ -21,8 +21,8 @@ pub const DEFAULT_VOTE_SECONDS: u64 = 20;
 pub const VOTE_SECONDS: u64 = DEFAULT_VOTE_SECONDS;
 pub const MIN_VOTE_SECONDS: u64 = 15;
 pub const MAX_VOTE_SECONDS: u64 = 40;
-pub const DEFAULT_RESULTS_SECONDS: u64 = 8;
-pub const MIN_RESULTS_SECONDS: u64 = 6;
+pub const DEFAULT_RESULTS_SECONDS: u64 = 10;
+pub const MIN_RESULTS_SECONDS: u64 = 10;
 pub const MAX_RESULTS_SECONDS: u64 = 15;
 pub const DEADLINE_EXTENSION_SECONDS: u64 = 30;
 pub const DEFAULT_PROMPT_PACK_ID: &str = "safe-party";
@@ -224,6 +224,8 @@ pub struct RoomSnapshot {
     pub current_artist_name: Option<String>,
     pub current_drawing: Option<DrawingDoc>,
     pub voting_options: Vec<VotingOption>,
+    #[serde(default)]
+    pub nailed_it: bool,
     pub round_result: Option<RoundResult>,
     pub final_scores: Vec<ScoreEntry>,
     pub drawing_submitted_ids: Vec<String>,

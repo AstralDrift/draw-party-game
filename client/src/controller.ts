@@ -153,9 +153,13 @@ export interface PendingRenameIntent {
   canonicalNameAtRequest: string;
   state: 'queued' | 'sent';
   sentAfterSnapshotRevision: number | null;
+  latestRequestedName: string | null;
 }
 
-export type PendingRenameSnapshotAction = 'wait' | 'send' | 'accept';
+export interface PendingRenameSnapshotResolution {
+  next: PendingRenameIntent | null;
+  sendName: string | null;
+}
 
 export function createPendingRenameIntent(
   requestedName: string,
@@ -167,8 +171,31 @@ export function createPendingRenameIntent(
     requestedName,
     canonicalNameAtRequest,
     state: sent ? 'sent' : 'queued',
-    sentAfterSnapshotRevision: sent ? snapshotRevision : null
+    sentAfterSnapshotRevision: sent ? snapshotRevision : null,
+    latestRequestedName: null
   };
+}
+
+/** Keeps one rename in flight while coalescing repeated saves to the latest desired name. */
+export function coalescePendingRenameIntent(
+  intent: PendingRenameIntent,
+  requestedName: string
+): PendingRenameIntent {
+  if (intent.state === 'queued') {
+    return {
+      ...intent,
+      requestedName,
+      latestRequestedName: null
+    };
+  }
+  return {
+    ...intent,
+    latestRequestedName: requestedName === intent.requestedName ? null : requestedName
+  };
+}
+
+export function pendingRenameDesiredName(intent: PendingRenameIntent): string {
+  return intent.latestRequestedName ?? intent.requestedName;
 }
 
 export function queuePendingRenameAfterDisconnect(
@@ -177,7 +204,13 @@ export function queuePendingRenameAfterDisconnect(
   if (!intent) {
     return null;
   }
-  return { ...intent, state: 'queued', sentAfterSnapshotRevision: null };
+  return {
+    ...intent,
+    requestedName: pendingRenameDesiredName(intent),
+    state: 'queued',
+    sentAfterSnapshotRevision: null,
+    latestRequestedName: null
+  };
 }
 
 export function markPendingRenameSent(
@@ -191,25 +224,39 @@ export function markPendingRenameSent(
   };
 }
 
-export function pendingRenameSnapshotAction(
+export function reconcilePendingRenameSnapshot(
   intent: PendingRenameIntent | null,
   snapshotRevision: number,
   canonicalName: string
-): PendingRenameSnapshotAction {
+): PendingRenameSnapshotResolution {
   if (!intent) {
-    return 'wait';
+    return { next: null, sendName: null };
   }
   if (intent.state === 'queued') {
-    return 'send';
+    return { next: intent, sendName: intent.requestedName };
   }
   const isLaterSnapshot =
     intent.sentAfterSnapshotRevision !== null &&
     snapshotRevision > intent.sentAfterSnapshotRevision;
   const isNoOp = intent.requestedName === intent.canonicalNameAtRequest;
   const canonicalNameChanged = canonicalName !== intent.canonicalNameAtRequest;
-  return isLaterSnapshot && (isNoOp || canonicalNameChanged)
-    ? 'accept'
-    : 'wait';
+  if (!isLaterSnapshot || (!isNoOp && !canonicalNameChanged)) {
+    return { next: intent, sendName: null };
+  }
+
+  const latestRequestedName = intent.latestRequestedName;
+  if (!latestRequestedName || latestRequestedName === canonicalName) {
+    return { next: null, sendName: null };
+  }
+  return {
+    next: createPendingRenameIntent(
+      latestRequestedName,
+      canonicalName,
+      false,
+      snapshotRevision
+    ),
+    sendName: latestRequestedName
+  };
 }
 
 type SubmissionWatchdogIdentity = Pick<PendingSubmission, 'kind' | 'turnToken'>;

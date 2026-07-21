@@ -126,6 +126,8 @@ export interface RoomSnapshot {
   currentArtistName?: string | null;
   currentDrawing?: DrawingDoc | null;
   votingOptions: VotingOption[];
+  /** Per-recipient marker for a truth-matching guess whose correct vote is server-locked. */
+  nailedIt?: boolean;
   roundResult?: RoundResult | null;
   finalScores: ScoreEntry[];
   drawingSubmittedIds: string[];
@@ -229,7 +231,7 @@ export function defaultRoomSettings(): RoomSettings {
     drawSeconds: 75,
     guessSeconds: 30,
     voteSeconds: 20,
-    resultsSeconds: 8,
+    resultsSeconds: 10,
     promptPackId: 'safe-party'
   };
 }
@@ -472,6 +474,7 @@ function isRoomSnapshot(value: unknown): value is RoomSnapshot {
     (value.currentArtistName === undefined || value.currentArtistName === null || typeof value.currentArtistName === 'string') &&
     (value.currentDrawing === undefined || value.currentDrawing === null || isDrawingDoc(value.currentDrawing)) &&
     isVotingOptions(value.votingOptions) &&
+    (value.nailedIt === undefined || typeof value.nailedIt === 'boolean') &&
     (value.roundResult === undefined || value.roundResult === null || isRoundResult(value.roundResult)) &&
     isScoreEntries(value.finalScores) &&
     isStringArray(value.drawingSubmittedIds) &&

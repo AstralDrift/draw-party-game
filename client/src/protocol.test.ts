@@ -170,6 +170,12 @@ describe('protocol helpers', () => {
   it('rejects poisoned snapshots and nested drawings', () => {
     const base = baseSnapshot();
     expect(
+      isServerMessage({ type: 'roomSnapshot', snapshot: { ...base, nailedIt: true } })
+    ).toBe(true);
+    expect(
+      isServerMessage({ type: 'roomSnapshot', snapshot: { ...base, nailedIt: 'yes' } })
+    ).toBe(false);
+    expect(
       isServerMessage({
         type: 'roomSnapshot',
         snapshot: { ...base, settings: { ...base.settings, rounds: 0 } }
@@ -327,7 +333,7 @@ describe('protocol helpers', () => {
       drawSeconds: 75,
       guessSeconds: 30,
       voteSeconds: 20,
-      resultsSeconds: 8,
+      resultsSeconds: 10,
       promptPackId: 'safe-party'
     });
   });

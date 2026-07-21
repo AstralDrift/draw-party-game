@@ -1,4 +1,4 @@
-/* Party Glass is the final visual layer. Tokens mirror DESIGN.md. */
+/* Party Glass is the final visual layer. Tokens mirror the canonical docs/design.md. */
 :root {
   --color-canvas-deep: #080b12;
   --color-canvas-mid: #101827;
@@ -557,7 +557,7 @@ body {
 .primary,
 .tool-button,
 .vote-option {
-  min-height: 44px;
+  min-height: var(--touch);
   border-radius: var(--radius-control);
   font-weight: 650;
   letter-spacing: -0.015em;
@@ -664,7 +664,7 @@ body {
 .swatch.is-selected {
   border-color: var(--color-text-primary);
   box-shadow: 0 0 0 4px var(--color-action), 0 12px 28px var(--glass-shadow);
-  transform: scale(0.94);
+  transform: none;
 }
 
 .success-box,
@@ -832,7 +832,7 @@ input:focus-visible,
   }
 
   .display-grid-lobby .start-button {
-    min-height: 42px;
+    min-height: var(--touch);
     margin-top: 0;
   }
 

@@ -60,7 +60,7 @@ pub(super) fn custom_settings() -> RoomSettings {
         draw_seconds: 60,
         guess_seconds: 20,
         vote_seconds: 15,
-        results_seconds: 8,
+        results_seconds: 10,
         prompt_pack_id: DEFAULT_PROMPT_PACK_ID.to_string(),
     }
 }

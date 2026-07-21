@@ -22,7 +22,7 @@ From `server/src/protocol.rs` (defaults and limits):
 | `DEFAULT_DRAW_SECONDS` | 75 | Range 45–120 |
 | `DEFAULT_GUESS_SECONDS` | 30 | Range 20–60 |
 | `DEFAULT_VOTE_SECONDS` | 20 | Range 15–40 |
-| `DEFAULT_RESULTS_SECONDS` | 8 | Range 6–15 |
+| `DEFAULT_RESULTS_SECONDS` | 10 | Range 10–15 |
 | `DEADLINE_EXTENSION_SECONDS` | 30 | Once per active timed turn |
 | `DEFAULT_PROMPT_PACK_ID` | `safe-party` | Also `party-chaos` |
 | `ROOM_TTL_MS` | 3 hours | After all participants disconnect |
@@ -57,8 +57,11 @@ Important fields:
 - `deadlineMs` / `serverNowMs` — client syncs countdowns to server time
 - `gameMode` — current server-authoritative Party or Practice mode
 - `deadlineExtensionAvailable` — true before expiry when the timed turn has not received its one extension
+- `nailedIt` — per-recipient Voting marker; true only for a player whose normalized guess matched the prompt and whose correct vote was locked by the server
 - `players[].spectator` — mid-game watchers until promoted
 - `players[].isHost` — derived badge for the room host phone (sticky while connected; on disconnect, earliest joined connected non-spectator, else earliest joined connected)
+
+Voting snapshots remain redacted: `isCorrect` is false for every public option, and fake authorship is hidden from other players and the display. A duplicate fake is sent as one option; each coauthor's own personalized snapshot marks that option as theirs so the controller can disable it, while the server independently rejects every coauthor's vote for it. A truth-matching guess never appears as a fake option.
 
 ## Client → server (`ClientMessage`)
 

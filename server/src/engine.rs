@@ -538,7 +538,6 @@ impl Room {
         }
 
         let guess = sanitize_guess(&guess)?;
-        self.ensure_guess_available(&guess)?;
         self.round.guesses.insert(player_id.to_string(), guess);
         Ok(self
             .advance_if_ready(now_ms)?
@@ -578,7 +577,11 @@ impl Room {
                 EngineError::new("invalid_vote", "That voting option is not available.")
             })?;
 
-        if option.author_player_id.as_deref() == Some(player_id) {
+        if self
+            .fake_author_ids_for_option(option)
+            .iter()
+            .any(|author_id| author_id == player_id)
+        {
             return Err(EngineError::new(
                 "own_guess",
                 "Players cannot vote for their own fake answer.",
@@ -747,6 +750,7 @@ impl Room {
             current_artist_name,
             current_drawing,
             voting_options,
+            nailed_it: false,
             round_result: self.round.result.clone(),
             final_scores: self.final_scores(),
             drawing_submitted_ids: self.round.drawings.keys().cloned().collect(),
@@ -757,6 +761,42 @@ impl Room {
 
     pub fn prompt_for_player(&self, player_id: &str) -> Option<String> {
         self.round.prompts.get(player_id).cloned()
+    }
+
+    pub fn player_nailed_it(&self, player_id: &str) -> bool {
+        if self.phase != GamePhase::Voting {
+            return false;
+        }
+        let Some(artist_id) = self.round.current_artist_id.as_deref() else {
+            return false;
+        };
+        let Some(correct_answer) = self.round.prompts.get(artist_id) else {
+            return false;
+        };
+        let Some(guess) = self.round.guesses.get(player_id) else {
+            return false;
+        };
+        let Some(option_id) = self.round.votes.get(player_id) else {
+            return false;
+        };
+        normalize_text(guess) == normalize_text(correct_answer)
+            && self
+                .round
+                .voting_options
+                .iter()
+                .any(|option| option.id == *option_id && option.is_correct)
+    }
+
+    pub fn player_authored_voting_option(&self, player_id: &str, option_id: &str) -> bool {
+        self.round
+            .voting_options
+            .iter()
+            .find(|option| option.id == option_id)
+            .is_some_and(|option| {
+                self.fake_author_ids_for_option(option)
+                    .iter()
+                    .any(|author_id| author_id == player_id)
+            })
     }
 
     fn start_drawing_round(
@@ -1004,6 +1044,7 @@ impl Room {
             .cloned()
             .ok_or_else(|| EngineError::new("missing_prompt", "No prompt is active."))?;
 
+        let normalized_correct_answer = normalize_text(&correct_answer);
         let mut options = vec![VotingOption {
             id: String::new(),
             text: correct_answer,
@@ -1011,16 +1052,34 @@ impl Room {
             author_name: None,
             is_correct: true,
         }];
+        let mut nailed_it_player_ids = Vec::new();
+        let mut fake_groups: BTreeMap<String, (String, Vec<String>)> = BTreeMap::new();
 
         for (player_id, guess) in &self.round.guesses {
+            let normalized_guess = normalize_text(guess);
+            if normalized_guess == normalized_correct_answer {
+                nailed_it_player_ids.push(player_id.clone());
+                continue;
+            }
+            fake_groups
+                .entry(normalized_guess)
+                .or_insert_with(|| (guess.clone(), Vec::new()))
+                .1
+                .push(player_id.clone());
+        }
+
+        for (_, (guess, author_ids)) in fake_groups {
+            let primary_author_id = author_ids.first().cloned().ok_or_else(|| {
+                EngineError::new("missing_author", "A fake answer has no author.")
+            })?;
             let author_name = self
                 .players
-                .get(player_id)
+                .get(&primary_author_id)
                 .map(|player| player.name.clone());
             options.push(VotingOption {
                 id: String::new(),
-                text: guess.clone(),
-                author_player_id: Some(player_id.clone()),
+                text: guess,
+                author_player_id: Some(primary_author_id),
                 author_name,
                 is_correct: false,
             });
@@ -1032,6 +1091,18 @@ impl Room {
         }
         self.round.voting_options = options;
         self.round.votes.clear();
+        let correct_option_id = self
+            .round
+            .voting_options
+            .iter()
+            .find(|option| option.is_correct)
+            .map(|option| option.id.clone())
+            .ok_or_else(|| EngineError::new("missing_truth", "No correct voting option exists."))?;
+        for player_id in nailed_it_player_ids {
+            self.round
+                .votes
+                .insert(player_id, correct_option_id.clone());
+        }
         if self.round.voting_options.len() < 2 {
             self.finish_voting(now_ms)?;
             return Ok(());
@@ -1096,14 +1167,21 @@ impl Room {
                         related_player_id: Some(voter_id.clone()),
                     });
                 }
-            } else if let Some(author_id) = &option.author_player_id {
-                if self.game_mode == GameMode::Party {
-                    pending_score_events.push(PendingScoreEvent {
-                        kind: ScoreEventKind::FooledPlayer,
-                        player_id: author_id.clone(),
-                        points: 50,
-                        related_player_id: Some(voter_id.clone()),
-                    });
+            } else if self.game_mode == GameMode::Party {
+                let author_ids = self.fake_author_ids_for_option(option);
+                let author_count = author_ids.len();
+                if author_count > 0 {
+                    let base_points = 50 / author_count as i32;
+                    let remainder = 50_usize % author_count;
+                    for (index, author_id) in author_ids.into_iter().enumerate() {
+                        let points = base_points + if index < remainder { 1 } else { 0 };
+                        pending_score_events.push(PendingScoreEvent {
+                            kind: ScoreEventKind::FooledPlayer,
+                            player_id: author_id,
+                            points,
+                            related_player_id: Some(voter_id.clone()),
+                        });
+                    }
                 }
             }
         }
@@ -1166,7 +1244,17 @@ impl Room {
                 option_text: option.text.clone(),
                 voter_names: breakdown_by_option.remove(&option.id).unwrap_or_default(),
                 is_correct: option.is_correct,
-                author_name: option.author_name.clone(),
+                author_name: (!option.is_correct).then(|| {
+                    self.fake_author_ids_for_option(option)
+                        .into_iter()
+                        .filter_map(|player_id| {
+                            self.players
+                                .get(&player_id)
+                                .map(|player| player.name.clone())
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" & ")
+                }),
             })
             .collect();
 
@@ -1345,27 +1433,17 @@ impl Room {
         Ok(())
     }
 
-    fn ensure_guess_available(&self, guess: &str) -> EngineResult<()> {
-        let normalized_guess = normalize_text(guess);
-        let correct_answer = self
-            .round
-            .current_artist_id
-            .as_deref()
-            .and_then(|artist_id| self.round.prompts.get(artist_id))
-            .ok_or_else(|| EngineError::new("missing_prompt", "No prompt is active."))?;
-        let conflicts = normalized_guess == normalize_text(correct_answer)
-            || self
-                .round
-                .guesses
-                .values()
-                .any(|accepted| normalize_text(accepted) == normalized_guess);
-        if conflicts {
-            return Err(EngineError::new(
-                "guess_conflict",
-                "That title can't be used. Try a different one.",
-            ));
+    fn fake_author_ids_for_option(&self, option: &VotingOption) -> Vec<String> {
+        if option.is_correct {
+            return Vec::new();
         }
-        Ok(())
+        let normalized_option = normalize_text(&option.text);
+        self.round
+            .guesses
+            .iter()
+            .filter(|(_, guess)| normalize_text(guess) == normalized_option)
+            .map(|(player_id, _)| player_id.clone())
+            .collect()
     }
 
     fn eligible_voter_count(&self) -> usize {

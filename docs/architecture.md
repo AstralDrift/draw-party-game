@@ -37,8 +37,8 @@ stateDiagram-v2
 
 1. **Lobby** — display creates room + QR/code; phones join; display adjusts timers/rounds/prompt pack. Party requires three connected phones; one phone can explicitly start unscored Practice.
 2. **Drawing** — each connected non-spectator draws an assigned prompt and submits once they have ink.
-3. **Guessing** — one drawing at a time; non-artist players submit fake answers; reactions allowed.
-4. **Voting** — non-artists pick the real prompt; artist watches; reactions allowed.
+3. **Guessing** — one drawing at a time; non-artist players submit titles; reactions allowed. The server accepts every sanitized title without revealing whether it matches the truth or another player's title.
+4. **Voting** — non-artists pick the real prompt; artist watches; reactions allowed. A normalized truth match is omitted from the fake list and becomes that player's locked correct vote. Normalized duplicate fakes share one option, and every coauthor is blocked from voting for it.
 5. **Results** — server publishes `RoundResult`; client stages reveal; engine auto-advances after `resultsSeconds` unless display Continues early.
 6. **FinalScores** — podium after configured rounds; display can restart or export a share card. Practice always finishes after one drawing round and must be explicitly replayed as Practice.
 
@@ -51,11 +51,13 @@ Values live in `server/src/engine.rs` (`finish_voting`):
 | Event | Points |
 |-------|--------|
 | Correct vote | +200 to voter, +100 to artist |
-| Vote for a fake answer | +50 to that fake's author |
+| Vote for a fake answer | +50 total to that fake's author(s) |
 | Nobody found it (at least one vote, no correct votes) | +50 to artist |
 | Perfect truth (every eligible voter picks correct) | +25 to artist per eligible voter |
 
 Spectators are not eligible voters. The artist is never an eligible voter for their own turn. At Results close, the eligible cohort contains assigned non-artists who are still connected plus anyone whose vote was already accepted before disconnecting. A disconnected non-voter neither blocks progress nor denies perfect truth. Practice produces the reveal result but never awards points.
+
+When normalized duplicate fakes are merged, Results names every coauthor. Each fooled voter's +50 award is split once across those coauthors: player IDs are sorted, integer division supplies the base share, and any remainder is assigned in that order. The related `fooledPlayer` events therefore total exactly 50 for each fooled voter.
 
 Every award also produces a typed causal score event. Per-player event sums equal `ScoreDelta.delta`, and `ScoreDelta.scoreAfter` is the authoritative post-award total.
 
@@ -66,6 +68,7 @@ Every award also produces a typed causal score event. Per-player event sums equa
 - Player re-join sets `connected: true`; display re-attach re-registers the display via host token. Heartbeats are keepalive only (`Pong`); they do not flip `connected`.
 - The first connected phone is the room host (`players[].isHost`) and may change lobby settings, start the game, add 30 seconds to a timed turn, Continue results, or Play Again. Host is sticky while that player stays connected; if they disconnect, the engine promotes the earliest-joined connected non-spectator, otherwise the earliest-joined connected player. The client renders the +30 control only on the host phone. The TV display remains server-authorized as an optional remote / e2e fallback, but party play should not require a TV remote after the room code appears.
 - If a display reconnects to an expired room (`room_not_found`), the client clears the stale host token and creates a fresh lobby.
+- Player controllers may keep one optional, tab-scoped `sessionStorage` draft for the current Drawing or Guessing turn. Drafts expire after 5 minutes, are capped at 1 MiB, and are bound to room, player, phase, and server turn (plus artist for guesses). Votes are never cached, drafts are never auto-submitted, and a draft never becomes pending server state. An authoritative snapshot that shows acceptance, a phase/turn/artist or identity mismatch, or an explicit room/session exit clears the draft.
 - A blank Drawing timeout suspends that mode's assignments for a same-mode retry. Explicitly starting the other mode abandons the suspended assignment and begins a fresh game at round one with the currently connected roster. Selecting another valid prompt pack in this retry lobby also abandons the hidden assignment, promotes connected replacement spectators into the active fresh-lobby roster, and makes the next start fresh.
 
 ## Spectators and seat limits

@@ -21,8 +21,16 @@ export function JoinScreen(): React.JSX.Element {
     clearError
   } = useGame();
   const [manualRoomEntry, setManualRoomEntry] = useState(!initialRoomCode);
+  const [validationError, setValidationError] = useState<{
+    field: 'roomCode' | 'name';
+    message: string;
+  } | null>(null);
   const joinFormRef = useRef<HTMLFormElement>(null);
   const joinStartedRef = useRef(false);
+  const confirmedRoomCode = manualRoomEntry ? '' : initialRoomCode;
+
+  const formInput = (name: 'roomCode' | 'name') =>
+    joinFormRef.current?.elements.namedItem(name) as HTMLInputElement | null;
 
   useEffect(() => {
     if (!pendingJoin) {
@@ -33,8 +41,19 @@ export function JoinScreen(): React.JSX.Element {
     }
   }, [pendingJoin]);
 
+  useEffect(() => {
+    if (!pendingJoin && confirmedRoomCode) {
+      formInput('name')?.focus();
+    }
+  }, [confirmedRoomCode, pendingJoin]);
+
+  const focusName = () => {
+    formInput('name')?.focus();
+  };
+
   const changeRoom = () => {
     joinStartedRef.current = false;
+    setValidationError(null);
     setManualRoomEntry(true);
     clearError();
     cancelJoin();
@@ -61,22 +80,28 @@ export function JoinScreen(): React.JSX.Element {
     );
   }
 
-  const confirmedRoomCode = manualRoomEntry ? '' : initialRoomCode;
   const join = () => {
     const roomCode = (confirmedRoomCode || roomCodeDraft).trim().toUpperCase();
     const name = playerName.trim();
     if (roomCode.length !== 4) {
-      setErrorMessage('Enter the four-letter room code from the TV.');
+      const message = 'Enter the four-letter room code from the TV.';
+      setValidationError({ field: 'roomCode', message });
+      setErrorMessage(message);
+      formInput('roomCode')?.focus();
       return;
     }
     if (!name) {
-      setErrorMessage('Enter your name so everyone knows who is playing.');
+      const message = 'Enter your name so everyone knows who is playing.';
+      setValidationError({ field: 'name', message });
+      setErrorMessage(message);
+      focusName();
       return;
     }
     if (joinStartedRef.current) {
       return;
     }
     joinStartedRef.current = true;
+    setValidationError(null);
     clearError();
     joinRoom(roomCode, name);
   };
@@ -96,6 +121,10 @@ export function JoinScreen(): React.JSX.Element {
           className="join-form"
           onSubmit={(event) => {
             event.preventDefault();
+            if (!confirmedRoomCode && document.activeElement === formInput('roomCode')) {
+              focusName();
+              return;
+            }
             join();
           }}
         >
@@ -107,6 +136,8 @@ export function JoinScreen(): React.JSX.Element {
           ) : (
             <Field label="Room code">
               <TextInput
+                id="join-room-code"
+                name="roomCode"
                 className="code-input"
                 value={roomCodeDraft}
                 maxLength={4}
@@ -115,12 +146,14 @@ export function JoinScreen(): React.JSX.Element {
                 autoCapitalize="characters"
                 autoFocus
                 enterKeyHint="next"
+                aria-invalid={validationError?.field === 'roomCode'}
+                aria-describedby={
+                  validationError?.field === 'roomCode' ? 'join-room-code-error' : undefined
+                }
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                     event.preventDefault();
-                    joinFormRef.current
-                      ?.querySelector<HTMLInputElement>('input[name="name"]')
-                      ?.focus();
+                    focusName();
                   }
                 }}
                 onChange={(event) => {
@@ -130,13 +163,20 @@ export function JoinScreen(): React.JSX.Element {
                       .replace(/[^A-Z0-9]/g, '')
                       .slice(0, 4)
                   );
+                  setValidationError(null);
                   clearError();
                 }}
               />
+              {validationError?.field === 'roomCode' ? (
+                <span id="join-room-code-error" className="visually-hidden">
+                  {validationError.message}
+                </span>
+              ) : null}
             </Field>
           )}
           <Field label="Name">
             <TextInput
+              id="join-player-name"
               name="name"
               value={playerName}
               maxLength={24}
@@ -144,11 +184,21 @@ export function JoinScreen(): React.JSX.Element {
               autoComplete="name"
               autoFocus={Boolean(confirmedRoomCode)}
               enterKeyHint="go"
+              aria-invalid={validationError?.field === 'name'}
+              aria-describedby={
+                validationError?.field === 'name' ? 'join-player-name-error' : undefined
+              }
               onChange={(event) => {
                 setPlayerName(event.target.value);
+                setValidationError(null);
                 clearError();
               }}
             />
+            {validationError?.field === 'name' ? (
+              <span id="join-player-name-error" className="visually-hidden">
+                {validationError.message}
+              </span>
+            ) : null}
           </Field>
           <Button wide icon={LogIn} type="submit">
             Join the Party

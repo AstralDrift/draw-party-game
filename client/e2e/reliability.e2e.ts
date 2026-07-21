@@ -13,9 +13,14 @@ import {
 } from './helpers';
 
 const TURN_DRAFT_STORAGE_KEY = 'draw-party-turn-draft';
+const PENDING_RENAME_STORAGE_KEY = 'draw-party-pending-rename';
 
 async function turnDraftStored(page: Page): Promise<boolean> {
   return page.evaluate((key) => sessionStorage.getItem(key) !== null, TURN_DRAFT_STORAGE_KEY);
+}
+
+async function pendingRenameStored(page: Page): Promise<boolean> {
+  return page.evaluate((key) => sessionStorage.getItem(key) !== null, PENDING_RENAME_STORAGE_KEY);
 }
 
 async function drawingCanvasHasInk(page: Page): Promise<boolean> {
@@ -241,6 +246,94 @@ test('an interrupted rename is replayed after reconnect and reaches the TV', asy
     await expect(player.getByText("Avery, you're the host")).toBeVisible();
     await expect(tv.locator('.player-name-text')).toHaveText('Avery');
     await expect.poll(() => submissionSendCount(player, 'setName')).toBe(2);
+  } finally {
+    await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
+  }
+});
+
+test('an offline rename survives full refresh and is replayed after authoritative rejoin', async ({
+  baseURL,
+  browser
+}) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+    const [player] = await createPlayers(
+      browser,
+      contexts,
+      appUrl,
+      roomCode,
+      ['Ava'],
+      undefined,
+      (context) => installSubmissionHarness(context)
+    );
+
+    await configureSubmissionHarness(player, 'setName', 'defer');
+    await player.getByRole('button', { name: 'Edit name' }).click();
+    await player.getByLabel('Your name').fill('Avery');
+    await player.getByRole('button', { name: 'Save name' }).click();
+    await expect.poll(() => pendingRenameStored(player)).toBe(true);
+    await expect.poll(() => submissionSendCount(player, 'setName')).toBe(1);
+
+    await player.reload();
+
+    await expect(player.locator('#connection-text')).toHaveText('Connected', { timeout: 5000 });
+    await expect(player.getByText("Avery, you're the host")).toBeVisible();
+    await expect(tv.locator('.player-name-text')).toHaveText('Avery');
+    await expect.poll(() => submissionSendCount(player, 'setName')).toBe(1);
+    await expect.poll(() => pendingRenameStored(player)).toBe(false);
+  } finally {
+    await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
+  }
+});
+
+test('rapid renames serialize before the latest name reconnects after an interrupted ack', async ({
+  baseURL,
+  browser
+}) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+    const [player] = await createPlayers(
+      browser,
+      contexts,
+      appUrl,
+      roomCode,
+      ['Ava'],
+      undefined,
+      (context) => installSubmissionHarness(context)
+    );
+
+    await configureSubmissionHarness(player, 'setName', 'defer');
+    await player.getByRole('button', { name: 'Edit name' }).click();
+    await player.getByLabel('Your name').fill('Bob');
+    await player.getByRole('button', { name: 'Save name' }).click();
+    await player.getByRole('button', { name: 'Edit name' }).click();
+    await player.getByLabel('Your name').fill('Carol');
+    await player.getByRole('button', { name: 'Save name' }).click();
+    await expect.poll(() => submissionSendCount(player, 'setName')).toBe(1);
+
+    await configureSubmissionHarness(player, 'setName', 'drop');
+    await releaseDeferredSubmission(player);
+
+    await expect(player.locator('#connection-text')).not.toHaveText('Connected');
+    await expect(player.locator('#connection-text')).toHaveText('Connected', { timeout: 5000 });
+    await expect(player.getByText("Carol, you're the host")).toBeVisible();
+    await expect(tv.locator('.player-name-text')).toHaveText('Carol');
+    await expect.poll(() => submissionSendCount(player, 'setName')).toBe(3);
+    await expect.poll(() => pendingRenameStored(player)).toBe(false);
   } finally {
     await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
   }
@@ -474,8 +567,12 @@ test('late join mid-drawing becomes spectator and promotes next round', async ({
         await voter.locator('button.vote-option:not([disabled])').first().click();
       }
       await expect(tv.getByText('The real prompt was')).toBeVisible();
-      await expect(tv.getByRole('button', { name: 'Continue' })).toBeEnabled({ timeout: 7000 });
-      await tv.getByRole('button', { name: 'Continue' }).click();
+      const tvContinue = tv.getByRole('button', {
+        name: 'Continue from TV (fallback)',
+        exact: true
+      });
+      await expect(tvContinue).toBeEnabled({ timeout: 9000 });
+      await tvContinue.click();
     }
 
     await expect(tv.getByText('Phones are drawing')).toBeVisible();

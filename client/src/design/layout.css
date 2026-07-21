@@ -94,36 +94,42 @@
 }
 
 .display-grid-lobby .settings-panel .input {
-  min-height: 34px;
+  min-height: var(--touch);
   margin: 0;
   padding: 6px 10px;
 }
 
 .display-grid-lobby .settings-panel .btn--primary {
   grid-column: 1;
-  min-height: 38px;
+  min-height: var(--touch);
 }
 
 .display-grid-lobby .settings-panel .sound-toggle {
   grid-column: 2;
   margin: 0;
-  min-height: 38px;
+  min-height: var(--touch);
 }
 
 .display-grid-lobby .settings-summary {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: minmax(128px, 0.55fr) minmax(0, 1fr);
-  gap: 8px 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
 }
 
 .display-grid-lobby .settings-summary > div {
-  display: contents;
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
 }
 
 .display-grid-lobby .settings-summary strong {
   align-self: center;
   font-size: 0.95rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .display-grid-voting {
@@ -238,6 +244,18 @@
   font-size: var(--display-meta);
 }
 
+.display .eyebrow,
+.display .room-code-label,
+.display .host-badge {
+  font-size: var(--display-meta);
+}
+
+.display .room-hero-sub,
+.display .panel-subtitle,
+.display .empty-state {
+  font-size: max(1rem, var(--display-meta));
+}
+
 .display .player-list {
   grid-auto-rows: minmax(clamp(48px, 2vw, 72px), auto);
   align-content: start;
@@ -245,6 +263,15 @@
 
 .display .player-row {
   min-width: 0;
+}
+
+.display .player-identity {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.display .player-name-text {
+  overflow-wrap: anywhere;
 }
 
 .display .player-doodle {
@@ -811,7 +838,21 @@
 
 .share-card-button {
   margin-top: var(--space-2);
-  min-height: 44px;
+  min-height: var(--touch);
+}
+
+.display .tv-action-fallback {
+  justify-self: center;
+  border-color: var(--border-hairline);
+  background: transparent;
+  color: var(--text-secondary);
+  box-shadow: none;
+  font-size: var(--display-meta);
+}
+
+.display .tv-action-fallback:not(:disabled):hover {
+  background: var(--surface-glass-soft);
+  color: var(--text-primary);
 }
 
 .confetti-piece {
@@ -838,7 +879,7 @@
 }
 
 .app-shell.player.phase-drawing {
-  --touch-target: 46px;
+  --touch-target: var(--touch);
   max-width: 760px;
   min-height: 100dvh;
   padding:
@@ -859,6 +900,12 @@
 
 .drawing-turn .drawing-pad {
   min-width: 0;
+}
+
+.player.phase-drawing .swatch {
+  flex-shrink: 0;
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
 }
 
 .drawing-turn .canvas-stage {
@@ -996,6 +1043,7 @@
   .drawing-turn .tools-summary {
     display: flex;
     align-items: center;
+    min-width: var(--touch-target);
     min-height: var(--touch-target);
     padding: 0;
     color: var(--color-ink);
@@ -1085,6 +1133,84 @@
 }
 
 @media (max-width: 520px) and (max-height: 720px) {
+  .app-shell.player.phase-final-scores {
+    padding-top: calc(var(--space-2) + var(--safe-top));
+    padding-bottom: calc(var(--space-3) + var(--safe-bottom));
+  }
+
+  /* Phones are controllers at the finale. Keep the rematch and complete podium
+     in one glance instead of repeating a TV-sized winner card below the fold. */
+  .player.phase-final-scores .scores-panel {
+    padding: var(--space-4);
+  }
+
+  .player.phase-final-scores .scores-panel > .winner-callout {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "label score"
+      "winner score";
+    align-items: center;
+    gap: 2px var(--space-2);
+    padding: var(--space-3);
+  }
+
+  .player.phase-final-scores .scores-panel > .winner-callout > .eyebrow {
+    grid-area: label;
+    margin: 0;
+  }
+
+  .player.phase-final-scores .scores-panel > .winner-callout > h2 {
+    grid-area: winner;
+    font-size: 1.5rem;
+  }
+
+  .player.phase-final-scores .scores-panel > .winner-callout > .pill {
+    grid-area: score;
+  }
+
+  .player.phase-final-scores .scores-panel > .panel-title {
+    margin-bottom: var(--space-2);
+  }
+
+  .player.phase-final-scores .podium {
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+
+  .player.phase-final-scores .podium-place {
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-1);
+  }
+
+  .player.phase-final-scores .podium-place.place-1 {
+    min-height: 132px;
+  }
+
+  .player.phase-final-scores .podium-place.place-2 {
+    min-height: 112px;
+  }
+
+  .player.phase-final-scores .podium-place.place-3 {
+    min-height: 104px;
+  }
+
+  .player.phase-final-scores .podium-rank {
+    width: 34px;
+    height: 34px;
+  }
+
+  .player.phase-final-scores .podium-place strong {
+    font-size: 1rem;
+  }
+
+  .player.phase-final-scores .podium-title {
+    font-size: 0.72rem;
+  }
+
+  .player.phase-final-scores .share-card-button {
+    margin-top: var(--space-1);
+  }
+
   .player.phase-drawing .prompt {
     font-size: 1.08rem;
   }
@@ -1370,9 +1496,70 @@
   }
 }
 
+/* Eight-player lobbies need every player identity on the shared screen. Compact
+   only the short-TV roster, while keeping explicit Ready/Offline and Host text. */
+@media (max-width: 1600px) and (max-height: 840px) {
+  .display-grid-lobby .players-panel:has(.player-row:nth-child(7)) {
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .display-grid-lobby .player-list:has(.player-row:nth-child(7)) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: max-content;
+    align-content: start;
+    gap: var(--space-2);
+  }
+
+  .display-grid-lobby .player-list:has(.player-row:nth-child(7)) .player-row {
+    display: flex;
+    align-content: center;
+    gap: var(--space-2);
+    min-height: 48px;
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .display-grid-lobby .player-list:has(.player-row:nth-child(7)) .player-identity {
+    gap: var(--space-2);
+    align-items: center;
+  }
+
+  .display-grid-lobby .player-list:has(.player-row:nth-child(7)) .player-doodle {
+    display: none;
+  }
+
+  .display-grid-lobby .player-list:has(.player-row:nth-child(7)) .player-name {
+    font-size: 0.875rem;
+    line-height: 1.15;
+  }
+
+  .display-grid-lobby .player-list:has(.player-row:nth-child(7)) .player-name-text {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .display-grid-lobby .player-list:has(.player-row:nth-child(7)) .player-meta {
+    justify-content: flex-start;
+    padding-left: 0;
+  }
+
+  .display-grid-lobby .player-list:has(.player-row:nth-child(7)) .player-status {
+    min-height: 20px;
+    padding-inline: var(--space-2);
+    font-size: 0.75rem;
+  }
+
+  .display-grid-lobby .player-list:has(.player-row:nth-child(7)) .host-badge {
+    padding: 1px var(--space-1);
+    font-size: 0.625rem;
+  }
+}
+
 @media (max-height: 780px) {
   .display.phase-final-scores .share-card-button {
-    min-height: 40px;
+    min-height: var(--touch);
     margin-top: var(--space-1);
   }
 
@@ -1417,11 +1604,11 @@
   }
 
   .display-grid-lobby .settings-panel .field-label {
-    font-size: 0.95rem;
+    font-size: max(0.95rem, var(--display-meta));
   }
 
   .display-grid-lobby .settings-panel .input {
-    min-height: 40px;
+    min-height: var(--touch);
   }
 }
 

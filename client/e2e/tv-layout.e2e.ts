@@ -69,6 +69,70 @@ test('TV layout gate: populated lobby keeps roster rows stacked', async ({
   });
 });
 
+test('TV layout gate: eight max-length player names stay visible from 720p through 4K', async ({
+  baseURL,
+  browser
+}) => {
+  const appUrl = makeAppUrl(baseURL);
+  const contexts: BrowserContext[] = [];
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+    const names = Array.from({ length: 8 }, (_, index) =>
+      `Player ${index + 1} ${'W'.repeat(24)}`.slice(0, 24)
+    );
+    await createPlayers(browser, contexts, appUrl, roomCode, names);
+
+    for (const viewport of [
+      { width: 1280, height: 720 },
+      { width: 1920, height: 1080 },
+      { width: 3840, height: 2160 }
+    ]) {
+      await tv.setViewportSize(viewport);
+      await assertDisplayLobbyLayout(tv, viewport);
+      await expect(tv.locator('.players-panel .player-row')).toHaveCount(8);
+      const rosterMetrics = await tv.locator('.players-panel .player-list').evaluate((list) => ({
+        clientHeight: list.clientHeight,
+        clientWidth: list.clientWidth,
+        scrollHeight: list.scrollHeight,
+        scrollWidth: list.scrollWidth,
+        rows: Array.from(list.querySelectorAll('.player-row')).map((row) => {
+          const rect = row.getBoundingClientRect();
+          const name = row.querySelector('.player-name')?.getBoundingClientRect();
+          const meta = row.querySelector('.player-meta')?.getBoundingClientRect();
+          return {
+            height: rect.height,
+            width: rect.width,
+            nameHeight: name?.height,
+            nameWidth: name?.width,
+            metaWidth: meta?.width
+          };
+        })
+      }));
+      expect(
+        rosterMetrics.scrollHeight <= rosterMetrics.clientHeight + 2,
+        `${viewport.width}×${viewport.height} roster must fit: ${JSON.stringify(rosterMetrics)}`
+      ).toBe(true);
+      await assertAllWithinViewport(tv, [
+        '.players-panel',
+        '.players-panel .player-list',
+        '.players-panel .player-row',
+        '.players-panel .player-name',
+        '.players-panel .player-status',
+        '.players-panel .host-badge',
+        '.settings-summary-panel',
+        '.sound-toggle'
+      ]);
+      await assertNoOverlaps(tv, '.players-panel .player-row');
+    }
+  } finally {
+    await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
+  }
+});
+
 test('TV layout gate: drawing and guessing phases fit key living-room sizes', async ({
   baseURL,
   browser
@@ -155,7 +219,7 @@ test('TV layout gate: eight-player long-answer results fit 720p, 768p, and 4K', 
     await assertDisplayPhaseFits(tv, { width: 1280, height: 720 });
     await assertAllWithinViewport(tv, ['.result-sidebar', '.breakdown-row', '.option-label']);
 
-    await expect(results).toHaveAttribute('data-reveal-stage', 'complete', { timeout: 10_000 });
+    await expect(results).toHaveAttribute('data-reveal-stage', 'deltas', { timeout: 10_000 });
     await expect(results.locator('.causal-score-event')).not.toHaveCount(0);
     for (const viewport of [
       { width: 1280, height: 720 },

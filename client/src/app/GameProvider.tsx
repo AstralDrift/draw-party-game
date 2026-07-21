@@ -12,11 +12,13 @@ import { GameSocket } from '../net';
 import { HostTokenCache } from '../host-token-cache';
 import {
   acknowledgeDuplicateSubmission,
+  coalescePendingRenameIntent,
   createPendingRenameIntent,
   markPendingRenameSent,
-  pendingRenameSnapshotAction,
+  pendingRenameDesiredName,
   playerActionAlert,
   queuePendingRenameAfterDisconnect,
+  reconcilePendingRenameSnapshot,
   reconcilePendingSubmission,
   retryPendingSubmission,
   scheduleSubmissionWatchdog,
@@ -33,6 +35,7 @@ import {
   type ServerMessage
 } from '../protocol';
 import { playCue, setSoundEnabled, setSoundScope, soundEnabled } from '../sound';
+import { PendingRenameCache } from '../pending-rename-cache';
 import { clearTurnDraft, reconcileTurnDraft } from '../turn-draft-cache';
 import {
   beginServerClockSession,
@@ -114,7 +117,6 @@ const MAX_RETAINED_REACTION_BURSTS = 12;
 const RETRYABLE_SUBMISSION_ERROR_CODES = new Set([
   'invalid_vote',
   'own_guess',
-  'guess_conflict',
   'empty_guess',
   'invalid_drawing_size',
   'blank_drawing',
@@ -196,6 +198,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   const currentTabId = useMemo(() => tabRecoveryId(), []);
   const storedPlayerName = useMemo(() => readStoredValue('draw-party-name') ?? '', []);
   const activePlayerRoom = useMemo(() => readActivePlayerRoom(currentTabId), [currentTabId]);
+  const pendingRenameCache = useMemo(() => new PendingRenameCache(), []);
   const initialPendingJoin = useMemo<PendingJoin | null>(() => {
     if (
       boot.role !== 'player' ||
@@ -207,6 +210,13 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
     }
     return { roomCode: boot.initialRoomCode, name: storedPlayerName };
   }, [activePlayerRoom, boot.initialRoomCode, boot.role, storedPlayerName]);
+  const initialPendingRename = useMemo(
+    () =>
+      boot.role === 'player' && initialPendingJoin
+        ? pendingRenameCache.restore(initialPendingJoin.roomCode, clientId)
+        : null,
+    [boot.role, clientId, initialPendingJoin, pendingRenameCache]
+  );
   const socketRef = useRef<GameSocket | null>(null);
   const reconnectTimerRef = useRef(0);
   const lastPhaseRef = useRef('');
@@ -219,7 +229,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   const hostTokens = useMemo(() => new HostTokenCache(), []);
   const burstIdRef = useRef(0);
   const pendingSubmissionRef = useRef<PendingSubmission | null>(null);
-  const pendingRenameRef = useRef<PendingRenameIntent | null>(null);
+  const pendingRenameRef = useRef<PendingRenameIntent | null>(initialPendingRename);
   const authoritativeSnapshotRevisionRef = useRef(0);
 
   const [snapshot, setSnapshot] = useState<RoomSnapshot | null>(null);
@@ -267,6 +277,22 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
     pendingSubmissionRef.current = next;
     setPendingSubmission(next);
   }, []);
+
+  const commitPendingRename = useCallback(
+    (next: PendingRenameIntent | null, roomCode?: string) => {
+      pendingRenameRef.current = next;
+      if (!next) {
+        pendingRenameCache.clear();
+        return;
+      }
+      const activeRoomCode =
+        roomCode ?? snapshotRef.current?.roomCode ?? pendingJoinRef.current?.roomCode;
+      if (activeRoomCode) {
+        pendingRenameCache.save(activeRoomCode, clientId, next);
+      }
+    },
+    [clientId, pendingRenameCache]
+  );
 
   const submitAction = useCallback(
     (kind: SubmissionKind, message: SubmissionMessage, optionId?: string) => {
@@ -350,22 +376,23 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
         if (self) {
           writeActivePlayerRoom(next.roomCode, currentTabId);
           const renameIntent = pendingRenameRef.current;
-          const renameAction = pendingRenameSnapshotAction(
+          const renameResolution = reconcilePendingRenameSnapshot(
             renameIntent,
             snapshotRevision,
             self.name
           );
-          if (renameAction === 'send' && renameIntent) {
-            if (send({ type: 'setName', name: renameIntent.requestedName })) {
-              pendingRenameRef.current = markPendingRenameSent(renameIntent, snapshotRevision);
+          let nextRename = renameResolution.next;
+          if (renameResolution.sendName && nextRename) {
+            if (send({ type: 'setName', name: renameResolution.sendName })) {
+              nextRename = markPendingRenameSent(nextRename, snapshotRevision);
             }
-          } else if (renameAction === 'accept') {
-            pendingRenameRef.current = null;
           }
+          commitPendingRename(nextRename, next.roomCode);
 
           if (pendingRenameRef.current) {
-            writeStoredValue('draw-party-name', pendingRenameRef.current.requestedName);
-            setPlayerName(pendingRenameRef.current.requestedName);
+            const desiredName = pendingRenameDesiredName(pendingRenameRef.current);
+            writeStoredValue('draw-party-name', desiredName);
+            setPlayerName(desiredName);
           } else {
             writeStoredValue('draw-party-name', self.name);
             setPlayerName(self.name);
@@ -381,7 +408,15 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
         }
       }
     },
-    [boot.role, clientId, commitPendingSubmission, currentTabId, haptic, send]
+    [
+      boot.role,
+      clientId,
+      commitPendingRename,
+      commitPendingSubmission,
+      currentTabId,
+      haptic,
+      send
+    ]
   );
 
   const handleServerMessage = useCallback(
@@ -471,7 +506,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
           if (message.code === 'session_in_use' || message.code === 'invalid_player_session') {
             reconnectSuppressedRef.current = true;
             commitPendingSubmission(null);
-            pendingRenameRef.current = null;
+            commitPendingRename(null);
             setErrorMessage(
               message.code === 'session_in_use'
                 ? 'This game controller is already active in another tab.'
@@ -501,7 +536,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
             clearActivePlayerRoom();
             clearTurnDraft();
             commitPendingSubmission(null);
-            pendingRenameRef.current = null;
+            commitPendingRename(null);
             setSnapshot(null);
             snapshotRef.current = null;
             setPrompt('');
@@ -521,12 +556,22 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
         }
       }
     },
-    [applySnapshot, boot.role, commitPendingSubmission, haptic, hostTokens]
+    [
+      applySnapshot,
+      boot.role,
+      commitPendingRename,
+      commitPendingSubmission,
+      haptic,
+      hostTokens
+    ]
   );
 
   const connect = useCallback(
     (roomCode?: string) => {
-      pendingRenameRef.current = queuePendingRenameAfterDisconnect(pendingRenameRef.current);
+      commitPendingRename(
+        queuePendingRenameAfterDisconnect(pendingRenameRef.current),
+        roomCode
+      );
       socketRef.current?.close();
       beginServerClockSession();
       let socket: GameSocket;
@@ -565,7 +610,10 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
             return;
           }
           commitPendingSubmission(retryPendingSubmission(pendingSubmissionRef.current));
-          pendingRenameRef.current = queuePendingRenameAfterDisconnect(pendingRenameRef.current);
+          commitPendingRename(
+            queuePendingRenameAfterDisconnect(pendingRenameRef.current),
+            roomCode
+          );
           if (reconnectSuppressedRef.current) {
             return;
           }
@@ -600,7 +648,15 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       socketRef.current = socket;
       socket.connect();
     },
-    [boot.role, clientId, commitPendingSubmission, handleServerMessage, hostTokens, sessionToken]
+    [
+      boot.role,
+      clientId,
+      commitPendingRename,
+      commitPendingSubmission,
+      handleServerMessage,
+      hostTokens,
+      sessionToken
+    ]
   );
 
   useEffect(() => {
@@ -619,16 +675,25 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
         if (boot.role !== 'player') {
           return;
         }
-        pendingRenameRef.current = queuePendingRenameAfterDisconnect(pendingRenameRef.current);
         const roomCode =
           snapshotRef.current?.roomCode ?? pendingJoinRef.current?.roomCode ?? undefined;
+        commitPendingRename(
+          queuePendingRenameAfterDisconnect(pendingRenameRef.current),
+          roomCode
+        );
         socketRef.current?.close();
         if (roomCode) {
           connectRef.current(roomCode);
         }
       }
     );
-  }, [authoritativeSnapshotRevision, boot.role, commitPendingSubmission, pendingSubmission]);
+  }, [
+    authoritativeSnapshotRevision,
+    boot.role,
+    commitPendingRename,
+    commitPendingSubmission,
+    pendingSubmission
+  ]);
 
   useEffect(() => {
     if (boot.role === 'display') {
@@ -684,7 +749,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       }
       clearActivePlayerRoom();
       clearTurnDraft();
-      pendingRenameRef.current = null;
+      commitPendingRename(null);
       writeStoredValue('draw-party-name', safeName);
       setPlayerName(safeName);
       setRoomCodeDraft(normalizedRoomCode);
@@ -700,7 +765,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       }
       haptic(8);
     },
-    [connect, haptic]
+    [commitPendingRename, connect, haptic]
   );
 
   const setName = useCallback(
@@ -712,19 +777,28 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
         safeName;
       writeStoredValue('draw-party-name', safeName);
       setPlayerName(safeName);
-      const sent = send({ type: 'setName', name: safeName });
-      pendingRenameRef.current = createPendingRenameIntent(
-        safeName,
-        canonicalNameAtRequest,
-        sent,
-        authoritativeSnapshotRevisionRef.current
-      );
-      if (!sent && pendingJoinRef.current) {
+      const current = pendingRenameRef.current;
+      let sent = false;
+      let next: PendingRenameIntent;
+      if (current?.state === 'sent') {
+        next = coalescePendingRenameIntent(current, safeName);
+      } else {
+        sent = send({ type: 'setName', name: safeName });
+        next = createPendingRenameIntent(
+          safeName,
+          canonicalNameAtRequest,
+          sent,
+          authoritativeSnapshotRevisionRef.current
+        );
+      }
+      const roomCode = snapshotRef.current?.roomCode ?? pendingJoinRef.current?.roomCode;
+      commitPendingRename(next, roomCode);
+      if (current?.state !== 'sent' && !sent && pendingJoinRef.current) {
         connect(pendingJoinRef.current.roomCode);
       }
       haptic(8);
     },
-    [clientId, connect, haptic, send]
+    [clientId, commitPendingRename, connect, haptic, send]
   );
 
   const cancelJoin = useCallback(() => {
@@ -732,7 +806,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
     clearTurnDraft();
     setPendingJoin(null);
     pendingJoinRef.current = null;
-    pendingRenameRef.current = null;
+    commitPendingRename(null);
     socketRef.current?.close();
     commitPendingSubmission(null);
     setSnapshot(null);
@@ -742,7 +816,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
     if (window.location.pathname !== '/join') {
       window.history.replaceState(null, '', '/join');
     }
-  }, [commitPendingSubmission]);
+  }, [commitPendingRename, commitPendingSubmission]);
 
   const updateSettings = useCallback(
     (settings: RoomSettings) => {

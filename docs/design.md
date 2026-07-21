@@ -1,6 +1,6 @@
 # Draw Party Design System
 
-Implementation lives under `client/src/design/` (tokens, base, components, drawing, layout, motion, and the final glass layer). This document is the product design source of truth; keep CSS tokens aligned when either side changes.
+Implementation lives under `client/src/design/` (tokens, base, components, drawing, layout, motion, and the final glass layer). This document is the sole implementation-binding design contract; keep CSS tokens aligned when either side changes. The repository-root `DESIGN.md` is historical reference only, and discrepancies resolve in favor of this document.
 
 ## 1. Atmosphere & Identity
 
@@ -91,6 +91,8 @@ Base unit: **4px**.
 | `--radius-pill` | 999px | CTAs |
 
 TV shell: centered, max ~2520px, one composition per phase. Phone shell: max 680px, safe-area aware, large tap targets.
+
+Every interactive control has a hit box of at least 52×52 CSS pixels, including compact inputs and selects, drawing tools, vote options, share/replay actions, and TV fallback controls. Icons and visible glyphs may be smaller, but the interactive box may not opt out of `--touch` to save layout space.
 
 Results use a contained two-column scene on TV (truth/art on the left; A-H answers and causal score events on the right) plus a compact always-visible Continue/next rail. Phone results remain a single-column look-up companion.
 

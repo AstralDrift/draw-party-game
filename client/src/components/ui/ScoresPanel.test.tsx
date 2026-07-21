@@ -58,6 +58,25 @@ describe('ScoresPanel', () => {
     expect(markup).not.toContain('podium-place');
     expect(markup).not.toContain('share-card-button');
   });
+
+  it('keeps controller sharing direct while labeling the TV export as a fallback', () => {
+    const scoreEntries = scores([
+      ['Ava', 400],
+      ['Bo', 200]
+    ]);
+    const playerMarkup = renderToStaticMarkup(
+      <ScoresPanel scores={scoreEntries} podium role="player" />
+    );
+    const displayMarkup = renderToStaticMarkup(
+      <ScoresPanel scores={scoreEntries} podium role="display" />
+    );
+
+    expect(playerMarkup).toContain('Download Podium');
+    expect(playerMarkup).not.toContain('from TV (fallback)');
+    expect(displayMarkup).toContain('Download Podium from TV (fallback)');
+    expect(displayMarkup).toContain('tv-action-fallback');
+    expect(displayMarkup).toContain('btn--ghost');
+  });
 });
 
 function scores(entries: Array<[string, number]>): ScoreEntry[] {

@@ -973,17 +973,16 @@ fn personalize_snapshot(
         return snapshot;
     }
 
+    snapshot.nailed_it = room.player_nailed_it(client_id);
+    let player_name = snapshot
+        .players
+        .iter()
+        .find(|player| player.id == client_id)
+        .map(|player| player.name.clone());
     for option in &mut snapshot.voting_options {
-        if let Some(source) = room
-            .round
-            .voting_options
-            .iter()
-            .find(|candidate| candidate.id == option.id)
-        {
-            if source.author_player_id.as_deref() == Some(client_id) {
-                option.author_player_id = source.author_player_id.clone();
-                option.author_name = source.author_name.clone();
-            }
+        if room.player_authored_voting_option(client_id, &option.id) {
+            option.author_player_id = Some(client_id.to_string());
+            option.author_name = player_name.clone();
         }
     }
     snapshot
@@ -991,6 +990,11 @@ fn personalize_snapshot(
 
 fn queue_snapshot_for_connection(inner: &AppInner, session: &SessionKey, snapshot: RoomSnapshot) {
     if let Some(conn) = inner.connection(session) {
+        let snapshot = conn
+            .room_code()
+            .and_then(|room_code| inner.rooms.get(room_code))
+            .map(|room| personalize_snapshot(room, &snapshot, session.client_id(), conn.role()))
+            .unwrap_or(snapshot);
         deliver_many(vec![(
             conn.outbound(),
             ServerMessage::RoomSnapshot { snapshot },
@@ -1121,6 +1125,16 @@ mod tests {
             }
         }
         panic!("did not receive websocket message type {message_type}");
+    }
+
+    async fn read_until_phase(ws: &mut TestSocket, phase: &str) -> Value {
+        for _ in 0..20 {
+            let value = read_json(ws).await;
+            if value.pointer("/snapshot/phase").and_then(Value::as_str) == Some(phase) {
+                return value;
+            }
+        }
+        panic!("did not receive websocket snapshot for phase {phase}");
     }
 
     async fn read_until_settings_rounds(ws: &mut TestSocket, rounds: u64) -> Value {
@@ -1295,6 +1309,88 @@ mod tests {
     }
 
     #[test]
+    fn personalized_voting_snapshot_marks_each_duplicate_coauthor_only_for_self() {
+        let mut room = Room::new(
+            "ABCD".to_string(),
+            "display".to_string(),
+            "host-token".to_string(),
+            0,
+        );
+        for (index, player_id) in ["p1", "p2", "p3"].into_iter().enumerate() {
+            room.upsert_player(
+                player_id.to_string(),
+                format!("Player {index}"),
+                index as u64 + 1,
+            )
+            .unwrap();
+        }
+        room.handle_start_or_advance(100).unwrap();
+        let drawing_token = room.turn_token;
+        for player_id in ["p1", "p2", "p3"] {
+            room.submit_drawing(
+                player_id,
+                drawing_token,
+                serde_json::from_value(drawing_value()).unwrap(),
+                200,
+            )
+            .unwrap();
+        }
+        let artist_id = room.round.current_artist_id.clone().unwrap();
+        let voters: Vec<String> = room
+            .players
+            .keys()
+            .filter(|player_id| **player_id != artist_id)
+            .cloned()
+            .collect();
+        let guessing_token = room.turn_token;
+        room.submit_guess(&voters[0], guessing_token, "Same fake".to_string(), 300)
+            .unwrap();
+        room.submit_guess(&voters[1], guessing_token, " same   FAKE ".to_string(), 301)
+            .unwrap();
+        assert_eq!(room.phase, GamePhase::Voting);
+        let merged_option_id = room
+            .round
+            .voting_options
+            .iter()
+            .find(|option| !option.is_correct)
+            .unwrap()
+            .id
+            .clone();
+        let base = room.snapshot(302);
+
+        for voter_id in &voters {
+            let snapshot = personalize_snapshot(&room, &base, voter_id, &Role::Player);
+            let option = snapshot
+                .voting_options
+                .iter()
+                .find(|option| option.id == merged_option_id)
+                .unwrap();
+            assert_eq!(option.author_player_id.as_deref(), Some(voter_id.as_str()));
+            assert_eq!(
+                option.author_name.as_deref(),
+                room.players
+                    .get(voter_id)
+                    .map(|player| player.name.as_str())
+            );
+            assert!(snapshot
+                .voting_options
+                .iter()
+                .all(|option| !option.is_correct));
+        }
+
+        for (client_id, role) in [
+            (artist_id.as_str(), Role::Player),
+            ("display", Role::Display),
+        ] {
+            let snapshot = personalize_snapshot(&room, &base, client_id, &role);
+            assert!(snapshot
+                .voting_options
+                .iter()
+                .all(|option| option.author_player_id.is_none() && option.author_name.is_none()));
+        }
+    }
+
+    #[test]
     fn health_response_prefers_railway_metadata_and_trims_values() {
         let values = HashMap::from([
             ("RAILWAY_GIT_COMMIT_SHA", "  railway-sha  "),
@@ -1411,7 +1507,7 @@ mod tests {
             legacy_low
                 .pointer("/snapshot/settings/resultsSeconds")
                 .and_then(Value::as_u64),
-            Some(6)
+            Some(10)
         );
 
         let (mut player, _) =
@@ -2199,6 +2295,134 @@ mod tests {
                 .and_then(|snapshot| snapshot.get("phase"))
                 .and_then(Value::as_str),
             Some("guessing")
+        );
+    }
+
+    #[tokio::test]
+    async fn websocket_nailed_it_marker_is_private_and_the_correct_vote_is_locked() {
+        let url = spawn_ws_server().await;
+        let (mut display, _) = connect_async(format!("{url}?role=display&clientId=display"))
+            .await
+            .unwrap();
+        let (room_code, _, _) = create_test_room(&mut display).await;
+        let mut p1 = join_player(&url, &room_code, "p1", "Ada").await;
+        let mut p2 = join_player(&url, &room_code, "p2", "Grace").await;
+        let mut p3 = join_player(&url, &room_code, "p3", "Linus").await;
+
+        display
+            .send(text_message(json!({ "type": "startGame" })))
+            .await
+            .unwrap();
+        let drawing = read_until_phase(&mut display, "drawing").await;
+        let drawing_token = drawing
+            .pointer("/snapshot/turnToken")
+            .and_then(Value::as_u64)
+            .unwrap();
+        let p1_prompt = read_until_type(&mut p1, "promptAssigned")
+            .await
+            .get("prompt")
+            .and_then(Value::as_str)
+            .unwrap()
+            .to_string();
+        let p2_prompt = read_until_type(&mut p2, "promptAssigned")
+            .await
+            .get("prompt")
+            .and_then(Value::as_str)
+            .unwrap()
+            .to_string();
+        let p3_prompt = read_until_type(&mut p3, "promptAssigned")
+            .await
+            .get("prompt")
+            .and_then(Value::as_str)
+            .unwrap()
+            .to_string();
+
+        for player in [&mut p1, &mut p2, &mut p3] {
+            player
+                .send(text_message(json!({
+                    "type": "submitDrawing",
+                    "turnToken": drawing_token,
+                    "drawing": drawing_value()
+                })))
+                .await
+                .unwrap();
+        }
+        let guessing = read_until_phase(&mut display, "guessing").await;
+        let guessing_token = guessing
+            .pointer("/snapshot/turnToken")
+            .and_then(Value::as_u64)
+            .unwrap();
+        let artist_id = guessing
+            .pointer("/snapshot/currentArtistId")
+            .and_then(Value::as_str)
+            .unwrap();
+        let _ = read_until_phase(&mut p1, "guessing").await;
+        let _ = read_until_phase(&mut p2, "guessing").await;
+        let _ = read_until_phase(&mut p3, "guessing").await;
+
+        let (nailer, other_voter, nailer_id, nailer_name, truth) = match artist_id {
+            "p1" => (&mut p2, &mut p3, "p2", "Grace", p1_prompt),
+            "p2" => (&mut p1, &mut p3, "p1", "Ada", p2_prompt),
+            "p3" => (&mut p1, &mut p2, "p1", "Ada", p3_prompt),
+            _ => panic!("unexpected artist"),
+        };
+        nailer
+            .send(text_message(json!({
+                "type": "submitGuess",
+                "turnToken": guessing_token,
+                "guess": truth
+            })))
+            .await
+            .unwrap();
+        other_voter
+            .send(text_message(json!({
+                "type": "submitGuess",
+                "turnToken": guessing_token,
+                "guess": "a carefully unrelated fake"
+            })))
+            .await
+            .unwrap();
+
+        let nailed_voting = read_until_phase(nailer, "voting").await;
+        let other_voting = read_until_phase(other_voter, "voting").await;
+        let display_voting = read_until_phase(&mut display, "voting").await;
+        assert_eq!(
+            nailed_voting
+                .pointer("/snapshot/nailedIt")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            other_voting
+                .pointer("/snapshot/nailedIt")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            display_voting
+                .pointer("/snapshot/nailedIt")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(nailed_voting
+            .pointer("/snapshot/voteSubmittedIds")
+            .and_then(Value::as_array)
+            .is_some_and(|ids| !ids.is_empty()));
+        assert!(nailed_voting
+            .pointer("/snapshot/votingOptions")
+            .and_then(Value::as_array)
+            .is_some_and(|options| options.iter().all(|option| {
+                option.get("isCorrect").and_then(Value::as_bool) == Some(false)
+                    && option.get("authorPlayerId").is_none_or(Value::is_null)
+            })));
+
+        let (_reconnected, reconnect_snapshot) =
+            join_player_with_snapshot(&url, &room_code, nailer_id, nailer_name).await;
+        assert_eq!(
+            reconnect_snapshot
+                .pointer("/snapshot/nailedIt")
+                .and_then(Value::as_bool),
+            Some(true)
         );
     }
 

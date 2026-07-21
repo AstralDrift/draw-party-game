@@ -69,9 +69,9 @@ test('four phones complete two rounds, reach the podium, and rematch in the same
     }
 
     await players[0].getByRole('button', { name: 'Play Again' }).click();
-    await expect(players[0].getByRole('button', { name: 'Starting…' })).toBeVisible();
     await expect(tv.getByText('Phones are drawing')).toBeVisible();
     await expect(tv.getByText('Round 1 of 2')).toBeVisible();
+    await expect(players[0].locator('canvas.draw-canvas')).toBeVisible();
     for (const player of players) {
       await expect(player).toHaveURL(new RegExp(`/join/${roomCode}$`));
       await expect(player.locator('#prompt-text')).toContainText(/^Draw:/);

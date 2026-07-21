@@ -47,21 +47,21 @@ export function DisplayResults(): React.JSX.Element {
             practice={(snapshot.gameMode ?? 'party') === 'practice'}
             controls={
               <div className="advance-panel result-advance">
-                <p className="eyebrow">Next up in</p>
+                <p className="eyebrow">Next drawing in</p>
                 <Deadline />
                 <Button
                   id="advance-button"
-                  variant="secondary"
-                  wide
+                  className="tv-action-fallback"
+                  variant="ghost"
                   disabled={!complete || advancePending}
                   onClick={() => {
                     clearError();
                     if (send({ type: 'startGame' })) setAdvancePending(true);
                   }}
                 >
-                  {advancePending ? 'Continuing…' : 'Continue'}
+                  {advancePending ? 'Continuing from TV…' : 'Continue from TV (fallback)'}
                 </Button>
-                <p className="muted">Host phone can Continue early, or the game moves on at zero.</p>
+                <p className="muted">Use the host phone to continue early. The game moves on at zero.</p>
               </div>
             }
           />
@@ -109,12 +109,12 @@ export function DisplayFinal(): React.JSX.Element {
           onShareFailed={() => setErrorMessage('Could not export the podium card.')}
         />
         <GlassPanel className="advance-panel encore-panel" tone="soft">
-          <p className="eyebrow">{practice ? 'Practice · scores off' : 'One more round?'}</p>
+          <p className="eyebrow">TV fallback</p>
           <h2 className="encore-title">{rematchPrompt(snapshot.finalScores)}</h2>
           <Button
             id="advance-button"
-            variant="secondary"
-            wide
+            className="tv-action-fallback"
+            variant="ghost"
             disabled={!replay?.action || Boolean(advancePending)}
             onClick={() => {
               const action = replay?.action;
@@ -127,9 +127,9 @@ export function DisplayFinal(): React.JSX.Element {
               if (sent) setAdvancePending(action);
             }}
           >
-            {advancePending ? 'Starting…' : replay?.label}
+            {advancePending ? 'Starting from TV…' : `${replay?.label ?? 'Play Again'} from TV (fallback)`}
           </Button>
-          <p className="muted">{replay?.guidance}</p>
+          <p className="muted">Use the host phone to start. {replay?.guidance}</p>
         </GlassPanel>
       </div>
       <ReactionBursts />

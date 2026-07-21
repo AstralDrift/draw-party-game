@@ -40,7 +40,7 @@ export function roundOutcomeText(result: RoundOutcomeInput): string {
     return 'No votes came in — no bonus awarded';
   }
   if (result.nobodyFoundIt) {
-    return 'Nobody got it — artist wins the room';
+    return 'Nobody found the truth — artist +50';
   }
   if (result.perfectTruth) {
     return 'Everyone saw through it — perfect!';
@@ -56,7 +56,7 @@ export function roundOutcomeText(result: RoundOutcomeInput): string {
   if (correctVoters.length > 2) {
     return `${correctVoters.length} players cracked it`;
   }
-  return 'Nobody got it — artist wins the room';
+  return 'Nobody found the truth — artist +50';
 }
 
 export function finalWinnerText(scores: ScoreEntry[]): string {

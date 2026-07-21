@@ -1,4 +1,4 @@
-import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import {
   canvasHasInkNear,
   completeCurrentReveal,
@@ -50,9 +50,16 @@ test('staged results reveal enables Continue after the show beat', async ({ base
     await player.getByRole('button', { name: 'Submit Drawing' }).click();
     await expect(tv.locator('#advance-button')).toBeVisible();
     await expect(tv.locator('#advance-button')).toBeDisabled();
-    await expect(tv.locator('#advance-button')).toBeEnabled({ timeout: 7000 });
+    await expect(tv.locator('#advance-button')).toBeEnabled({ timeout: 8000 });
     await expect(tv.locator('.results-panel')).toHaveAttribute('data-reveal-stage', 'complete');
-    await expect(tv.getByRole('button', { name: 'Continue' })).toBeVisible();
+    const tvContinue = tv.getByRole('button', {
+      name: 'Continue from TV (fallback)',
+      exact: true
+    });
+    await expect(tvContinue).toBeVisible();
+    await expect(tvContinue).toHaveClass(/btn--ghost/);
+    await expect(player.getByRole('button', { name: 'Continue' })).toBeVisible();
+    await expect(player.locator('.spotlight-button')).toBeVisible();
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }
@@ -172,6 +179,8 @@ test('TV lobby gives room code and QR the showcase hierarchy', async ({ baseURL,
     expect(roomPanel.height).toBeGreaterThan(settingsPanel.height * 0.65);
     expect(qr.y + qr.height).toBeLessThanOrEqual(viewport.height);
     expect(start.y + start.height).toBeLessThanOrEqual(viewport.height);
+    expect(start.width).toBeGreaterThanOrEqual(52);
+    expect(start.height).toBeGreaterThanOrEqual(52);
   }
 });
 
@@ -193,6 +202,12 @@ test('large-phone lobby presents player-ready hierarchy without clipping', async
 
     await expect(ava.locator('.player-lobby-card')).toBeVisible();
     await expect(ava.locator('.mini-room-code')).toHaveText(roomCode);
+    await expectMinimumTouchTarget(ava.getByRole('button', { name: 'Edit name' }));
+    await expectMinimumTouchTarget(ava.locator('.settings-preset').first());
+    await expectMinimumTouchTarget(ava.locator('.settings-advanced > summary'));
+    await ava.locator('.settings-advanced > summary').click();
+    await expectMinimumTouchTarget(ava.locator('.settings-advanced .compact-input').first());
+    await ava.locator('.settings-advanced > summary').click();
     await expect(ava.getByRole('button', { name: 'Start Party' })).toBeDisabled();
     await expect(ava.getByRole('button', { name: 'Practice Drawing' })).toBeEnabled();
     const [bo] = await createPlayers(browser, contexts, appUrl, roomCode, ['Bo'], [
@@ -255,6 +270,8 @@ test('phone drawing screen prioritizes canvas before controls on mobile', async 
     await expect(ava.locator('.tools-summary')).toContainText('Tools');
     await expect(ava.locator('.draw-toolbar')).toBeHidden();
     await expect(bo.locator('canvas.draw-canvas')).toBeVisible();
+    await expectMinimumTouchTarget(ava.locator('.tools-summary'));
+    await expectMinimumTouchTarget(ava.getByRole('button', { name: 'Submit Drawing' }));
 
     const toolsContrast = await ava.locator('.tools-summary').evaluate((summary) => {
       const drawer = summary.closest('.tools-drawer');
@@ -297,6 +314,8 @@ test('phone drawing screen prioritizes canvas before controls on mobile', async 
     await expect(ava.locator('.submit-help')).toHaveText('Ready when you are.');
     await ava.locator('.tools-summary').click();
     await expect(ava.locator('.draw-toolbar')).toBeVisible();
+    await expectMinimumTouchTarget(ava.locator('.swatch').nth(1));
+    await expectMinimumTouchTarget(ava.getByRole('button', { name: 'Clear drawing' }));
     await ava.locator('.swatch').nth(1).click();
     await expect(ava.locator('.swatch').nth(1)).toHaveClass(/is-selected/);
     await expect(ava.getByRole('button', { name: /eraser/i })).toBeVisible();
@@ -462,8 +481,12 @@ test('solo drawing keeps live ink stable, ignores extra touches, and submits den
 
     await expect(tv.getByText('The real prompt was')).toBeVisible();
     await expect(player.locator('.player-result-companion')).toContainText('Look up at the TV for the reveal');
-    await expect(tv.getByRole('button', { name: 'Continue' })).toBeEnabled({ timeout: 7000 });
-    await tv.getByRole('button', { name: 'Continue' }).click();
+    const tvContinue = tv.getByRole('button', {
+      name: 'Continue from TV (fallback)',
+      exact: true
+    });
+    await expect(tvContinue).toBeEnabled({ timeout: 8000 });
+    await tvContinue.click();
     await expect(tv.locator('.scores-panel .panel-title')).toHaveText('Practice complete');
     await expect(player.locator('.scores-panel .panel-title')).toHaveText('Practice complete');
   } finally {
@@ -577,6 +600,7 @@ test('TV progress names submitted players and who is still waiting', async ({ ba
     const voteArtist = players.find((player) => !voters.includes(player));
     const voteArtistName = voteArtist ? (nameForPage.get(voteArtist) ?? '') : '';
 
+    await expectMinimumTouchTarget(voters[0].locator('button.vote-option:not([disabled])').first());
     await voters[0].locator('button.vote-option:not([disabled])').first().click();
     await expectProgressSummary(
       tv,
@@ -596,6 +620,11 @@ test('TV progress names submitted players and who is still waiting', async ({ ba
 test('one-round finale renders podium and scores without overflow', async ({ baseURL, browser }) => {
   const contexts: BrowserContext[] = [];
   const appUrl = makeAppUrl(baseURL);
+  const playerViewports: PlayerViewport[] = [
+    { width: 375, height: 667, isMobile: true },
+    { width: 390, height: 844, isMobile: true },
+    { width: 768, height: 1024, isMobile: false }
+  ];
 
   try {
     const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
@@ -611,11 +640,7 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
       appUrl,
       roomCode,
       ['Ava', 'Bo', 'Cy'],
-      [
-        { width: 375, height: 667, isMobile: true },
-        { width: 390, height: 844, isMobile: true },
-        { width: 390, height: 844, isMobile: true }
-      ]
+      playerViewports
     );
     await hostSaveRounds(players[0], '1');
 
@@ -644,12 +669,21 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
       }
 
       await expect(tv.getByText('The real prompt was')).toBeVisible();
-      await expect(tv.getByRole('button', { name: 'Continue' })).toBeEnabled({ timeout: 7000 });
-      await tv.getByRole('button', { name: 'Continue' }).click();
+      const tvContinue = tv.getByRole('button', {
+        name: 'Continue from TV (fallback)',
+        exact: true
+      });
+      await expect(tvContinue).toBeEnabled({ timeout: 9000 });
+      await tvContinue.click();
     }
 
     await expect(tv.getByText('Final Podium')).toBeVisible();
-    await expect(tv.getByRole('button', { name: 'Play Again' })).toBeVisible();
+    const tvReplay = tv.getByRole('button', {
+      name: 'Play Again from TV (fallback)',
+      exact: true
+    });
+    await expect(tvReplay).toBeVisible();
+    await expect(tvReplay).toHaveClass(/btn--ghost/);
     await expect(tv.locator('.encore-title')).toHaveText(/won by|take it back|tied|settle it/i);
     // Host phone keeps the spotlight CTA; TV Play Again stays secondary.
     await expect(players[0].locator('.spotlight-button')).toBeVisible();
@@ -659,7 +693,9 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
     for (const player of players.slice(1)) {
       await expect(player.locator('.advance-panel')).toContainText('Host decides.');
     }
-    await expect(tv.getByRole('button', { name: /Podium/ })).toBeVisible();
+    const tvShare = tv.getByRole('button', { name: /^(Share|Download) Podium from TV \(fallback\)$/ });
+    await expect(tvShare).toBeVisible();
+    await expect(tvShare).toHaveClass(/btn--ghost/);
     await expect(tv.locator('.podium-place')).toHaveCount(3);
     const titles = await tv.locator('.podium-title').allTextContents();
     expect(titles.every((title) => ['Champion', 'Runner-up', 'Third Place'].includes(title))).toBe(true);
@@ -672,22 +708,35 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
     await expectNoVerticalOverflow(tv);
     expect(scoresPanel.y).toBeGreaterThanOrEqual(0);
 
-    for (const player of players) {
+    for (const [index, player] of players.entries()) {
       await expect(player.locator('.scores-panel')).toBeVisible();
       await expect(player.locator('.winner-callout')).toBeVisible();
       await expect(player.locator('.podium-place')).toHaveCount(3);
-      await expect(player.getByRole('button', { name: /Podium/ })).toBeVisible();
+      await expect(player.getByRole('button', { name: /^(Share|Download) Podium$/ })).toBeVisible();
+      await expectMinimumTouchTarget(player.getByRole('button', { name: /Podium/ }));
       await expectNoHorizontalOverflow(player);
       const playerScoresPanel = await player.locator('.scores-panel').boundingBox();
       if (!playerScoresPanel) {
         throw new Error('Player scores panel must have a layout box.');
       }
-      expect(playerScoresPanel.y + playerScoresPanel.height).toBeLessThanOrEqual(844);
+      expect(playerScoresPanel.y + playerScoresPanel.height).toBeLessThanOrEqual(
+        playerViewports[index]?.height ?? 844
+      );
     }
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }
 });
+
+async function expectMinimumTouchTarget(locator: Locator): Promise<void> {
+  await expect(locator).toBeVisible();
+  const box = await locator.boundingBox();
+  if (!box) {
+    throw new Error('Interactive control must have a layout box.');
+  }
+  expect(box.width).toBeGreaterThanOrEqual(52);
+  expect(box.height).toBeGreaterThanOrEqual(52);
+}
 
 async function expectProgressSummary(
   page: Page,

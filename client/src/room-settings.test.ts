@@ -26,7 +26,7 @@ describe('room settings presets', () => {
         drawSeconds: 60,
         guessSeconds: 25,
         voteSeconds: 15,
-        resultsSeconds: 6
+        resultsSeconds: 10
       },
       {
         id: 'standard',
@@ -34,7 +34,7 @@ describe('room settings presets', () => {
         drawSeconds: 75,
         guessSeconds: 30,
         voteSeconds: 20,
-        resultsSeconds: 8
+        resultsSeconds: 10
       },
       {
         id: 'relaxed',
@@ -77,6 +77,9 @@ describe('room settings presets', () => {
       const drawingInput = Array.from(container.querySelectorAll('label'))
         .find((label) => label.textContent?.includes('Drawing seconds'))
         ?.querySelector('input');
+      const resultsInput = Array.from(container.querySelectorAll('label'))
+        .find((label) => label.textContent?.includes('Results seconds'))
+        ?.querySelector('input');
       const packSelect = container.querySelector('select');
       const applyButton = Array.from(container.querySelectorAll('button')).find((button) =>
         button.textContent?.includes('Apply custom settings')
@@ -85,9 +88,10 @@ describe('room settings presets', () => {
         HTMLInputElement.prototype,
         'value'
       )?.set;
-      if (!drawingInput || !packSelect || !applyButton || !inputValueSetter) {
+      if (!drawingInput || !resultsInput || !packSelect || !applyButton || !inputValueSetter) {
         throw new Error('Expected room settings controls');
       }
+      expect(resultsInput.min).toBe('10');
 
       act(() => {
         inputValueSetter.call(drawingInput, '90');
@@ -102,6 +106,11 @@ describe('room settings presets', () => {
       render({ ...initial, promptPackId: 'party-chaos' });
       expect(drawingInput.value).toBe('90');
 
+      act(() => {
+        inputValueSetter.call(resultsInput, '6');
+        resultsInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      });
+
       act(() => applyButton.click());
       const applied = {
         ...initial,
@@ -109,6 +118,7 @@ describe('room settings presets', () => {
         promptPackId: 'party-chaos'
       } satisfies RoomSettings;
       expect(saved.at(-1)).toEqual(applied);
+      expect(resultsInput.value).toBe('10');
 
       render(applied);
       render({ ...initial, promptPackId: 'party-chaos' });
