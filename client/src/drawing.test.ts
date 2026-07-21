@@ -35,6 +35,17 @@ describe('drawing utilities', () => {
     expect(drawingTestExports.clamp(Number.POSITIVE_INFINITY, 0, 10)).toBe(0);
   });
 
+  it('inverse-maps a portrait touch into the fixed landscape drawing document', () => {
+    const point = drawingTestExports.mapPointerToDrawingPoint(
+      85,
+      120,
+      { left: 10, top: 20, right: 310, width: 300, height: 400 },
+      true
+    );
+
+    expect(point).toEqual({ x: 256, y: 576 });
+  });
+
   it('caps dense stroke points while preserving endpoints and edge lengths', () => {
     const points = Array.from({ length: 400 }, (_, index) => ({ x: index, y: index * 2 }));
     const simplified = drawingTestExports.simplifyStrokePoints(
