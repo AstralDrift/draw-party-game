@@ -6,6 +6,7 @@ import {
   playerActionHint,
   playerLobbyReadyNote,
   podiumTitles,
+  rematchPrompt,
   roundOutcomeText
 } from './polish';
 import type { RoundResult, ScoreEntry } from './protocol';
@@ -13,7 +14,7 @@ import type { RoundResult, ScoreEntry } from './protocol';
 describe('party polish copy', () => {
   it('summarizes round outcomes from correct voters', () => {
     expect(roundOutcomeText(roundResult([], ['Ava', 'Bo'], { nobodyFoundIt: true }))).toBe(
-      'Nobody got it — artist wins the room'
+      'Nobody found the truth — artist +50'
     );
     expect(roundOutcomeText(roundResult(['Ava'], ['Ava', 'Bo']))).toBe('Ava cracked it');
     expect(roundOutcomeText(roundResult(['Ava', 'Bo'], ['Ava', 'Bo'], { perfectTruth: true }))).toBe(
@@ -25,7 +26,12 @@ describe('party polish copy', () => {
     expect(roundOutcomeText(roundResult(['Ava', 'Bo', 'Cy'], ['Ava', 'Bo', 'Cy']))).toBe(
       '3 players cracked it'
     );
-    expect(roundOutcomeText(roundResult([], [], {}))).toBe('Nobody got it — artist wins the room');
+    expect(roundOutcomeText(roundResult([], [], {}))).toBe(
+      'No votes came in — no bonus awarded'
+    );
+    expect(roundOutcomeText(roundResult([], [], { nobodyFoundIt: true }))).toBe(
+      'Nobody found the truth — artist +50'
+    );
   });
 
   it('summarizes final winners and ties', () => {
@@ -33,6 +39,17 @@ describe('party polish copy', () => {
     expect(finalWinnerText(scores([['Ava', 450], ['Bo', 200]]))).toBe('Ava wins');
     expect(finalWinnerText(scores([['Ava', 300], ['Bo', 300]]))).toBe('Ava and Bo tie');
     expect(finalWinnerText(scores([['Ava', 100], ['Bo', 100], ['Cy', 100]]))).toBe('3 players tie');
+    expect(rematchPrompt(scores([]))).toBe('One more masterpiece?');
+    expect(rematchPrompt(scores([['Ava', 0]]))).toBe('One more masterpiece?');
+    expect(rematchPrompt(scores([['Ava', 450], ['Bo', 300]]))).toBe(
+      'Ava won by 150—take it back?'
+    );
+    expect(rematchPrompt(scores([['Ava', 300], ['Bo', 300], ['Cy', 100]]))).toBe(
+      'Ava and Bo tied—settle it?'
+    );
+    expect(rematchPrompt(scores([['Ava', 100], ['Bo', 100], ['Cy', 100]]))).toBe(
+      '3 players tied—settle it?'
+    );
   });
 
   it('guides hosts toward a fuller party while keeping solo startable', () => {
@@ -48,7 +65,7 @@ describe('party polish copy', () => {
     expect(playerLobbyReadyNote(0, 1)).toBe('Need 1 more player.');
     expect(playerLobbyReadyNote(1, 1)).toBe('Invite 2 more for better voting.');
     expect(playerLobbyReadyNote(2, 1)).toBe('Invite 1 more for better voting.');
-    expect(playerLobbyReadyNote(3, 1)).toBe('The TV can start the game.');
+    expect(playerLobbyReadyNote(3, 1)).toBe('The host phone can start the game.');
   });
 
   it('assigns podium titles and phase action hints', () => {
@@ -63,12 +80,10 @@ describe('party polish copy', () => {
     expect(podiumTitles(four)).toEqual([
       { playerId: 'p0', title: 'Champion' },
       { playerId: 'p1', title: 'Runner-up' },
-      { playerId: 'p2', title: 'Crowd Favorite' },
-      { playerId: 'p3', title: 'Dark Horse' }
+      { playerId: 'p2', title: 'Third Place' }
     ]);
-    expect(podiumTitles(scores([['Ava', 3], ['Bo', 2], ['Cy', 1]])).some((t) => t.title === 'Dark Horse')).toBe(
-      false
-    );
+    expect(podiumTitles(four).some((title) => title.title === 'Dark Horse')).toBe(false);
+    expect(podiumTitles(four).some((title) => title.title === 'Crowd Favorite')).toBe(false);
 
     const tied = scores([
       ['Ava', 400],
@@ -81,9 +96,8 @@ describe('party polish copy', () => {
     expect(podiumTitles(tied)).toEqual([
       { playerId: 'p0', title: 'Champion' },
       { playerId: 'p1', title: 'Champion' },
-      { playerId: 'p2', title: 'Crowd Favorite' },
-      { playerId: 'p3', title: 'Crowd Favorite' },
-      { playerId: 'p4', title: 'Dark Horse' }
+      { playerId: 'p2', title: 'Third Place' },
+      { playerId: 'p3', title: 'Third Place' }
     ]);
     expect(podiumTitles(tied).some((title) => title.title === 'Runner-up')).toBe(false);
 

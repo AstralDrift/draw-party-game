@@ -1,5 +1,5 @@
 import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { createPlayers, drawStroke, makeAppUrl } from './helpers';
+import { createPlayers, drawStroke, makeAppUrl, startParty } from './helpers';
 import { TV_REVIEW_VIEWPORTS, TV_VIEWPORTS, type TvViewport } from './tv-layout';
 
 export type TvDisplaySession = {
@@ -65,7 +65,7 @@ export async function runPopulatedLobbyScenario(opts: {
       contexts.push(context);
       const roomCode = (await tv.locator('.room-code').innerText()).trim();
       await createPlayers(opts.browser, contexts, appUrl, roomCode, ['Ava', 'Bo', 'Cy']);
-      await expect(tv.getByRole('button', { name: 'Start Game' })).toBeEnabled();
+      await expect(tv.getByRole('button', { name: 'Start from TV (fallback)' })).toBeEnabled();
       await opts.assert({ page: tv, viewport, shotName: `${viewport.name}-populated-lobby.png` });
     } finally {
       await Promise.all(contexts.map((context) => context.close()));
@@ -88,8 +88,8 @@ export async function runDrawingGuessingScenario(opts: {
       contexts.push(context);
       const roomCode = (await tv.locator('.room-code').innerText()).trim();
 
-      const players = await createPlayers(opts.browser, contexts, appUrl, roomCode, ['FitA', 'FitB']);
-      await tv.getByRole('button', { name: 'Start Game' }).click();
+      const players = await createPlayers(opts.browser, contexts, appUrl, roomCode, ['FitA', 'FitB', 'FitC']);
+      await startParty(players[0]);
 
       for (const player of players) {
         await expect(player.locator('canvas.draw-canvas')).toBeVisible({ timeout: 15_000 });

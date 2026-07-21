@@ -23,7 +23,16 @@
   --status-warning: #ffd60a;
   --status-danger: #ff453a;
   --canvas: #ffffff;
+  --surface-art: #fbfcff;
   --ink: #1d1d1f;
+  --player-accent-0: #64b5ff;
+  --player-accent-1: #4adeda;
+  --player-accent-2: #55d6a7;
+  --player-accent-3: #a8e063;
+  --player-accent-4: #ffd37a;
+  --player-accent-5: #ffb86b;
+  --player-accent-6: #ff8a80;
+  --player-accent-7: #b8c4d9;
   --font-display: "Syne", "Segoe UI Display", "Avenir Next", sans-serif;
   --font-body: "DM Sans", "Segoe UI", "Helvetica Neue", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
@@ -47,6 +56,9 @@
   --motion-med: 280ms;
   --motion-slow: 520ms;
   --blur-glass: 18px;
+  --display-body: clamp(1rem, 0.63vw, 1.5rem);
+  --display-meta: clamp(0.8125rem, 0.47vw, 1.125rem);
+  --display-panel-title: clamp(1.25rem, 0.83vw, 2rem);
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);

@@ -1,16 +1,19 @@
 use crate::prompts::prompt_pack_prompts;
 use crate::protocol::{
-    DrawingDoc, GamePhase, PlayerPublic, Point, ReactionBurst, RoomSettings, RoomSnapshot,
-    RoundResult, ScoreDelta, ScoreEntry, Stroke, VoteBreakdown, VotingOption, ALLOWED_REACTIONS,
-    CANVAS_HEIGHT, CANVAS_WIDTH, MAX_DRAW_SECONDS, MAX_GUESS_LEN, MAX_GUESS_SECONDS, MAX_NAME_LEN,
+    DrawingDoc, GameMode, GamePhase, PlayerPublic, Point, ReactionBurst, RoomSettings,
+    RoomSnapshot, RoundResult, ScoreDelta, ScoreEntry, ScoreEvent, ScoreEventKind, Stroke,
+    VoteBreakdown, VotingOption, ALLOWED_REACTIONS, CANVAS_HEIGHT, CANVAS_WIDTH,
+    DEADLINE_EXTENSION_SECONDS, MAX_DRAW_SECONDS, MAX_GUESS_LEN, MAX_GUESS_SECONDS, MAX_NAME_LEN,
     MAX_PLAYERS, MAX_POINTS_PER_STROKE, MAX_RESULTS_SECONDS, MAX_ROUNDS, MAX_STROKES,
     MAX_VOTE_SECONDS, MIN_DRAW_SECONDS, MIN_GUESS_SECONDS, MIN_PLAYERS, MIN_RESULTS_SECONDS,
-    MIN_ROUNDS, MIN_VOTE_SECONDS, REACTION_COOLDOWN_MS, ROOM_TTL_MS,
+    MIN_ROUNDS, MIN_VOTE_SECONDS, PRACTICE_PLAYERS, REACTION_COOLDOWN_MS, ROOM_TTL_MS,
 };
 use rand::{seq::SliceRandom, Rng};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use unicode_normalization::UnicodeNormalization;
+
+const FINAL_SCORES_CELEBRATION_SECONDS: u64 = 3;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Player {
@@ -49,12 +52,22 @@ struct PendingDrawingRetry {
     order: Vec<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PendingScoreEvent {
+    kind: ScoreEventKind,
+    player_id: String,
+    points: i32,
+    related_player_id: Option<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Room {
     pub code: String,
     #[serde(skip)]
     pub host_token: String,
     pub phase: GamePhase,
+    #[serde(default)]
+    pub game_mode: GameMode,
     pub players: BTreeMap<String, Player>,
     #[serde(default)]
     pub host_player_id: Option<String>,
@@ -63,6 +76,8 @@ pub struct Room {
     pub current_round: u8,
     pub turn_token: u64,
     pub deadline_ms: Option<u64>,
+    #[serde(default)]
+    deadline_extension_used: bool,
     pub round: RoundState,
     #[serde(default)]
     used_prompt_keys: BTreeSet<String>,
@@ -110,6 +125,7 @@ impl Room {
             code,
             host_token,
             phase: GamePhase::Lobby,
+            game_mode: GameMode::Party,
             players: BTreeMap::new(),
             host_player_id: None,
             displays,
@@ -117,6 +133,7 @@ impl Room {
             current_round: 0,
             turn_token: 0,
             deadline_ms: None,
+            deadline_extension_used: false,
             round: RoundState::default(),
             used_prompt_keys: BTreeSet::new(),
             pending_drawing_retry: None,
@@ -170,7 +187,6 @@ impl Room {
         }
 
         self.touch(now_ms);
-        let safe_name = sanitize_name(&name);
         if !self.players.contains_key(&player_id) && self.players.len() >= MAX_PLAYERS {
             self.make_room_for_pending_retry_player(&player_id);
         }
@@ -191,30 +207,33 @@ impl Room {
             ));
         }
 
-        let restored_score = if self.players.contains_key(&player_id) {
-            None
+        if let Some(player) = self.players.get_mut(&player_id) {
+            // Reconnect is identity recovery, not an implicit rename. The canonical name only
+            // changes through set_name, where collision handling can be applied deliberately.
+            player.connected = true;
         } else {
-            self.retired_scores.remove(&player_id)
-        };
-
-        self.players
-            .entry(player_id.clone())
-            .and_modify(|player| {
-                player.name = safe_name.clone();
-                player.connected = true;
-            })
-            .or_insert_with(|| Player {
-                id: player_id,
-                name: safe_name,
-                score: restored_score.as_ref().map_or(0, |entry| entry.score),
-                connected: true,
-                spectator: joining_as_spectator,
-                joined_at_ms: now_ms,
-                last_reaction_ms: 0,
-                session_token,
-                has_played: restored_score.is_some(),
-            });
+            let restored_score = self.retired_scores.remove(&player_id);
+            let requested_name = restored_score
+                .as_ref()
+                .map_or(name.as_str(), |entry| entry.name.as_str());
+            let canonical_name = self.available_player_name(requested_name, None);
+            self.players.insert(
+                player_id.clone(),
+                Player {
+                    id: player_id,
+                    name: canonical_name,
+                    score: restored_score.as_ref().map_or(0, |entry| entry.score),
+                    connected: true,
+                    spectator: joining_as_spectator,
+                    joined_at_ms: now_ms,
+                    last_reaction_ms: 0,
+                    session_token,
+                    has_played: restored_score.is_some(),
+                },
+            );
+        }
         self.ensure_host();
+        self.rearm_quiescent_results_deadline(now_ms);
 
         Ok(())
     }
@@ -268,12 +287,47 @@ impl Room {
 
     pub fn set_name(&mut self, player_id: &str, name: String, now_ms: u64) -> EngineResult<()> {
         self.touch(now_ms);
-        let safe_name = sanitize_name(&name);
+        if !self.players.contains_key(player_id) {
+            return Err(EngineError::new(
+                "not_joined",
+                "Join the room before setting a name.",
+            ));
+        }
+        let canonical_name = self.available_player_name(&name, Some(player_id));
         let player = self.players.get_mut(player_id).ok_or_else(|| {
             EngineError::new("not_joined", "Join the room before setting a name.")
         })?;
-        player.name = safe_name;
+        player.name = canonical_name;
         Ok(())
+    }
+
+    fn available_player_name(
+        &self,
+        requested_name: &str,
+        excluded_player_id: Option<&str>,
+    ) -> String {
+        let base = sanitize_name(requested_name);
+        let reserved_names: BTreeSet<String> = self
+            .players
+            .values()
+            .filter(|player| excluded_player_id != Some(player.id.as_str()))
+            .map(|player| normalize_text(&player.name))
+            .collect();
+        if !reserved_names.contains(&normalize_text(&base)) {
+            return base;
+        }
+
+        let mut number = 2_usize;
+        loop {
+            let suffix = format!(" {number}");
+            let available_base_chars = MAX_NAME_LEN.saturating_sub(suffix.chars().count());
+            let truncated_base: String = base.chars().take(available_base_chars).collect();
+            let candidate = format!("{truncated_base}{suffix}");
+            if !reserved_names.contains(&normalize_text(&candidate)) {
+                return candidate;
+            }
+            number = number.saturating_add(1);
+        }
     }
 
     pub fn update_settings(
@@ -290,15 +344,12 @@ impl Room {
         }
 
         let settings = normalize_room_settings(settings)?;
-        if self
+        let prompt_pack_changed_during_retry = self
             .pending_drawing_retry
             .as_ref()
-            .is_some_and(|retry| retry.prompt_pack_id != settings.prompt_pack_id)
-        {
-            return Err(EngineError::new(
-                "prompt_pack_locked",
-                "Finish retrying this drawing round before changing prompt packs.",
-            ));
+            .is_some_and(|retry| retry.prompt_pack_id != settings.prompt_pack_id);
+        if prompt_pack_changed_during_retry {
+            self.abandon_pending_drawing_retry();
         }
 
         self.settings = settings;
@@ -358,8 +409,13 @@ impl Room {
     pub fn handle_start_or_advance(&mut self, now_ms: u64) -> EngineResult<EngineEvent> {
         self.touch(now_ms);
         match self.phase {
-            GamePhase::Lobby | GamePhase::FinalScores => {
-                self.start_drawing_round(now_ms)?;
+            GamePhase::Lobby => {
+                self.start_drawing_round(now_ms, Some(GameMode::Party))?;
+                Ok(EngineEvent::PhaseChanged)
+            }
+            GamePhase::FinalScores => {
+                self.ensure_final_scores_unlocked(now_ms)?;
+                self.start_drawing_round(now_ms, Some(GameMode::Party))?;
                 Ok(EngineEvent::PhaseChanged)
             }
             GamePhase::Results => {
@@ -374,6 +430,63 @@ impl Room {
                 "The game can only be started or advanced from lobby, results, or final scores.",
             )),
         }
+    }
+
+    pub fn handle_start_practice(&mut self, now_ms: u64) -> EngineResult<EngineEvent> {
+        self.touch(now_ms);
+        match self.phase {
+            GamePhase::Lobby => {
+                self.start_drawing_round(now_ms, Some(GameMode::Practice))?;
+                Ok(EngineEvent::PhaseChanged)
+            }
+            GamePhase::FinalScores => {
+                self.ensure_final_scores_unlocked(now_ms)?;
+                self.start_drawing_round(now_ms, Some(GameMode::Practice))?;
+                Ok(EngineEvent::PhaseChanged)
+            }
+            GamePhase::Drawing | GamePhase::Guessing | GamePhase::Voting | GamePhase::Results => {
+                Err(EngineError::new(
+                    "invalid_phase",
+                    "Practice can only be started from the lobby or final scores.",
+                ))
+            }
+        }
+    }
+
+    pub fn extend_deadline(&mut self, turn_token: u64, now_ms: u64) -> EngineResult<EngineEvent> {
+        self.ensure_turn_token(turn_token)?;
+        match self.phase {
+            GamePhase::Drawing | GamePhase::Guessing | GamePhase::Voting => {}
+            GamePhase::Lobby | GamePhase::Results | GamePhase::FinalScores => {
+                return Err(EngineError::new(
+                    "invalid_phase",
+                    "Only an active drawing, guessing, or voting timer can be extended.",
+                ));
+            }
+        }
+        let Some(deadline_ms) = self.deadline_ms else {
+            return Err(EngineError::new(
+                "missing_deadline",
+                "This turn does not have an active deadline.",
+            ));
+        };
+        if now_ms >= deadline_ms {
+            return Err(EngineError::new(
+                "deadline_expired",
+                "Time is already up for this turn.",
+            ));
+        }
+        if self.deadline_extension_used {
+            return Err(EngineError::new(
+                "deadline_extension_used",
+                "This turn has already received extra time.",
+            ));
+        }
+
+        self.touch(now_ms);
+        self.deadline_ms = Some(deadline_after(deadline_ms, DEADLINE_EXTENSION_SECONDS));
+        self.deadline_extension_used = true;
+        Ok(EngineEvent::Snapshot)
     }
 
     pub fn submit_drawing(
@@ -438,7 +551,6 @@ impl Room {
         }
 
         let guess = sanitize_guess(&guess)?;
-        self.ensure_guess_available(&guess)?;
         self.round.guesses.insert(player_id.to_string(), guess);
         Ok(self
             .advance_if_ready(now_ms)?
@@ -478,7 +590,11 @@ impl Room {
                 EngineError::new("invalid_vote", "That voting option is not available.")
             })?;
 
-        if option.author_player_id.as_deref() == Some(player_id) {
+        if self
+            .fake_author_ids_for_option(option)
+            .iter()
+            .any(|author_id| author_id == player_id)
+        {
             return Err(EngineError::new(
                 "own_guess",
                 "Players cannot vote for their own fake answer.",
@@ -525,8 +641,7 @@ impl Room {
             return Ok(None);
         }
 
-        self.touch(now_ms);
-        match self.phase {
+        let event = match self.phase {
             GamePhase::Drawing => {
                 if self.round.drawings.is_empty() {
                     self.reset_to_lobby_after_empty_drawing_timeout();
@@ -544,14 +659,27 @@ impl Room {
                 Ok(Some(EngineEvent::PhaseChanged))
             }
             GamePhase::Results => {
-                if self.advance_after_results(now_ms)? {
-                    Ok(Some(EngineEvent::FinalScores))
-                } else {
-                    Ok(Some(EngineEvent::PhaseChanged))
+                match self.advance_after_results(now_ms) {
+                    Ok(true) => Ok(Some(EngineEvent::FinalScores)),
+                    Ok(false) => Ok(Some(EngineEvent::PhaseChanged)),
+                    Err(error)
+                        if error.code == "not_enough_players"
+                            && self.players.values().all(|player| !player.connected) =>
+                    {
+                        // No participant can make this transition succeed. Clear the expired
+                        // deadline so maintenance stays quiet; a returning player re-arms it.
+                        self.deadline_ms = None;
+                        Ok(None)
+                    }
+                    Err(error) => Err(error),
                 }
             }
             _ => Ok(None),
+        };
+        if let Ok(Some(_)) = &event {
+            self.touch(now_ms);
         }
+        event
     }
 
     pub fn submit_reaction(
@@ -632,19 +760,22 @@ impl Room {
         RoomSnapshot {
             room_code: self.code.clone(),
             phase: self.phase.clone(),
+            game_mode: self.game_mode,
             players: self.public_players(),
             min_players: MIN_PLAYERS,
             max_players: MAX_PLAYERS,
             settings: self.settings.clone(),
             server_now_ms,
             current_round: self.current_round,
-            total_rounds: self.settings.rounds,
+            total_rounds: self.total_rounds(),
             turn_token: self.turn_token,
             deadline_ms: self.deadline_ms,
+            deadline_extension_available: self.deadline_extension_available(server_now_ms),
             current_artist_id,
             current_artist_name,
             current_drawing,
             voting_options,
+            nailed_it: false,
             round_result: self.round.result.clone(),
             final_scores: self.final_scores(),
             drawing_submitted_ids: self.round.drawings.keys().cloned().collect(),
@@ -657,12 +788,58 @@ impl Room {
         self.round.prompts.get(player_id).cloned()
     }
 
-    fn start_drawing_round(&mut self, now_ms: u64) -> EngineResult<()> {
-        if self.phase == GamePhase::Lobby && self.pending_drawing_retry.is_some() {
+    pub fn player_nailed_it(&self, player_id: &str) -> bool {
+        if self.phase != GamePhase::Voting {
+            return false;
+        }
+        let Some(artist_id) = self.round.current_artist_id.as_deref() else {
+            return false;
+        };
+        let Some(correct_answer) = self.round.prompts.get(artist_id) else {
+            return false;
+        };
+        let Some(guess) = self.round.guesses.get(player_id) else {
+            return false;
+        };
+        let Some(option_id) = self.round.votes.get(player_id) else {
+            return false;
+        };
+        normalize_text(guess) == normalize_text(correct_answer)
+            && self
+                .round
+                .voting_options
+                .iter()
+                .any(|option| option.id == *option_id && option.is_correct)
+    }
+
+    pub fn player_authored_voting_option(&self, player_id: &str, option_id: &str) -> bool {
+        self.round
+            .voting_options
+            .iter()
+            .find(|option| option.id == option_id)
+            .is_some_and(|option| {
+                self.fake_author_ids_for_option(option)
+                    .iter()
+                    .any(|author_id| author_id == player_id)
+            })
+    }
+
+    fn start_drawing_round(
+        &mut self,
+        now_ms: u64,
+        requested_mode: Option<GameMode>,
+    ) -> EngineResult<()> {
+        let abandoning_retry_for_new_mode = self.phase == GamePhase::Lobby
+            && self.pending_drawing_retry.is_some()
+            && requested_mode.is_some_and(|mode| mode != self.game_mode);
+        if self.phase == GamePhase::Lobby
+            && self.pending_drawing_retry.is_some()
+            && !abandoning_retry_for_new_mode
+        {
             return self.resume_pending_drawing_round(now_ms);
         }
 
-        let reset_prompt_history = self.phase == GamePhase::FinalScores;
+        let next_mode = requested_mode.unwrap_or(self.game_mode);
         let prompt_pack = prompt_pack_prompts(&self.settings.prompt_pack_id).ok_or_else(|| {
             EngineError::new("invalid_prompt_pack", "That prompt pack is not available.")
         })?;
@@ -671,37 +848,59 @@ impl Room {
             .values()
             .filter(|player| player.connected)
             .count();
-        if connected_count < MIN_PLAYERS {
-            let player_word = if MIN_PLAYERS == 1 {
-                "player"
-            } else {
-                "players"
-            };
+        match requested_mode {
+            Some(GameMode::Party) if connected_count < MIN_PLAYERS => {
+                return Err(EngineError::new(
+                    "not_enough_players",
+                    format!("Need at least {MIN_PLAYERS} players to start Party mode."),
+                ));
+            }
+            Some(GameMode::Practice) if connected_count != PRACTICE_PLAYERS => {
+                return Err(EngineError::new(
+                    "practice_requires_one_player",
+                    "Practice mode requires exactly one connected phone.",
+                ));
+            }
+            None if connected_count < PRACTICE_PLAYERS => {
+                return Err(EngineError::new(
+                    "not_enough_players",
+                    "Need at least one connected player to continue.",
+                ));
+            }
+            Some(GameMode::Party) | Some(GameMode::Practice) | None => {}
+        }
+        if prompt_pack.len() < connected_count {
             return Err(EngineError::new(
-                "not_enough_players",
-                format!("Need at least {MIN_PLAYERS} {player_word} to start."),
+                "prompt_pack_exhausted",
+                "The selected prompt pack cannot supply a unique prompt for every player.",
             ));
         }
         let mut available_prompts: Vec<&str> = prompt_pack
             .iter()
             .copied()
-            .filter(|prompt| {
-                reset_prompt_history || !self.used_prompt_keys.contains(&normalize_text(prompt))
-            })
+            .filter(|prompt| !self.used_prompt_keys.contains(&normalize_text(prompt)))
             .collect();
         if available_prompts.len() < connected_count {
-            return Err(EngineError::new(
-                "prompt_pack_exhausted",
-                "The selected prompt pack does not have enough unused prompts for this round.",
-            ));
+            self.used_prompt_keys.clear();
+            available_prompts = prompt_pack.to_vec();
+        }
+
+        if abandoning_retry_for_new_mode {
+            // Switching modes explicitly starts a fresh game. Keep prompt history so phones do
+            // not immediately receive prompts seen during the abandoned blank drawing round.
+            self.abandon_pending_drawing_retry();
         }
 
         if self.phase == GamePhase::Results {
             // Keep the game roster, scores, and reconnect credentials stable between rounds.
-            // Connected late-join spectators become eligible. Disconnected players sit this
-            // whole round out even if they reconnect, then return on the next drawing round.
+            // Party mode promotes connected late-join spectators. Practice mode preserves
+            // spectator status. Disconnected players sit this whole round out even if they
+            // reconnect, then return on the next drawing round.
             for player in self.players.values_mut() {
-                player.spectator = !player.connected;
+                player.spectator = match next_mode {
+                    GameMode::Party => !player.connected,
+                    GameMode::Practice => player.spectator || !player.connected,
+                };
             }
         } else {
             // A lobby start or Play Again begins a fresh game with the phones currently present.
@@ -720,14 +919,12 @@ impl Room {
             self.current_round = self.current_round.saturating_add(1);
         }
 
+        self.game_mode = next_mode;
         self.phase = GamePhase::Drawing;
         self.turn_token = self.turn_token.saturating_add(1);
         self.deadline_ms = Some(deadline_after(now_ms, self.settings.draw_seconds));
+        self.deadline_extension_used = false;
         self.round = RoundState::default();
-        if reset_prompt_history {
-            self.used_prompt_keys.clear();
-            self.pending_drawing_retry = None;
-        }
 
         let mut player_ids: Vec<String> = self
             .active_players()
@@ -790,7 +987,7 @@ impl Room {
         let replacement_count = disconnected_assignments
             .len()
             .min(connected_replacements.len());
-        if connected_assigned_count + replacement_count < MIN_PLAYERS {
+        if connected_assigned_count + replacement_count < PRACTICE_PLAYERS {
             return Err(EngineError::new(
                 "not_enough_players",
                 "At least one player needs to reconnect or join before retrying this round.",
@@ -824,6 +1021,7 @@ impl Room {
         self.phase = GamePhase::Drawing;
         self.turn_token = self.turn_token.saturating_add(1);
         self.deadline_ms = Some(deadline_after(now_ms, self.settings.draw_seconds));
+        self.deadline_extension_used = false;
         self.round = RoundState {
             prompts: retry.prompts,
             order: retry.order,
@@ -849,6 +1047,7 @@ impl Room {
         self.phase = GamePhase::Guessing;
         self.turn_token = self.turn_token.saturating_add(1);
         self.deadline_ms = Some(deadline_after(now_ms, self.settings.guess_seconds));
+        self.deadline_extension_used = false;
         self.round.current_artist_id = Some(artist_id);
         self.round.guesses.clear();
         self.round.votes.clear();
@@ -870,6 +1069,7 @@ impl Room {
             .cloned()
             .ok_or_else(|| EngineError::new("missing_prompt", "No prompt is active."))?;
 
+        let normalized_correct_answer = normalize_text(&correct_answer);
         let mut options = vec![VotingOption {
             id: String::new(),
             text: correct_answer,
@@ -877,16 +1077,34 @@ impl Room {
             author_name: None,
             is_correct: true,
         }];
+        let mut nailed_it_player_ids = Vec::new();
+        let mut fake_groups: BTreeMap<String, (String, Vec<String>)> = BTreeMap::new();
 
         for (player_id, guess) in &self.round.guesses {
+            let normalized_guess = normalize_text(guess);
+            if normalized_guess == normalized_correct_answer {
+                nailed_it_player_ids.push(player_id.clone());
+                continue;
+            }
+            fake_groups
+                .entry(normalized_guess)
+                .or_insert_with(|| (guess.clone(), Vec::new()))
+                .1
+                .push(player_id.clone());
+        }
+
+        for (_, (guess, author_ids)) in fake_groups {
+            let primary_author_id = author_ids.first().cloned().ok_or_else(|| {
+                EngineError::new("missing_author", "A fake answer has no author.")
+            })?;
             let author_name = self
                 .players
-                .get(player_id)
+                .get(&primary_author_id)
                 .map(|player| player.name.clone());
             options.push(VotingOption {
                 id: String::new(),
-                text: guess.clone(),
-                author_player_id: Some(player_id.clone()),
+                text: guess,
+                author_player_id: Some(primary_author_id),
                 author_name,
                 is_correct: false,
             });
@@ -898,6 +1116,18 @@ impl Room {
         }
         self.round.voting_options = options;
         self.round.votes.clear();
+        let correct_option_id = self
+            .round
+            .voting_options
+            .iter()
+            .find(|option| option.is_correct)
+            .map(|option| option.id.clone())
+            .ok_or_else(|| EngineError::new("missing_truth", "No correct voting option exists."))?;
+        for player_id in nailed_it_player_ids {
+            self.round
+                .votes
+                .insert(player_id, correct_option_id.clone());
+        }
         if self.round.voting_options.len() < 2 {
             self.finish_voting(now_ms)?;
             return Ok(());
@@ -905,6 +1135,7 @@ impl Room {
         self.phase = GamePhase::Voting;
         self.turn_token = self.turn_token.saturating_add(1);
         self.deadline_ms = Some(deadline_after(now_ms, self.settings.vote_seconds));
+        self.deadline_extension_used = false;
         Ok(())
     }
 
@@ -923,11 +1154,7 @@ impl Room {
 
         let mut breakdown_by_option: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let mut correct_voter_names = Vec::new();
-        let mut score_delta_by_player: BTreeMap<String, i32> = self
-            .players
-            .keys()
-            .map(|player_id| (player_id.clone(), 0))
-            .collect();
+        let mut pending_score_events = Vec::new();
 
         for (voter_id, option_id) in &self.round.votes {
             let voter_name = self
@@ -951,15 +1178,36 @@ impl Room {
 
             if option.is_correct {
                 correct_voter_names.push(voter_name);
-                add_score_delta(&mut self.players, &mut score_delta_by_player, voter_id, 200);
-                add_score_delta(
-                    &mut self.players,
-                    &mut score_delta_by_player,
-                    &artist_id,
-                    100,
-                );
-            } else if let Some(author_id) = &option.author_player_id {
-                add_score_delta(&mut self.players, &mut score_delta_by_player, author_id, 50);
+                if self.game_mode == GameMode::Party {
+                    pending_score_events.push(PendingScoreEvent {
+                        kind: ScoreEventKind::FoundTruth,
+                        player_id: voter_id.clone(),
+                        points: 200,
+                        related_player_id: Some(artist_id.clone()),
+                    });
+                    pending_score_events.push(PendingScoreEvent {
+                        kind: ScoreEventKind::ArtistClarity,
+                        player_id: artist_id.clone(),
+                        points: 100,
+                        related_player_id: Some(voter_id.clone()),
+                    });
+                }
+            } else if self.game_mode == GameMode::Party {
+                let author_ids = self.fake_author_ids_for_option(option);
+                let author_count = author_ids.len();
+                if author_count > 0 {
+                    let base_points = 50 / author_count as i32;
+                    let remainder = 50_usize % author_count;
+                    for (index, author_id) in author_ids.into_iter().enumerate() {
+                        let points = base_points + if index < remainder { 1 } else { 0 };
+                        pending_score_events.push(PendingScoreEvent {
+                            kind: ScoreEventKind::FooledPlayer,
+                            player_id: author_id,
+                            points,
+                            related_player_id: Some(voter_id.clone()),
+                        });
+                    }
+                }
             }
         }
 
@@ -968,9 +1216,18 @@ impl Room {
             .prompts
             .keys()
             .filter(|player_id| **player_id != artist_id)
+            .filter(|player_id| {
+                self.round.votes.contains_key(*player_id)
+                    || self
+                        .players
+                        .get(*player_id)
+                        .is_some_and(|player| player.connected)
+            })
             .cloned()
             .collect();
-        let nobody_found_it = correct_voter_names.is_empty() && !eligible_voter_ids.is_empty();
+        let nobody_found_it = !self.round.votes.is_empty()
+            && correct_voter_names.is_empty()
+            && !eligible_voter_ids.is_empty();
         let perfect_truth = !eligible_voter_ids.is_empty()
             && eligible_voter_ids.iter().all(|voter_id| {
                 self.round.votes.get(voter_id).is_some_and(|option_id| {
@@ -981,19 +1238,27 @@ impl Room {
                 })
             });
 
-        if nobody_found_it {
-            add_score_delta(
-                &mut self.players,
-                &mut score_delta_by_player,
-                &artist_id,
-                50,
-            );
+        if nobody_found_it && self.game_mode == GameMode::Party {
+            pending_score_events.push(PendingScoreEvent {
+                kind: ScoreEventKind::NobodyFoundIt,
+                player_id: artist_id.clone(),
+                points: 50,
+                related_player_id: None,
+            });
         }
-        if perfect_truth {
+        if perfect_truth && self.game_mode == GameMode::Party {
             for voter_id in &eligible_voter_ids {
-                add_score_delta(&mut self.players, &mut score_delta_by_player, voter_id, 25);
+                pending_score_events.push(PendingScoreEvent {
+                    kind: ScoreEventKind::PerfectTruth,
+                    player_id: artist_id.clone(),
+                    points: 25,
+                    related_player_id: Some(voter_id.clone()),
+                });
             }
         }
+
+        let (score_delta_by_player, score_events) =
+            apply_score_events(&mut self.players, &pending_score_events);
 
         let breakdown = self
             .round
@@ -1004,7 +1269,17 @@ impl Room {
                 option_text: option.text.clone(),
                 voter_names: breakdown_by_option.remove(&option.id).unwrap_or_default(),
                 is_correct: option.is_correct,
-                author_name: option.author_name.clone(),
+                author_name: (!option.is_correct).then(|| {
+                    self.fake_author_ids_for_option(option)
+                        .into_iter()
+                        .filter_map(|player_id| {
+                            self.players
+                                .get(&player_id)
+                                .map(|player| player.name.clone())
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" & ")
+                }),
             })
             .collect();
 
@@ -1023,6 +1298,7 @@ impl Room {
                     .get(&player.id)
                     .copied()
                     .unwrap_or_default(),
+                score_after: player.score,
             })
             .collect();
 
@@ -1033,12 +1309,14 @@ impl Room {
             correct_voter_names,
             breakdown,
             score_deltas,
+            score_events,
             nobody_found_it,
             perfect_truth,
         });
         self.phase = GamePhase::Results;
         self.turn_token = self.turn_token.saturating_add(1);
         self.deadline_ms = Some(deadline_after(now_ms, self.settings.results_seconds));
+        self.deadline_extension_used = false;
         Ok(())
     }
 
@@ -1050,8 +1328,19 @@ impl Room {
         });
         self.phase = GamePhase::Lobby;
         self.deadline_ms = None;
+        self.deadline_extension_used = false;
         self.turn_token = self.turn_token.saturating_add(1);
         self.round = RoundState::default();
+    }
+
+    fn abandon_pending_drawing_retry(&mut self) {
+        self.pending_drawing_retry = None;
+        self.current_round = 0;
+        self.current_round_prompt_viewers.clear();
+        // The hidden retry made new arrivals spectators so they could not join its preserved
+        // assignment. Once that assignment is abandoned, this is a fresh lobby again and every
+        // connected phone must count toward Party / Practice readiness.
+        self.promote_spectators();
     }
 
     fn advance_after_results(&mut self, now_ms: u64) -> EngineResult<bool> {
@@ -1060,14 +1349,21 @@ impl Room {
             return Ok(false);
         }
 
-        if self.current_round >= self.settings.rounds {
+        if self.current_round >= self.total_rounds() {
             self.phase = GamePhase::FinalScores;
-            self.deadline_ms = None;
+            self.deadline_ms = Some(deadline_after(now_ms, FINAL_SCORES_CELEBRATION_SECONDS));
+            self.deadline_extension_used = false;
             return Ok(true);
         }
 
-        self.start_drawing_round(now_ms)?;
+        self.start_drawing_round(now_ms, None)?;
         Ok(false)
+    }
+
+    fn rearm_quiescent_results_deadline(&mut self, now_ms: u64) {
+        if self.phase == GamePhase::Results && self.deadline_ms.is_none() {
+            self.deadline_ms = Some(now_ms);
+        }
     }
 
     fn next_artist_with_drawing(&mut self) -> Option<String> {
@@ -1168,27 +1464,17 @@ impl Room {
         Ok(())
     }
 
-    fn ensure_guess_available(&self, guess: &str) -> EngineResult<()> {
-        let normalized_guess = normalize_text(guess);
-        let correct_answer = self
-            .round
-            .current_artist_id
-            .as_deref()
-            .and_then(|artist_id| self.round.prompts.get(artist_id))
-            .ok_or_else(|| EngineError::new("missing_prompt", "No prompt is active."))?;
-        let conflicts = normalized_guess == normalize_text(correct_answer)
-            || self
-                .round
-                .guesses
-                .values()
-                .any(|accepted| normalize_text(accepted) == normalized_guess);
-        if conflicts {
-            return Err(EngineError::new(
-                "guess_conflict",
-                "That title can't be used. Try a different one.",
-            ));
+    fn fake_author_ids_for_option(&self, option: &VotingOption) -> Vec<String> {
+        if option.is_correct {
+            return Vec::new();
         }
-        Ok(())
+        let normalized_option = normalize_text(&option.text);
+        self.round
+            .guesses
+            .iter()
+            .filter(|(_, guess)| normalize_text(guess) == normalized_option)
+            .map(|(player_id, _)| player_id.clone())
+            .collect()
     }
 
     fn eligible_voter_count(&self) -> usize {
@@ -1257,6 +1543,38 @@ impl Room {
         scores
     }
 
+    fn total_rounds(&self) -> u8 {
+        match self.game_mode {
+            GameMode::Party => self.settings.rounds,
+            GameMode::Practice => 1,
+        }
+    }
+
+    fn deadline_extension_available(&self, now_ms: u64) -> bool {
+        let timed_phase = match self.phase {
+            GamePhase::Drawing | GamePhase::Guessing | GamePhase::Voting => true,
+            GamePhase::Lobby | GamePhase::Results | GamePhase::FinalScores => false,
+        };
+        timed_phase
+            && !self.deadline_extension_used
+            && self
+                .deadline_ms
+                .is_some_and(|deadline_ms| now_ms < deadline_ms)
+    }
+
+    fn ensure_final_scores_unlocked(&self, now_ms: u64) -> EngineResult<()> {
+        if self
+            .deadline_ms
+            .is_some_and(|unlock_deadline_ms| now_ms < unlock_deadline_ms)
+        {
+            return Err(EngineError::new(
+                "final_scores_locked",
+                "Let the final scores land before starting again.",
+            ));
+        }
+        Ok(())
+    }
+
     fn active_players(&self) -> impl Iterator<Item = &Player> {
         self.players.values().filter(|player| is_active(player))
     }
@@ -1280,6 +1598,19 @@ pub fn generate_room_code(existing: &BTreeSet<String>) -> String {
 
 fn normalize_room_settings(mut settings: RoomSettings) -> EngineResult<RoomSettings> {
     settings.prompt_pack_id = settings.prompt_pack_id.trim().to_string();
+    settings.rounds = settings.rounds.clamp(MIN_ROUNDS, MAX_ROUNDS);
+    settings.draw_seconds = settings
+        .draw_seconds
+        .clamp(MIN_DRAW_SECONDS, MAX_DRAW_SECONDS);
+    settings.guess_seconds = settings
+        .guess_seconds
+        .clamp(MIN_GUESS_SECONDS, MAX_GUESS_SECONDS);
+    settings.vote_seconds = settings
+        .vote_seconds
+        .clamp(MIN_VOTE_SECONDS, MAX_VOTE_SECONDS);
+    settings.results_seconds = settings
+        .results_seconds
+        .clamp(MIN_RESULTS_SECONDS, MAX_RESULTS_SECONDS);
     validate_room_settings(&settings)?;
     Ok(settings)
 }
@@ -1340,18 +1671,40 @@ fn is_allowed_reaction(emoji: &str) -> bool {
     ALLOWED_REACTIONS.contains(&emoji)
 }
 
-fn add_score_delta(
+fn apply_score_events(
     players: &mut BTreeMap<String, Player>,
-    score_delta_by_player: &mut BTreeMap<String, i32>,
-    player_id: &str,
-    delta: i32,
-) {
-    if let Some(player) = players.get_mut(player_id) {
-        player.score += delta;
+    pending_events: &[PendingScoreEvent],
+) -> (BTreeMap<String, i32>, Vec<ScoreEvent>) {
+    let mut score_delta_by_player: BTreeMap<String, i32> = players
+        .keys()
+        .map(|player_id| (player_id.clone(), 0))
+        .collect();
+    let mut score_events = Vec::with_capacity(pending_events.len());
+
+    for pending in pending_events {
+        let related_player_name = pending
+            .related_player_id
+            .as_ref()
+            .and_then(|player_id| players.get(player_id))
+            .map(|player| player.name.clone());
+        let Some(player) = players.get_mut(&pending.player_id) else {
+            continue;
+        };
+        player.score = player.score.saturating_add(pending.points);
         *score_delta_by_player
-            .entry(player_id.to_string())
-            .or_default() += delta;
+            .entry(pending.player_id.clone())
+            .or_default() += pending.points;
+        score_events.push(ScoreEvent {
+            kind: pending.kind,
+            player_id: player.id.clone(),
+            name: player.name.clone(),
+            points: pending.points,
+            related_player_id: pending.related_player_id.clone(),
+            related_player_name,
+        });
     }
+
+    (score_delta_by_player, score_events)
 }
 
 pub fn sanitize_name(name: &str) -> String {

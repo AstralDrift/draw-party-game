@@ -524,11 +524,17 @@ async fn handle_client_message(state: &AppState, session: &SessionKey, message: 
         ClientMessage::JoinRoom { room_code, name } => {
             join_room(state, session, room_code, name).await
         }
-        ClientMessage::SetName { name } => set_name(state, session, name).await,
+        ClientMessage::SetName { name, request_id } => {
+            set_name(state, session, name, request_id).await
+        }
         ClientMessage::UpdateRoomSettings { settings } => {
             update_room_settings(state, session, settings).await
         }
         ClientMessage::StartGame => start_or_advance(state, session).await,
+        ClientMessage::StartPractice => start_practice(state, session).await,
+        ClientMessage::ExtendDeadline { turn_token } => {
+            extend_deadline(state, session, turn_token).await
+        }
         ClientMessage::SubmitDrawing {
             turn_token,
             drawing,
@@ -659,12 +665,77 @@ async fn join_room(state: &AppState, session: &SessionKey, room_code: String, na
     .await;
 }
 
-async fn set_name(state: &AppState, session: &SessionKey, name: String) {
-    mutate_current_room(state, session, |room| {
-        room.set_name(session.client_id(), name, now_ms())?;
-        Ok(EngineEvent::PlayerListChanged)
-    })
-    .await;
+async fn set_name(
+    state: &AppState,
+    session: &SessionKey,
+    name: String,
+    request_id: Option<String>,
+) {
+    if request_id
+        .as_deref()
+        .is_some_and(|request_id| Uuid::parse_str(request_id).is_err())
+    {
+        send_error(
+            state,
+            session,
+            "invalid_message",
+            "Rename request ID was not understood.",
+        )
+        .await;
+        return;
+    }
+
+    let mut inner = state.inner.lock().await;
+    let Some(room_code) = inner
+        .connection(session)
+        .and_then(Connection::room_code_owned)
+    else {
+        let messages = targeted_error(&inner, session, "not_in_room", "Join a room first.");
+        deliver_many(messages);
+        return;
+    };
+
+    let now = now_ms();
+    let result = inner
+        .rooms
+        .get_mut(&room_code)
+        .map(|room| {
+            room.set_name(session.client_id(), name, now)?;
+            let canonical_name = room
+                .snapshot(now)
+                .players
+                .into_iter()
+                .find(|player| player.id == session.client_id())
+                .map(|player| player.name);
+            Ok((EngineEvent::PlayerListChanged, canonical_name))
+        })
+        .unwrap_or_else(|| {
+            Err(EngineError {
+                code: "room_not_found",
+                message: "That room does not exist.".to_string(),
+            })
+        });
+
+    let messages = match result {
+        Ok((event, canonical_name)) => {
+            let mut messages = Vec::new();
+            if let (Some(request_id), Some(canonical_name), Some(conn)) =
+                (request_id, canonical_name, inner.connection(session))
+            {
+                messages.push((
+                    conn.outbound(),
+                    ServerMessage::NameSet {
+                        request_id,
+                        canonical_name,
+                    },
+                ));
+            }
+            messages.extend(room_messages(&inner, &room_code, event));
+            messages
+        }
+        Err(error) => targeted_error(&inner, session, error.code, &error.message),
+    };
+    deliver_many(messages);
 }
 
 async fn update_room_settings(state: &AppState, session: &SessionKey, settings: RoomSettings) {
@@ -697,6 +768,40 @@ async fn start_or_advance(state: &AppState, session: &SessionKey) {
     };
     mutate_room(state, session, &room_code, |room| {
         room.handle_start_or_advance(now_ms())
+    })
+    .await;
+}
+
+async fn start_practice(state: &AppState, session: &SessionKey) {
+    let Some(room_code) = authorized_controller_room_code(state, session).await else {
+        send_error(
+            state,
+            session,
+            "not_authorized",
+            "Only the TV display or the host phone can start Practice.",
+        )
+        .await;
+        return;
+    };
+    mutate_room(state, session, &room_code, |room| {
+        room.handle_start_practice(now_ms())
+    })
+    .await;
+}
+
+async fn extend_deadline(state: &AppState, session: &SessionKey, turn_token: u64) {
+    let Some(room_code) = authorized_controller_room_code(state, session).await else {
+        send_error(
+            state,
+            session,
+            "not_authorized",
+            "Only the TV display or the host phone can add time.",
+        )
+        .await;
+        return;
+    };
+    mutate_room(state, session, &room_code, |room| {
+        room.extend_deadline(turn_token, now_ms())
     })
     .await;
 }
@@ -935,17 +1040,16 @@ fn personalize_snapshot(
         return snapshot;
     }
 
+    snapshot.nailed_it = room.player_nailed_it(client_id);
+    let player_name = snapshot
+        .players
+        .iter()
+        .find(|player| player.id == client_id)
+        .map(|player| player.name.clone());
     for option in &mut snapshot.voting_options {
-        if let Some(source) = room
-            .round
-            .voting_options
-            .iter()
-            .find(|candidate| candidate.id == option.id)
-        {
-            if source.author_player_id.as_deref() == Some(client_id) {
-                option.author_player_id = source.author_player_id.clone();
-                option.author_name = source.author_name.clone();
-            }
+        if room.player_authored_voting_option(client_id, &option.id) {
+            option.author_player_id = Some(client_id.to_string());
+            option.author_name = player_name.clone();
         }
     }
     snapshot
@@ -953,6 +1057,11 @@ fn personalize_snapshot(
 
 fn queue_snapshot_for_connection(inner: &AppInner, session: &SessionKey, snapshot: RoomSnapshot) {
     if let Some(conn) = inner.connection(session) {
+        let snapshot = conn
+            .room_code()
+            .and_then(|room_code| inner.rooms.get(room_code))
+            .map(|room| personalize_snapshot(room, &snapshot, session.client_id(), conn.role()))
+            .unwrap_or(snapshot);
         deliver_many(vec![(
             conn.outbound(),
             ServerMessage::RoomSnapshot { snapshot },
@@ -1085,6 +1194,16 @@ mod tests {
         panic!("did not receive websocket message type {message_type}");
     }
 
+    async fn read_until_phase(ws: &mut TestSocket, phase: &str) -> Value {
+        for _ in 0..20 {
+            let value = read_json(ws).await;
+            if value.pointer("/snapshot/phase").and_then(Value::as_str) == Some(phase) {
+                return value;
+            }
+        }
+        panic!("did not receive websocket snapshot for phase {phase}");
+    }
+
     async fn read_until_settings_rounds(ws: &mut TestSocket, rounds: u64) -> Value {
         for _ in 0..10 {
             let value = read_json(ws).await;
@@ -1138,7 +1257,12 @@ mod tests {
         (room_code, host_token, snapshot)
     }
 
-    async fn join_player(url: &str, room_code: &str, client_id: &str, name: &str) -> TestSocket {
+    async fn join_player_with_snapshot(
+        url: &str,
+        room_code: &str,
+        client_id: &str,
+        name: &str,
+    ) -> (TestSocket, Value) {
         let (mut player, _) = connect_async(format!(
             "{url}?role=player&room={room_code}&clientId={client_id}&sessionToken={client_id}-session"
         ))
@@ -1152,8 +1276,45 @@ mod tests {
             })))
             .await
             .unwrap();
-        let _ = read_until_type(&mut player, "roomSnapshot").await;
-        player
+        let snapshot = read_until_type(&mut player, "roomSnapshot").await;
+        (player, snapshot)
+    }
+
+    async fn join_player(url: &str, room_code: &str, client_id: &str, name: &str) -> TestSocket {
+        join_player_with_snapshot(url, room_code, client_id, name)
+            .await
+            .0
+    }
+
+    fn player_name<'a>(message: &'a Value, player_id: &str) -> Option<&'a str> {
+        message
+            .get("players")
+            .or_else(|| message.pointer("/snapshot/players"))
+            .and_then(Value::as_array)
+            .and_then(|players| {
+                players
+                    .iter()
+                    .find(|player| player.get("id").and_then(Value::as_str) == Some(player_id))
+            })
+            .and_then(|player| player.get("name"))
+            .and_then(Value::as_str)
+    }
+
+    #[test]
+    fn set_name_request_id_remains_optional_for_older_clients() {
+        let message = serde_json::from_value::<ClientMessage>(json!({
+            "type": "setName",
+            "name": "Ada"
+        }))
+        .unwrap();
+
+        assert_eq!(
+            message,
+            ClientMessage::SetName {
+                name: "Ada".to_string(),
+                request_id: None
+            }
+        );
     }
 
     #[tokio::test]
@@ -1232,6 +1393,88 @@ mod tests {
     }
 
     #[test]
+    fn personalized_voting_snapshot_marks_each_duplicate_coauthor_only_for_self() {
+        let mut room = Room::new(
+            "ABCD".to_string(),
+            "display".to_string(),
+            "host-token".to_string(),
+            0,
+        );
+        for (index, player_id) in ["p1", "p2", "p3"].into_iter().enumerate() {
+            room.upsert_player(
+                player_id.to_string(),
+                format!("Player {index}"),
+                index as u64 + 1,
+            )
+            .unwrap();
+        }
+        room.handle_start_or_advance(100).unwrap();
+        let drawing_token = room.turn_token;
+        for player_id in ["p1", "p2", "p3"] {
+            room.submit_drawing(
+                player_id,
+                drawing_token,
+                serde_json::from_value(drawing_value()).unwrap(),
+                200,
+            )
+            .unwrap();
+        }
+        let artist_id = room.round.current_artist_id.clone().unwrap();
+        let voters: Vec<String> = room
+            .players
+            .keys()
+            .filter(|player_id| **player_id != artist_id)
+            .cloned()
+            .collect();
+        let guessing_token = room.turn_token;
+        room.submit_guess(&voters[0], guessing_token, "Same fake".to_string(), 300)
+            .unwrap();
+        room.submit_guess(&voters[1], guessing_token, " same   FAKE ".to_string(), 301)
+            .unwrap();
+        assert_eq!(room.phase, GamePhase::Voting);
+        let merged_option_id = room
+            .round
+            .voting_options
+            .iter()
+            .find(|option| !option.is_correct)
+            .unwrap()
+            .id
+            .clone();
+        let base = room.snapshot(302);
+
+        for voter_id in &voters {
+            let snapshot = personalize_snapshot(&room, &base, voter_id, &Role::Player);
+            let option = snapshot
+                .voting_options
+                .iter()
+                .find(|option| option.id == merged_option_id)
+                .unwrap();
+            assert_eq!(option.author_player_id.as_deref(), Some(voter_id.as_str()));
+            assert_eq!(
+                option.author_name.as_deref(),
+                room.players
+                    .get(voter_id)
+                    .map(|player| player.name.as_str())
+            );
+            assert!(snapshot
+                .voting_options
+                .iter()
+                .all(|option| !option.is_correct));
+        }
+
+        for (client_id, role) in [
+            (artist_id.as_str(), Role::Player),
+            ("display", Role::Display),
+        ] {
+            let snapshot = personalize_snapshot(&room, &base, client_id, &role);
+            assert!(snapshot
+                .voting_options
+                .iter()
+                .all(|option| option.author_player_id.is_none() && option.author_name.is_none()));
+        }
+    }
+
+    #[test]
     fn health_response_prefers_railway_metadata_and_trims_values() {
         let values = HashMap::from([
             ("RAILWAY_GIT_COMMIT_SHA", "  railway-sha  "),
@@ -1277,7 +1520,7 @@ mod tests {
                 .get("settings")
                 .and_then(|settings| settings.get("rounds"))
                 .and_then(Value::as_u64),
-            Some(5)
+            Some(2)
         );
         assert!(snapshot.get("serverNowMs").and_then(Value::as_u64).unwrap() > 0);
 
@@ -1286,7 +1529,7 @@ mod tests {
                 "type": "updateRoomSettings",
                 "settings": {
                     "rounds": 3,
-                    "drawSeconds": 30,
+                    "drawSeconds": 60,
                     "guessSeconds": 20,
                     "voteSeconds": 15,
                     "resultsSeconds": 12,
@@ -1302,11 +1545,53 @@ mod tests {
             .unwrap();
         assert_eq!(
             settings.get("drawSeconds").and_then(Value::as_u64),
-            Some(30)
+            Some(60)
         );
         assert_eq!(
             settings.get("promptPackId").and_then(Value::as_str),
             Some("safe-party")
+        );
+
+        // A cached client from the previous release can still send its former timer minima.
+        // The server accepts the message and broadcasts the normalized safe settings.
+        display
+            .send(text_message(json!({
+                "type": "updateRoomSettings",
+                "settings": {
+                    "rounds": 1,
+                    "drawSeconds": 30,
+                    "guessSeconds": 15,
+                    "voteSeconds": 10,
+                    "resultsSeconds": 5,
+                    "promptPackId": "safe-party"
+                }
+            })))
+            .await
+            .unwrap();
+        let legacy_low = read_until_settings_rounds(&mut display, 1).await;
+        assert_eq!(
+            legacy_low
+                .pointer("/snapshot/settings/drawSeconds")
+                .and_then(Value::as_u64),
+            Some(45)
+        );
+        assert_eq!(
+            legacy_low
+                .pointer("/snapshot/settings/guessSeconds")
+                .and_then(Value::as_u64),
+            Some(20)
+        );
+        assert_eq!(
+            legacy_low
+                .pointer("/snapshot/settings/voteSeconds")
+                .and_then(Value::as_u64),
+            Some(15)
+        );
+        assert_eq!(
+            legacy_low
+                .pointer("/snapshot/settings/resultsSeconds")
+                .and_then(Value::as_u64),
+            Some(10)
         );
 
         let (mut player, _) =
@@ -1332,22 +1617,46 @@ mod tests {
             .send(text_message(json!({
                 "type": "updateRoomSettings",
                 "settings": {
-                    "rounds": 4,
-                    "drawSeconds": 30,
-                    "guessSeconds": 20,
-                    "voteSeconds": 15,
-                    "resultsSeconds": 12,
+                    "rounds": 12,
+                    "drawSeconds": 180,
+                    "guessSeconds": 120,
+                    "voteSeconds": 90,
+                    "resultsSeconds": 30,
                     "promptPackId": "safe-party"
                 }
             })))
             .await
             .unwrap();
-        let host_updated = read_until_settings_rounds(&mut player, 4).await;
+        let host_updated = read_until_settings_rounds(&mut player, 3).await;
         assert_eq!(
             host_updated
                 .pointer("/snapshot/settings/rounds")
                 .and_then(Value::as_u64),
-            Some(4)
+            Some(3)
+        );
+        assert_eq!(
+            host_updated
+                .pointer("/snapshot/settings/drawSeconds")
+                .and_then(Value::as_u64),
+            Some(120)
+        );
+        assert_eq!(
+            host_updated
+                .pointer("/snapshot/settings/guessSeconds")
+                .and_then(Value::as_u64),
+            Some(60)
+        );
+        assert_eq!(
+            host_updated
+                .pointer("/snapshot/settings/voteSeconds")
+                .and_then(Value::as_u64),
+            Some(40)
+        );
+        assert_eq!(
+            host_updated
+                .pointer("/snapshot/settings/resultsSeconds")
+                .and_then(Value::as_u64),
+            Some(15)
         );
 
         let (mut guest, _) =
@@ -1368,7 +1677,7 @@ mod tests {
                 "type": "updateRoomSettings",
                 "settings": {
                     "rounds": 2,
-                    "drawSeconds": 30,
+                    "drawSeconds": 60,
                     "guessSeconds": 20,
                     "voteSeconds": 15,
                     "resultsSeconds": 12,
@@ -1385,6 +1694,254 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn websocket_disambiguates_names_and_preserves_the_name_on_reconnect() {
+        let url = spawn_ws_server().await;
+        let (mut display, _) = connect_async(format!("{url}?role=display&clientId=display"))
+            .await
+            .unwrap();
+        let (room_code, _, _) = create_test_room(&mut display).await;
+
+        let (mut p1, first_join) = join_player_with_snapshot(&url, &room_code, "p1", "Ada").await;
+        assert_eq!(player_name(&first_join, "p1"), Some("Ada"));
+
+        let (mut p2, second_join) = join_player_with_snapshot(&url, &room_code, "p2", "ada").await;
+        assert_eq!(player_name(&second_join, "p1"), Some("Ada"));
+        assert_eq!(player_name(&second_join, "p2"), Some("ada 2"));
+
+        p2.send(text_message(json!({
+            "type": "setName",
+            "name": "ada",
+            "requestId": "11111111-1111-4111-8111-111111111111"
+        })))
+        .await
+        .unwrap();
+        let acknowledged = read_until_type(&mut p2, "nameSet").await;
+        assert_eq!(
+            acknowledged.get("requestId").and_then(Value::as_str),
+            Some("11111111-1111-4111-8111-111111111111")
+        );
+        assert_eq!(
+            acknowledged.get("canonicalName").and_then(Value::as_str),
+            Some("ada 2")
+        );
+        let renamed = read_until_type(&mut p2, "playerListChanged").await;
+        assert_eq!(player_name(&renamed, "p1"), Some("Ada"));
+        assert_eq!(player_name(&renamed, "p2"), Some("ada 2"));
+
+        p1.send(text_message(json!({ "type": "leaveRoom" })))
+            .await
+            .unwrap();
+        let disconnected = read_until_type(&mut p2, "playerListChanged").await;
+        assert_eq!(
+            disconnected
+                .get("players")
+                .and_then(Value::as_array)
+                .and_then(|players| {
+                    players
+                        .iter()
+                        .find(|player| player.get("id").and_then(Value::as_str) == Some("p1"))
+                })
+                .and_then(|player| player.get("connected"))
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+
+        let (_p3, third_join) = join_player_with_snapshot(&url, &room_code, "p3", "aDa").await;
+        assert_eq!(player_name(&third_join, "p1"), Some("Ada"));
+        assert_eq!(player_name(&third_join, "p2"), Some("ada 2"));
+        assert_eq!(player_name(&third_join, "p3"), Some("aDa 3"));
+
+        let (_restored, reconnect) =
+            join_player_with_snapshot(&url, &room_code, "p1", "Mallory").await;
+        assert_eq!(player_name(&reconnect, "p1"), Some("Ada"));
+        assert_eq!(player_name(&reconnect, "p2"), Some("ada 2"));
+        assert_eq!(player_name(&reconnect, "p3"), Some("aDa 3"));
+    }
+
+    #[tokio::test]
+    async fn websocket_controller_rejects_guest_duplicate_and_stale_deadline_extensions() {
+        let url = spawn_ws_server().await;
+        let (mut display, _) = connect_async(format!("{url}?role=display&clientId=display"))
+            .await
+            .unwrap();
+        let (room_code, _, _) = create_test_room(&mut display).await;
+        let mut host = join_player(&url, &room_code, "p1", "Ada").await;
+        let mut guest = join_player(&url, &room_code, "p2", "Grace").await;
+        let mut third = join_player(&url, &room_code, "p3", "Linus").await;
+
+        display
+            .send(text_message(json!({ "type": "startGame" })))
+            .await
+            .unwrap();
+        let phase = read_until_type(&mut display, "phaseChanged").await;
+        let original_deadline = phase
+            .pointer("/snapshot/deadlineMs")
+            .and_then(Value::as_u64)
+            .unwrap();
+        let drawing_turn_token = phase
+            .pointer("/snapshot/turnToken")
+            .and_then(Value::as_u64)
+            .unwrap();
+        assert_eq!(
+            phase
+                .pointer("/snapshot/deadlineExtensionAvailable")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        let initial_snapshot = read_until_type(&mut display, "roomSnapshot").await;
+        assert_eq!(
+            initial_snapshot
+                .pointer("/snapshot/deadlineMs")
+                .and_then(Value::as_u64),
+            Some(original_deadline)
+        );
+
+        guest
+            .send(text_message(json!({
+                "type": "extendDeadline",
+                "turnToken": drawing_turn_token
+            })))
+            .await
+            .unwrap();
+        let unauthorized = read_until_type(&mut guest, "error").await;
+        assert_eq!(
+            unauthorized.get("code").and_then(Value::as_str),
+            Some("not_authorized")
+        );
+
+        display
+            .send(text_message(json!({
+                "type": "extendDeadline",
+                "turnToken": drawing_turn_token
+            })))
+            .await
+            .unwrap();
+        let extended = read_until_type(&mut display, "roomSnapshot").await;
+        assert_eq!(
+            extended
+                .pointer("/snapshot/deadlineMs")
+                .and_then(Value::as_u64),
+            Some(original_deadline + 30_000)
+        );
+        assert_eq!(
+            extended
+                .pointer("/snapshot/deadlineExtensionAvailable")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+
+        display
+            .send(text_message(json!({
+                "type": "extendDeadline",
+                "turnToken": drawing_turn_token
+            })))
+            .await
+            .unwrap();
+        let duplicate = read_until_type(&mut display, "error").await;
+        assert_eq!(
+            duplicate.get("code").and_then(Value::as_str),
+            Some("deadline_extension_used")
+        );
+
+        for player in [&mut host, &mut guest, &mut third] {
+            player
+                .send(text_message(json!({
+                    "type": "submitDrawing",
+                    "turnToken": drawing_turn_token,
+                    "drawing": drawing_value()
+                })))
+                .await
+                .unwrap();
+        }
+        let guessing = read_until_type(&mut display, "phaseChanged").await;
+        let guessing_deadline = guessing
+            .pointer("/snapshot/deadlineMs")
+            .and_then(Value::as_u64)
+            .unwrap();
+        let guessing_turn_token = guessing
+            .pointer("/snapshot/turnToken")
+            .and_then(Value::as_u64)
+            .unwrap();
+        assert_ne!(guessing_turn_token, drawing_turn_token);
+
+        display
+            .send(text_message(json!({
+                "type": "extendDeadline",
+                "turnToken": drawing_turn_token
+            })))
+            .await
+            .unwrap();
+        let stale = read_until_type(&mut display, "error").await;
+        assert_eq!(
+            stale.get("code").and_then(Value::as_str),
+            Some("stale_turn")
+        );
+
+        display
+            .send(text_message(json!({
+                "type": "extendDeadline",
+                "turnToken": guessing_turn_token
+            })))
+            .await
+            .unwrap();
+        let next_turn_extended = read_until_type(&mut display, "roomSnapshot").await;
+        assert_eq!(
+            next_turn_extended
+                .pointer("/snapshot/deadlineMs")
+                .and_then(Value::as_u64),
+            Some(guessing_deadline + 30_000)
+        );
+        assert_eq!(
+            next_turn_extended
+                .pointer("/snapshot/deadlineExtensionAvailable")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+    }
+
+    #[tokio::test]
+    async fn websocket_party_requires_three_but_solo_practice_starts() {
+        let url = spawn_ws_server().await;
+        let (mut display, _) = connect_async(format!("{url}?role=display&clientId=display"))
+            .await
+            .unwrap();
+        let (room_code, _, _) = create_test_room(&mut display).await;
+        let _player = join_player(&url, &room_code, "p1", "Ada").await;
+
+        display
+            .send(text_message(json!({ "type": "startGame" })))
+            .await
+            .unwrap();
+        let party_error = read_until_type(&mut display, "error").await;
+        assert_eq!(
+            party_error.get("code").and_then(Value::as_str),
+            Some("not_enough_players")
+        );
+
+        display
+            .send(text_message(json!({ "type": "startPractice" })))
+            .await
+            .unwrap();
+        let practice = read_until_type(&mut display, "phaseChanged").await;
+        assert_eq!(
+            practice.pointer("/snapshot/phase").and_then(Value::as_str),
+            Some("drawing")
+        );
+        assert_eq!(
+            practice
+                .pointer("/snapshot/gameMode")
+                .and_then(Value::as_str),
+            Some("practice")
+        );
+        assert_eq!(
+            practice
+                .pointer("/snapshot/totalRounds")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+    }
+
+    #[tokio::test]
     async fn websocket_display_reconnect_requires_host_token() {
         let url = spawn_ws_server().await;
         let (mut display, _) = connect_async(format!("{url}?role=display&clientId=display"))
@@ -1394,6 +1951,7 @@ mod tests {
 
         let _p1 = join_player(&url, &room_code, "p1", "Ada").await;
         let _p2 = join_player(&url, &room_code, "p2", "Grace").await;
+        let _p3 = join_player(&url, &room_code, "p3", "Linus").await;
 
         let (mut unauthorized, _) =
             connect_async(format!("{url}?role=display&room={room_code}&clientId=evil"))
@@ -1563,7 +2121,7 @@ mod tests {
             "type": "updateRoomSettings",
             "settings": {
                 "rounds": 3,
-                "drawSeconds": 30,
+                "drawSeconds": 60,
                 "guessSeconds": 20,
                 "voteSeconds": 15,
                 "resultsSeconds": 12,
@@ -1614,7 +2172,7 @@ mod tests {
                 "type": "updateRoomSettings",
                 "settings": {
                     "rounds": 3,
-                    "drawSeconds": 30,
+                    "drawSeconds": 60,
                     "guessSeconds": 20,
                     "voteSeconds": 15,
                     "resultsSeconds": 12,
@@ -1661,13 +2219,17 @@ mod tests {
 
         let mut restored = join_player(&url, &room_code, "host-phone", "Ada").await;
         restored
-            .send(text_message(json!({ "type": "startGame" })))
+            .send(text_message(json!({ "type": "startPractice" })))
             .await
             .unwrap();
         let phase = read_until_type(&mut restored, "phaseChanged").await;
         assert_eq!(
             phase.pointer("/snapshot/phase").and_then(Value::as_str),
             Some("drawing")
+        );
+        assert_eq!(
+            phase.pointer("/snapshot/gameMode").and_then(Value::as_str),
+            Some("practice")
         );
     }
 
@@ -1760,6 +2322,7 @@ mod tests {
 
         let mut p1 = join_player(&url, &room_code, "p1", "Ada").await;
         let mut p2 = join_player(&url, &room_code, "p2", "Grace").await;
+        let mut p3 = join_player(&url, &room_code, "p3", "Linus").await;
 
         display
             .send(text_message(json!({ "type": "startGame" })))
@@ -1773,13 +2336,13 @@ mod tests {
             .unwrap();
 
         let (mut late, _) =
-            connect_async(format!("{url}?role=player&room={room_code}&clientId=p3"))
+            connect_async(format!("{url}?role=player&room={room_code}&clientId=p4"))
                 .await
                 .unwrap();
         late.send(text_message(json!({
-            "type": "joinRoom",
-            "roomCode": room_code,
-            "name": "Linus"
+                "type": "joinRoom",
+                "roomCode": room_code,
+                "name": "Margaret"
         })))
         .await
         .unwrap();
@@ -1791,7 +2354,7 @@ mod tests {
             .and_then(|players| {
                 players
                     .iter()
-                    .find(|player| player.get("id").and_then(Value::as_str) == Some("p3"))
+                    .find(|player| player.get("id").and_then(Value::as_str) == Some("p4"))
             })
             .and_then(|player| player.get("spectator"))
             .and_then(Value::as_bool);
@@ -1811,6 +2374,13 @@ mod tests {
         })))
         .await
         .unwrap();
+        p3.send(text_message(json!({
+            "type": "submitDrawing",
+            "turnToken": turn_token,
+            "drawing": drawing_value()
+        })))
+        .await
+        .unwrap();
 
         let update = read_until_type(&mut late, "phaseChanged").await;
         assert_eq!(
@@ -1819,6 +2389,134 @@ mod tests {
                 .and_then(|snapshot| snapshot.get("phase"))
                 .and_then(Value::as_str),
             Some("guessing")
+        );
+    }
+
+    #[tokio::test]
+    async fn websocket_nailed_it_marker_is_private_and_the_correct_vote_is_locked() {
+        let url = spawn_ws_server().await;
+        let (mut display, _) = connect_async(format!("{url}?role=display&clientId=display"))
+            .await
+            .unwrap();
+        let (room_code, _, _) = create_test_room(&mut display).await;
+        let mut p1 = join_player(&url, &room_code, "p1", "Ada").await;
+        let mut p2 = join_player(&url, &room_code, "p2", "Grace").await;
+        let mut p3 = join_player(&url, &room_code, "p3", "Linus").await;
+
+        display
+            .send(text_message(json!({ "type": "startGame" })))
+            .await
+            .unwrap();
+        let drawing = read_until_phase(&mut display, "drawing").await;
+        let drawing_token = drawing
+            .pointer("/snapshot/turnToken")
+            .and_then(Value::as_u64)
+            .unwrap();
+        let p1_prompt = read_until_type(&mut p1, "promptAssigned")
+            .await
+            .get("prompt")
+            .and_then(Value::as_str)
+            .unwrap()
+            .to_string();
+        let p2_prompt = read_until_type(&mut p2, "promptAssigned")
+            .await
+            .get("prompt")
+            .and_then(Value::as_str)
+            .unwrap()
+            .to_string();
+        let p3_prompt = read_until_type(&mut p3, "promptAssigned")
+            .await
+            .get("prompt")
+            .and_then(Value::as_str)
+            .unwrap()
+            .to_string();
+
+        for player in [&mut p1, &mut p2, &mut p3] {
+            player
+                .send(text_message(json!({
+                    "type": "submitDrawing",
+                    "turnToken": drawing_token,
+                    "drawing": drawing_value()
+                })))
+                .await
+                .unwrap();
+        }
+        let guessing = read_until_phase(&mut display, "guessing").await;
+        let guessing_token = guessing
+            .pointer("/snapshot/turnToken")
+            .and_then(Value::as_u64)
+            .unwrap();
+        let artist_id = guessing
+            .pointer("/snapshot/currentArtistId")
+            .and_then(Value::as_str)
+            .unwrap();
+        let _ = read_until_phase(&mut p1, "guessing").await;
+        let _ = read_until_phase(&mut p2, "guessing").await;
+        let _ = read_until_phase(&mut p3, "guessing").await;
+
+        let (nailer, other_voter, nailer_id, nailer_name, truth) = match artist_id {
+            "p1" => (&mut p2, &mut p3, "p2", "Grace", p1_prompt),
+            "p2" => (&mut p1, &mut p3, "p1", "Ada", p2_prompt),
+            "p3" => (&mut p1, &mut p2, "p1", "Ada", p3_prompt),
+            _ => panic!("unexpected artist"),
+        };
+        nailer
+            .send(text_message(json!({
+                "type": "submitGuess",
+                "turnToken": guessing_token,
+                "guess": truth
+            })))
+            .await
+            .unwrap();
+        other_voter
+            .send(text_message(json!({
+                "type": "submitGuess",
+                "turnToken": guessing_token,
+                "guess": "a carefully unrelated fake"
+            })))
+            .await
+            .unwrap();
+
+        let nailed_voting = read_until_phase(nailer, "voting").await;
+        let other_voting = read_until_phase(other_voter, "voting").await;
+        let display_voting = read_until_phase(&mut display, "voting").await;
+        assert_eq!(
+            nailed_voting
+                .pointer("/snapshot/nailedIt")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            other_voting
+                .pointer("/snapshot/nailedIt")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            display_voting
+                .pointer("/snapshot/nailedIt")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(nailed_voting
+            .pointer("/snapshot/voteSubmittedIds")
+            .and_then(Value::as_array)
+            .is_some_and(|ids| !ids.is_empty()));
+        assert!(nailed_voting
+            .pointer("/snapshot/votingOptions")
+            .and_then(Value::as_array)
+            .is_some_and(|options| options.iter().all(|option| {
+                option.get("isCorrect").and_then(Value::as_bool) == Some(false)
+                    && option.get("authorPlayerId").is_none_or(Value::is_null)
+            })));
+
+        let (_reconnected, reconnect_snapshot) =
+            join_player_with_snapshot(&url, &room_code, nailer_id, nailer_name).await;
+        assert_eq!(
+            reconnect_snapshot
+                .pointer("/snapshot/nailedIt")
+                .and_then(Value::as_bool),
+            Some(true)
         );
     }
 

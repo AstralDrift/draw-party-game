@@ -120,7 +120,7 @@ export async function assertDisplayLobbyLayout(
 ): Promise<LobbyLayoutMetrics> {
   await expect(page.locator('.room-code')).toHaveText(/[A-Z]{4}/);
   await expect(page.locator('.qr')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Start Game' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start from TV (fallback)' })).toBeVisible();
   await expect(page.getByText('Everybody draws. Everybody guesses.')).toBeVisible();
   await expectNoHorizontalOverflow(page);
   await expectNoVerticalOverflow(page);
@@ -128,6 +128,8 @@ export async function assertDisplayLobbyLayout(
   const metrics = await readLobbyLayout(page);
   expect(metrics.qr.bottom).toBeLessThanOrEqual(viewport.height + 4);
   expect(metrics.start.bottom).toBeLessThanOrEqual(viewport.height + 4);
+  expect(metrics.start.width).toBeGreaterThanOrEqual(52);
+  expect(metrics.start.height).toBeGreaterThanOrEqual(52);
   expect(metrics.roomCode.height).toBeLessThan(viewport.height * 0.18);
   expect(metrics.qr.width).toBeGreaterThanOrEqual(viewport.width >= 1800 ? 250 : 180);
 
@@ -154,10 +156,39 @@ export async function assertDisplayLobbyLayout(
       const row = metrics.playerRows[index];
       expect(boxesOverlap(metrics.playersCount, row)).toBe(false);
       if (index > 0) {
-        expect(boxesOverlap(metrics.playerRows[index - 1], row)).toBe(false);
-        expect(row.top).toBeGreaterThanOrEqual(metrics.playerRows[index - 1].bottom - 1);
+        const previous = metrics.playerRows[index - 1];
+        expect(boxesOverlap(previous, row)).toBe(false);
+        expect(row.top).toBeGreaterThanOrEqual(previous.top - 1);
+        if (row.top > previous.top + 1) {
+          expect(row.top).toBeGreaterThanOrEqual(previous.bottom - 1);
+        }
       }
     }
+  }
+
+  if (viewport.width >= 3840 && metrics.playerRows.length > 0) {
+    const typeSizes = await page.evaluate(() => {
+      const sizes = (selector: string) =>
+        Array.from(document.querySelectorAll(selector)).map((element) =>
+          Number.parseFloat(getComputedStyle(element).fontSize)
+        );
+      return {
+        names: sizes('.player-name'),
+        meta: sizes('.player-meta, .player-status, .player-score'),
+        settings: sizes('.settings-summary strong'),
+        tertiary: sizes(
+          '.display .connection, .display .eyebrow, .display .room-code-label, .display .room-hero-sub, .display .panel-subtitle, .display .field-label, .display .start-note, .display .empty-state, .display .host-badge'
+        )
+      };
+    });
+    expect(typeSizes.names.length).toBeGreaterThan(0);
+    expect(typeSizes.meta.length).toBeGreaterThan(0);
+    expect(typeSizes.settings.length).toBeGreaterThan(0);
+    expect(typeSizes.tertiary.length).toBeGreaterThan(0);
+    expect(typeSizes.names.every((size) => size >= 24)).toBe(true);
+    expect(typeSizes.meta.every((size) => size >= 18)).toBe(true);
+    expect(typeSizes.settings.every((size) => size >= 24)).toBe(true);
+    expect(typeSizes.tertiary.every((size) => size >= 18), JSON.stringify(typeSizes.tertiary)).toBe(true);
   }
 
   return metrics;

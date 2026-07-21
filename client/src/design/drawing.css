@@ -16,7 +16,7 @@
   position: relative;
   border-radius: var(--radius-md);
   overflow: hidden;
-  background: var(--canvas);
+  background: var(--surface-art);
   border: 1px solid var(--border-hairline);
   box-shadow: var(--shadow-soft);
 }
@@ -27,7 +27,7 @@
   height: auto;
   aspect-ratio: 1024 / 768;
   touch-action: none;
-  background: var(--canvas);
+  background: var(--surface-art);
 }
 
 .tools-drawer {

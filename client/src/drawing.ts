@@ -28,6 +28,16 @@ const MAX_STROKES = 220;
 const MAX_POINTS_PER_STROKE = 180;
 const POINT_DISTANCE_THRESHOLD = 4;
 const CLEAR_ARM_MS = 3000;
+const PORTRAIT_DRAWING_QUERY = '(max-width: 699px) and (orientation: portrait)';
+const PORTRAIT_FRAME_SCALE = CANVAS_HEIGHT / CANVAS_WIDTH;
+const PORTRAIT_FRAME_WIDTH = CANVAS_HEIGHT * PORTRAIT_FRAME_SCALE;
+const PORTRAIT_FRAME_LEFT = (CANVAS_WIDTH - PORTRAIT_FRAME_WIDTH) / 2;
+const PORTRAIT_FRAME_RIGHT = PORTRAIT_FRAME_LEFT + PORTRAIT_FRAME_WIDTH;
+const PORTRAIT_PREVIEW_SCALE = 1 / PORTRAIT_FRAME_SCALE;
+
+interface RenderDrawingOptions {
+  portraitPreview?: boolean;
+}
 
 export function createEmptyDrawing(): DrawingDoc {
   return {
@@ -41,7 +51,63 @@ export function estimateDrawingBytes(drawing: DrawingDoc): number {
   return new Blob([JSON.stringify(drawing)]).size;
 }
 
-export function renderDrawing(canvas: HTMLCanvasElement, drawing: DrawingDoc | null | undefined): void {
+/**
+ * Accepts only documents this drawing pad can create, then returns a deep clone.
+ * Draft recovery treats browser storage as untrusted input, even within one tab.
+ */
+export function cloneValidDrawing(drawing: unknown): DrawingDoc | null {
+  if (!isRecord(drawing) || drawing.width !== CANVAS_WIDTH || drawing.height !== CANVAS_HEIGHT) {
+    return null;
+  }
+  if (!Array.isArray(drawing.strokes) || drawing.strokes.length > MAX_STROKES) {
+    return null;
+  }
+
+  const strokes: Stroke[] = [];
+  for (const candidate of drawing.strokes) {
+    if (
+      !isRecord(candidate) ||
+      typeof candidate.color !== 'string' ||
+      !COLORS.includes(candidate.color) ||
+      typeof candidate.size !== 'number' ||
+      !SIZES.includes(candidate.size) ||
+      !Array.isArray(candidate.points) ||
+      candidate.points.length < 2 ||
+      candidate.points.length > MAX_POINTS_PER_STROKE
+    ) {
+      return null;
+    }
+
+    const points: Point[] = [];
+    for (const candidatePoint of candidate.points) {
+      if (
+        !isRecord(candidatePoint) ||
+        typeof candidatePoint.x !== 'number' ||
+        typeof candidatePoint.y !== 'number' ||
+        !Number.isFinite(candidatePoint.x) ||
+        !Number.isFinite(candidatePoint.y) ||
+        !Number.isSafeInteger(candidatePoint.x) ||
+        !Number.isSafeInteger(candidatePoint.y) ||
+        candidatePoint.x < 0 ||
+        candidatePoint.x > CANVAS_WIDTH ||
+        candidatePoint.y < 0 ||
+        candidatePoint.y > CANVAS_HEIGHT
+      ) {
+        return null;
+      }
+      points.push({ x: candidatePoint.x, y: candidatePoint.y });
+    }
+    strokes.push({ color: candidate.color, size: candidate.size, points });
+  }
+
+  return { width: CANVAS_WIDTH, height: CANVAS_HEIGHT, strokes };
+}
+
+export function renderDrawing(
+  canvas: HTMLCanvasElement,
+  drawing: DrawingDoc | null | undefined,
+  options: RenderDrawingOptions = {}
+): void {
   const ctx = setupCanvas(canvas);
   ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   ctx.fillStyle = '#ffffff';
@@ -51,9 +117,24 @@ export function renderDrawing(canvas: HTMLCanvasElement, drawing: DrawingDoc | n
     return;
   }
 
+  ctx.save();
+  if (options.portraitPreview) {
+    // Portrait input is stored upright in a centered 3:4 frame in the canonical
+    // landscape document. This inverse transform feeds that document through the
+    // existing clockwise CSS rotation so live ink remains under the pointer.
+    ctx.transform(
+      0,
+      -PORTRAIT_PREVIEW_SCALE,
+      PORTRAIT_PREVIEW_SCALE,
+      0,
+      0,
+      PORTRAIT_FRAME_RIGHT * PORTRAIT_PREVIEW_SCALE
+    );
+  }
   for (const stroke of drawing.strokes) {
     drawStroke(ctx, stroke);
   }
+  ctx.restore();
 }
 
 export class DrawingPad {
@@ -72,11 +153,17 @@ export class DrawingPad {
   private readonly sizeButtons = new Map<number, HTMLButtonElement>();
   private readonly undoButton: HTMLButtonElement;
   private readonly clearButton: HTMLButtonElement;
+  private readonly portraitDrawingMedia: MediaQueryList;
+  private locked = false;
   private clearArmed = false;
   private clearArmTimer: number | null = null;
+  private readonly handlePortraitDrawingChange = (): void => {
+    this.redraw();
+  };
 
   constructor(onChange: () => void, submitSlot?: HTMLElement) {
     this.onChange = onChange;
+    this.portraitDrawingMedia = window.matchMedia(PORTRAIT_DRAWING_QUERY);
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'draw-canvas';
     this.canvas.width = CANVAS_WIDTH;
@@ -119,6 +206,9 @@ export class DrawingPad {
         swatch.appendChild(eraserIcon);
       }
       swatch.addEventListener('click', () => {
+        if (this.locked) {
+          return;
+        }
         this.color = color;
         this.disarmClear();
         this.updateStatus();
@@ -134,6 +224,9 @@ export class DrawingPad {
       sizeButton.dataset.size = String(size);
       sizeButton.title = `Use ${size}px brush`;
       sizeButton.addEventListener('click', () => {
+        if (this.locked) {
+          return;
+        }
         this.size = size;
         this.disarmClear();
         this.updateStatus();
@@ -144,6 +237,9 @@ export class DrawingPad {
 
     this.undoButton = iconButton(Undo2, 'Undo last stroke', 'tool-button icon-button');
     this.undoButton.addEventListener('click', () => {
+      if (this.locked) {
+        return;
+      }
       this.disarmClear();
       this.drawing.strokes.pop();
       this.limitMessage = '';
@@ -155,6 +251,9 @@ export class DrawingPad {
 
     this.clearButton = iconButton(Trash2, 'Clear drawing', 'tool-button icon-button danger');
     this.clearButton.addEventListener('click', () => {
+      if (this.locked) {
+        return;
+      }
       if (!this.hasInk()) {
         return;
       }
@@ -190,6 +289,7 @@ export class DrawingPad {
       this.root.appendChild(submitSlot);
     }
     this.root.append(toolsDrawer);
+    this.portraitDrawingMedia.addEventListener('change', this.handlePortraitDrawingChange);
     this.bindPointerEvents();
     this.redraw();
     this.updateStatus();
@@ -207,10 +307,66 @@ export class DrawingPad {
     return this.drawing.strokes.length > 0;
   }
 
+  restoreDrawing(drawing: unknown): boolean {
+    const restored = cloneValidDrawing(drawing);
+    if (!restored) {
+      return false;
+    }
+
+    this.disarmClear();
+    const activePointerId = this.activePointerId;
+    this.currentStroke = null;
+    this.activePointerId = null;
+    if (activePointerId !== null) {
+      safelyReleasePointerCapture(this.canvas, activePointerId);
+    }
+    this.drawing.strokes.splice(0, this.drawing.strokes.length, ...restored.strokes);
+    this.limitMessage = '';
+    this.redraw();
+    this.updateStatus();
+    return true;
+  }
+
+  setLocked(locked: boolean): void {
+    const changed = this.locked !== locked;
+    this.locked = locked;
+
+    if (locked && changed) {
+      this.disarmClear();
+      const activePointerId = this.activePointerId;
+      this.currentStroke = null;
+      this.activePointerId = null;
+      if (activePointerId !== null) {
+        safelyReleasePointerCapture(this.canvas, activePointerId);
+      }
+      this.redraw();
+    }
+
+    this.root.classList.toggle('is-locked', locked);
+    this.root.setAttribute('aria-disabled', String(locked));
+    if (locked) {
+      this.root.setAttribute('aria-busy', 'true');
+    } else {
+      this.root.removeAttribute('aria-busy');
+    }
+    this.canvas.setAttribute('aria-disabled', String(locked));
+    this.canvas.tabIndex = locked ? -1 : 0;
+    this.toolsSummary.setAttribute('aria-disabled', String(locked));
+    this.updateStatus();
+  }
+
+  destroy(): void {
+    this.portraitDrawingMedia.removeEventListener('change', this.handlePortraitDrawingChange);
+    if (this.clearArmTimer !== null) {
+      window.clearTimeout(this.clearArmTimer);
+      this.clearArmTimer = null;
+    }
+  }
+
   private bindPointerEvents(): void {
     this.canvas.addEventListener('pointerdown', (event) => {
       event.preventDefault();
-      if (this.activePointerId !== null) {
+      if (this.locked || this.activePointerId !== null) {
         return;
       }
       if (this.drawing.strokes.length >= MAX_STROKES) {
@@ -232,7 +388,7 @@ export class DrawingPad {
     });
 
     this.canvas.addEventListener('pointermove', (event) => {
-      if (!this.currentStroke || this.activePointerId !== event.pointerId) {
+      if (this.locked || !this.currentStroke || this.activePointerId !== event.pointerId) {
         return;
       }
       event.preventDefault();
@@ -250,18 +406,11 @@ export class DrawingPad {
     });
 
     const finish = (event: PointerEvent) => {
-      if (!this.currentStroke || this.activePointerId !== event.pointerId) {
+      if (this.locked || !this.currentStroke || this.activePointerId !== event.pointerId) {
         return;
       }
       event.preventDefault();
-      if (this.currentStroke.points.length === 1) {
-        const point = this.currentStroke.points[0];
-        this.currentStroke.points.push({
-          ...point,
-          x: point.x < CANVAS_WIDTH ? point.x + 1 : point.x - 1
-        });
-      }
-      const normalizedStroke = normalizeStroke(this.currentStroke);
+      const normalizedStroke = normalizeStroke(completeTapStroke(this.currentStroke));
       if (normalizedStroke.points.length >= 2 && this.drawing.strokes.length < MAX_STROKES) {
         this.drawing.strokes.push(normalizedStroke);
       }
@@ -281,26 +430,30 @@ export class DrawingPad {
 
   private getPoint(event: PointerEvent): Point {
     const rect = this.canvas.getBoundingClientRect();
-    const portraitDrawing = window.matchMedia('(max-width: 699px) and (orientation: portrait)').matches;
-    return mapPointerToDrawingPoint(event.clientX, event.clientY, rect, portraitDrawing);
+    return mapPointerToDrawingPoint(event.clientX, event.clientY, rect, this.portraitDrawingMedia.matches);
   }
 
   private redraw(): void {
-    renderDrawing(this.canvas, {
-      ...this.drawing,
-      strokes: this.currentStroke ? [...this.drawing.strokes, this.currentStroke] : this.drawing.strokes
-    });
+    renderDrawing(
+      this.canvas,
+      {
+        ...this.drawing,
+        strokes: this.currentStroke ? [...this.drawing.strokes, this.currentStroke] : this.drawing.strokes
+      },
+      { portraitPreview: this.portraitDrawingMedia.matches }
+    );
   }
 
   private updateStatus(): void {
     const colorLabel = COLOR_LABELS[this.color] ?? this.color;
     const summaryColorLabel = SUMMARY_COLOR_LABELS[this.color] ?? colorLabel;
     this.toolsSummary.textContent = `Tools · ${summaryColorLabel} · ${this.size}px`;
-    this.status.textContent =
-      this.limitMessage ||
-      `${this.drawing.strokes.length} ${this.drawing.strokes.length === 1 ? 'stroke' : 'strokes'}`;
-    this.undoButton.disabled = !this.hasInk();
-    this.clearButton.disabled = !this.hasInk();
+    this.status.textContent = this.locked
+      ? 'Drawing locked while sending.'
+      : this.limitMessage ||
+        `${this.drawing.strokes.length} ${this.drawing.strokes.length === 1 ? 'stroke' : 'strokes'}`;
+    this.undoButton.disabled = this.locked || !this.hasInk();
+    this.clearButton.disabled = this.locked || !this.hasInk();
     if (!this.hasInk() && this.clearArmed) {
       this.disarmClear();
     }
@@ -346,12 +499,14 @@ export class DrawingPad {
       button.classList.toggle('is-selected', selected);
       button.setAttribute('aria-pressed', String(selected));
       button.title = `${selected ? 'Selected' : 'Use'} ${COLOR_LABELS[color] ?? color}`;
+      button.disabled = this.locked;
     }
     for (const [size, button] of this.sizeButtons) {
       const selected = size === this.size;
       button.classList.toggle('is-selected', selected);
       button.setAttribute('aria-pressed', String(selected));
       button.title = `${selected ? 'Selected' : 'Use'} ${size}px brush`;
+      button.disabled = this.locked;
     }
   }
 }
@@ -363,14 +518,30 @@ function mapPointerToDrawingPoint(
   portraitDrawing: boolean
 ): Point {
   const x = portraitDrawing
-    ? Math.round(((clientY - rect.top) / rect.height) * CANVAS_WIDTH)
+    ? Math.round(PORTRAIT_FRAME_LEFT + ((clientX - rect.left) / rect.width) * PORTRAIT_FRAME_WIDTH)
     : Math.round(((clientX - rect.left) / rect.width) * CANVAS_WIDTH);
-  const y = portraitDrawing
-    ? Math.round(((rect.right - clientX) / rect.width) * CANVAS_HEIGHT)
-    : Math.round(((clientY - rect.top) / rect.height) * CANVAS_HEIGHT);
+  const y = Math.round(((clientY - rect.top) / rect.height) * CANVAS_HEIGHT);
   return {
     x: clamp(x, 0, CANVAS_WIDTH),
     y: clamp(y, 0, CANVAS_HEIGHT)
+  };
+}
+
+function mapDrawingPointToPortraitPreview(point: Point): Point {
+  return {
+    x: point.y * PORTRAIT_PREVIEW_SCALE,
+    y: (PORTRAIT_FRAME_RIGHT - point.x) * PORTRAIT_PREVIEW_SCALE
+  };
+}
+
+function completeTapStroke(stroke: Stroke): Stroke {
+  if (stroke.points.length !== 1) {
+    return stroke;
+  }
+  const point = stroke.points[0];
+  return {
+    ...stroke,
+    points: [{ ...point }, { ...point }]
   };
 }
 
@@ -407,6 +578,17 @@ function setupCanvas(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
 }
 
 function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke): void {
+  if (stroke.points.length === 0) {
+    return;
+  }
+  if (isDotStroke(stroke)) {
+    const point = stroke.points[0];
+    ctx.fillStyle = stroke.color;
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, stroke.size / 2, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
   if (stroke.points.length < 2) {
     return;
   }
@@ -418,6 +600,11 @@ function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke): void {
     ctx.lineTo(point.x, point.y);
   }
   ctx.stroke();
+}
+
+function isDotStroke(stroke: Stroke): boolean {
+  const first = stroke.points[0];
+  return Boolean(first && stroke.points.every((point) => point.x === first.x && point.y === first.y));
 }
 
 function normalizeStroke(stroke: Stroke): Stroke {
@@ -468,13 +655,23 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 export const drawingTestExports = {
   COLORS,
   SIZES,
   COLOR_LABELS,
   MAX_STROKES,
   MAX_POINTS_PER_STROKE,
+  PORTRAIT_FRAME_LEFT,
+  PORTRAIT_FRAME_RIGHT,
+  PORTRAIT_FRAME_WIDTH,
   simplifyStrokePoints,
   clamp,
-  mapPointerToDrawingPoint
+  mapPointerToDrawingPoint,
+  mapDrawingPointToPortraitPreview,
+  completeTapStroke,
+  isDotStroke
 };

@@ -1,4 +1,5 @@
 type CueName = 'join' | 'phase' | 'submit' | 'results' | 'correct' | 'fooled' | 'podium' | 'tick';
+export type SoundScope = 'display' | 'controller';
 
 interface CueStep {
   frequency: number;
@@ -48,6 +49,7 @@ const CUE_PATTERNS: Record<CueName, CueStep[]> = {
 
 let audioContext: AudioContext | null = null;
 let enabled = readSoundPreference();
+let scope: SoundScope = 'display';
 
 function readSoundPreference(): boolean {
   try {
@@ -78,8 +80,12 @@ export function setSoundEnabled(nextEnabled: boolean): void {
   }
 }
 
+export function setSoundScope(nextScope: SoundScope): void {
+  scope = nextScope;
+}
+
 export function playCue(name: CueName): void {
-  if (!enabled) {
+  if (!enabled || (scope === 'controller' && name !== 'phase' && name !== 'submit')) {
     return;
   }
   audioContext = audioContext ?? new AudioContext();

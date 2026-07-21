@@ -1,6 +1,6 @@
 import type { GamePhase, RoundResult, ScoreEntry } from './protocol';
 
-/** Soft party-size guidance. Server `MIN_PLAYERS` stays 1 for solo/demo. */
+/** Party mode starts at three; the lobby offers a separate unscored solo Practice action. */
 export const RECOMMENDED_PARTY_SIZE = 3;
 
 type RoundOutcomeInput = Pick<
@@ -31,12 +31,16 @@ export function playerLobbyReadyNote(connectedCount: number, minPlayers: number)
     const invite = RECOMMENDED_PARTY_SIZE - connectedCount;
     return `Invite ${invite} more for better voting.`;
   }
-  return 'The TV can start the game.';
+  return 'The host phone can start the game.';
 }
 
 export function roundOutcomeText(result: RoundOutcomeInput): string {
+  const noVotes = result.breakdown.every((entry) => entry.voterNames.length === 0);
+  if (noVotes && !result.nobodyFoundIt && !result.perfectTruth) {
+    return 'No votes came in — no bonus awarded';
+  }
   if (result.nobodyFoundIt) {
-    return 'Nobody got it — artist wins the room';
+    return 'Nobody found the truth — artist +50';
   }
   if (result.perfectTruth) {
     return 'Everyone saw through it — perfect!';
@@ -52,7 +56,7 @@ export function roundOutcomeText(result: RoundOutcomeInput): string {
   if (correctVoters.length > 2) {
     return `${correctVoters.length} players cracked it`;
   }
-  return 'Nobody got it — artist wins the room';
+  return 'Nobody found the truth — artist +50';
 }
 
 export function finalWinnerText(scores: ScoreEntry[]): string {
@@ -69,6 +73,30 @@ export function finalWinnerText(scores: ScoreEntry[]): string {
     return `${winners[0].name} and ${winners[1].name} tie`;
   }
   return `${winners.length} players tie`;
+}
+
+export function rematchPrompt(scores: ScoreEntry[]): string {
+  if (scores.length <= 1) {
+    return 'One more masterpiece?';
+  }
+
+  const topScore = scores[0]?.score;
+  if (topScore === undefined) {
+    return 'One more masterpiece?';
+  }
+  const winners = scores.filter((score) => score.score === topScore);
+  if (winners.length === 2) {
+    return `${winners[0].name} and ${winners[1].name} tied—settle it?`;
+  }
+  if (winners.length > 2) {
+    return `${winners.length} players tied—settle it?`;
+  }
+
+  const runnerUp = scores.find((score) => score.score < topScore);
+  if (!runnerUp || !winners[0]) {
+    return 'Run it back?';
+  }
+  return `${winners[0].name} won by ${topScore - runnerUp.score}—take it back?`;
 }
 
 export function playerActionHint(phase: GamePhase, isArtist: boolean): string {
@@ -128,7 +156,6 @@ export function podiumTitles(scores: ScoreEntry[]): PodiumTitle[] {
     return [];
   }
 
-  const lowestScore = Math.min(...scores.map((score) => score.score));
   return scores.flatMap((score) => {
     const rank = competitionRank(scores, score);
     if (rank === 1) {
@@ -138,10 +165,7 @@ export function podiumTitles(scores: ScoreEntry[]): PodiumTitle[] {
       return [{ playerId: score.playerId, title: 'Runner-up' }];
     }
     if (rank === 3) {
-      return [{ playerId: score.playerId, title: 'Crowd Favorite' }];
-    }
-    if (scores.length > 3 && score.score === lowestScore) {
-      return [{ playerId: score.playerId, title: 'Dark Horse' }];
+      return [{ playerId: score.playerId, title: 'Third Place' }];
     }
     return [];
   });

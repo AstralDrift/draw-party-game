@@ -1,4 +1,5 @@
 import { useGame } from '../../app/GameProvider';
+import { optionLabel } from '../../option-label';
 import { Deadline } from '../../components/ui/Deadline';
 import { DrawingCanvas } from '../../components/ui/DrawingPadHost';
 import { GlassPanel } from '../../components/ui/GlassPanel';
@@ -63,9 +64,18 @@ export function DisplayVoting(): React.JSX.Element {
         </GlassPanel>
         <GlassPanel className="vote-list panel" tone="soft">
           <div className="panel-title">On the phones</div>
-          {snapshot.votingOptions.map((option) => (
-            <div key={option.id} className="vote-option">
-              <span className="vote-answer">{option.text}</span>
+          {snapshot.votingOptions.map((option, index) => (
+            <div
+              key={option.id}
+              className="vote-option"
+              aria-label={`Option ${optionLabel(index)}: ${option.text}`}
+            >
+              <span className="vote-option-content">
+                <span className="option-label" aria-hidden="true">
+                  {optionLabel(index)}
+                </span>
+                <span className="vote-answer">{option.text}</span>
+              </span>
             </div>
           ))}
         </GlassPanel>

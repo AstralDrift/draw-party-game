@@ -1,5 +1,6 @@
 import { Play, Volume2, VolumeX } from 'lucide';
 import { useGame } from '../../app/GameProvider';
+import { PARTY_MIN_PLAYERS, supportsPracticeMode } from '../../controller';
 import { displayLobbyStartNote } from '../../polish';
 import { activePlayers, playerCountLabel } from '../../spectator';
 import { roomHost } from '../../host';
@@ -17,7 +18,10 @@ export function DisplayLobby(): React.JSX.Element {
   const joinUrl = `${window.location.origin}/join/${snapshot.roomCode}`;
   const manualJoinUrl = `${window.location.origin}/join`;
   const connectedPlayers = activePlayers(snapshot.players);
-  const canStart = connectedPlayers.length >= snapshot.minPlayers;
+  const partyMinimum = Math.max(PARTY_MIN_PLAYERS, snapshot.minPlayers);
+  const canStartParty = connectedPlayers.length >= partyMinimum;
+  const practiceSupported = supportsPracticeMode(snapshot);
+  const canPractice = practiceSupported && connectedPlayers.length === 1;
   const host = roomHost(snapshot.players);
   const settings = snapshot.settings;
   const packLabel = settings.promptPackId === 'party-chaos' ? 'Party Chaos' : 'Party Safe';
@@ -30,7 +34,7 @@ export function DisplayLobby(): React.JSX.Element {
             <p className="eyebrow">Scan to play</p>
             <h2>Everybody draws. Everybody guesses.</h2>
             <p className="muted room-hero-sub">
-              Phones scan the QR or type the code. The first phone runs the lobby — no TV remote needed.
+              Join on a phone, then look back here. The first phone is the host controller.
             </p>
           </div>
           <div className="room-code-wrap">
@@ -46,19 +50,19 @@ export function DisplayLobby(): React.JSX.Element {
           <strong className="manual-join-code">{snapshot.roomCode}</strong>.
         </p>
         <Button
-          className="start-button"
+          className="start-button tv-start-fallback"
           icon={Play}
-          variant="secondary"
+          variant="ghost"
           wide
-          disabled={!canStart}
+          disabled={!canStartParty}
           onClick={() => send({ type: 'startGame' })}
         >
-          Start Game
+          Start from TV (fallback)
         </Button>
-        <p className={canStart ? 'start-note ready' : 'start-note'}>
-          {host
-            ? `${displayLobbyStartNote(connectedPlayers.length, snapshot.minPlayers)} Host phone: ${host.name}. Start from the host phone — or here if you have a remote.`
-            : `${displayLobbyStartNote(connectedPlayers.length, snapshot.minPlayers)} Start from the host phone — or here if you have a remote.`}
+        <p className={canStartParty ? 'start-note ready' : 'start-note'}>
+          {canStartParty
+            ? `${displayLobbyStartNote(connectedPlayers.length, partyMinimum)} ${host ? `${host.name} starts Party from the host phone.` : 'Start from the host phone.'}`
+            : `${displayLobbyStartNote(connectedPlayers.length, partyMinimum)} ${canPractice ? 'The host phone can start Solo Practice now.' : practiceSupported ? 'Practice is available with one connected phone.' : 'Start Party from the host phone when the room is ready.'}`}
         </p>
       </GlassPanel>
 
@@ -66,7 +70,7 @@ export function DisplayLobby(): React.JSX.Element {
         <GlassPanel className="players-panel" tone="soft">
           <div className="panel-title">Players</div>
           <p className="muted players-count">{playerCountLabel(snapshot.players, snapshot.maxPlayers)}</p>
-          <PlayerList players={snapshot.players} showScores />
+          <PlayerList players={snapshot.players} />
         </GlassPanel>
         <GlassPanel className="settings-panel settings-summary-panel" tone="soft">
           <div className="panel-title">Room Settings</div>

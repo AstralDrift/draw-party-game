@@ -10,6 +10,7 @@ interface ScoresPanelProps {
   scores: ScoreEntry[];
   podium: boolean;
   role: ClientRole;
+  practice?: boolean;
   onShareFailed?: () => void;
 }
 
@@ -17,30 +18,40 @@ export function ScoresPanel({
   scores,
   podium,
   role,
+  practice = false,
   onShareFailed
 }: ScoresPanelProps): React.JSX.Element {
-  const topScores = podium
+  const showPodium = podium && !practice;
+  const topScores = showPodium
     ? scores.filter((score) => competitionRank(scores, score) <= 3)
     : [];
   const winner = scores[0];
-  const listedScores = podium
-    ? scores.filter((score) => competitionRank(scores, score) > 3)
-    : scores;
+  const listedScores = practice
+    ? []
+    : podium
+      ? scores.filter((score) => competitionRank(scores, score) > 3)
+      : scores;
   const titles = new Map(podiumTitles(scores).map((entry) => [entry.playerId, entry.title]));
   const shareLabel = podiumShareLabel();
+  const displayShareFallback = role === 'display';
 
   return (
     <GlassPanel className="scores-panel" id="scores-panel">
-      {podium ? <Confetti variant="final" /> : null}
-      {podium ? (
+      {showPodium ? <Confetti variant="final" /> : null}
+      {practice ? (
+        <div className="winner-callout">
+          <p className="eyebrow">Practice · scores off</p>
+          <h2>Warm-up complete</h2>
+        </div>
+      ) : podium ? (
         <div className="winner-callout">
           {role === 'player' ? <p className="eyebrow">Champion</p> : null}
           <h2>{finalWinnerText(scores)}</h2>
           {role === 'player' && winner ? <span className="pill">{winner.score} pts</span> : null}
         </div>
       ) : null}
-      <div className="panel-title">{podium ? 'Final Podium' : 'Scores'}</div>
-      {podium ? (
+      <div className="panel-title">{practice ? 'Practice complete' : podium ? 'Final Podium' : 'Scores'}</div>
+      {showPodium ? (
         <div className={`podium${topScores.length > 3 ? ' is-crowded' : ''}`}>
           {topScores.map((score) => {
             const rank = competitionRank(scores, score);
@@ -75,11 +86,11 @@ export function ScoresPanel({
           })}
         </div>
       ) : null}
-      {podium ? (
+      {showPodium ? (
         <Button
-          variant="secondary"
-          wide
-          className="tool-button share-card-button"
+          variant={displayShareFallback ? 'ghost' : 'secondary'}
+          wide={!displayShareFallback}
+          className={`${displayShareFallback ? 'tv-action-fallback' : 'tool-button'} share-card-button`}
           onClick={() => {
             void exportShareCard(scores).then((result) => {
               if (result === 'failed') {
@@ -88,7 +99,7 @@ export function ScoresPanel({
             });
           }}
         >
-          {shareLabel}
+          {displayShareFallback ? `${shareLabel} from TV (fallback)` : shareLabel}
         </Button>
       ) : null}
     </GlassPanel>

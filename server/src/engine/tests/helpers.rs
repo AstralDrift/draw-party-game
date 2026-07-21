@@ -57,10 +57,10 @@ pub(super) fn room_with_players() -> Room {
 pub(super) fn custom_settings() -> RoomSettings {
     RoomSettings {
         rounds: 2,
-        draw_seconds: 30,
+        draw_seconds: 60,
         guess_seconds: 20,
         vote_seconds: 15,
-        results_seconds: 8,
+        results_seconds: 10,
         prompt_pack_id: DEFAULT_PROMPT_PACK_ID.to_string(),
     }
 }

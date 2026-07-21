@@ -27,7 +27,9 @@ client/src/
   views/display/           # TV phase screens
   views/player/            # Phone phase screens + SpectatorWatch
   # shared contracts / helpers:
-  protocol.ts, net.ts, drawing.ts, time.ts, polish.ts, sound.ts, share-card.ts
+  protocol.ts, net.ts, drawing.ts, controller.ts, turn-draft-cache.ts,
+  pending-rename-cache.ts,
+  time.ts, polish.ts, sound.ts, share-card.ts
 ```
 
 Mid-game joiners become `PlayerPublic.spectator` until the next drawing round (server promotes). Lobby readiness and progress panels count active (non-spectator) players only.
@@ -39,6 +41,8 @@ Mid-game joiners become `PlayerPublic.spectator` until the next drawing round (s
 - Stroke documents via `DrawingPad` (1024×768)
 - PWA `sw.js` network-first for `/api/*` and `/ws`
 - Protocol guards in `protocol.ts`
+- Refresh recovery is one optional tab-scoped `sessionStorage` draft, limited to the current Drawing or Guessing turn, 5 minutes, and 1 MiB. Never persist a vote, auto-submit a restored draft, or treat it as pending server state; authoritative acceptance or identity/turn mismatch and explicit room exit clear it.
+- Explicit renames are the separate exception: persist one room/client-bound pending rename for at most 3 hours and 2 KiB, replay its UUID-correlated request after reconnect, coalesce later edits, and settle only its matching `nameSet` acknowledgement (or the documented older-server snapshot fallback). Terminal room/session errors and explicit join cancellation clear it.
 - All client CSS under `design/` (tokens, base, components, drawing, layout, motion)
 - Primary actions use `Button` (`btn` / `btn--primary|secondary|ghost` / `btn--wide`); modifiers like `spotlight-button`, `tool-button`, and `reaction-button` are allowed
 

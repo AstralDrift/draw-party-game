@@ -124,9 +124,9 @@ pub(crate) const SAFE_PROMPTS: &[&str] = &[
 ];
 
 pub(crate) const CHAOS_PROMPTS: &[&str] = &[
-    "sentient traffic light judging your life choices",
-    "raccoon CEO giving a TED talk",
-    "haunted Roomba with revenge plans",
+    "traffic light tangled in balloons",
+    "raccoon stealing a wedding cake",
+    "robot vacuum chasing a mouse",
     "croissant that learned parkour",
     "wifi router hosting a talent show",
     "pickle jar running for class president",
@@ -134,13 +134,13 @@ pub(crate) const CHAOS_PROMPTS: &[&str] = &[
     "bluetooth speaker that only speaks in riddles",
     "toaster oven opening a jazz club",
     "rubber duck detective solving cereal crimes",
-    "elevator that only stops at weird floors",
+    "elevator packed with penguins",
     "cactus influencer livestreaming a desert spa",
-    "mime stuck inside a group chat",
-    "lasagna plotting a soft coup",
+    "mime wrestling a giant balloon",
+    "lasagna escaping a hungry dragon",
     "umbrella that refuses to open on purpose",
     "sock that became a motivational speaker",
-    "vending machine with trust issues",
+    "vending machine attacked by squirrels",
     "paperclip building a tiny spaceship",
     "fridge magnet organizing a rebellion",
     "banana peel teaching defensive driving",
@@ -149,7 +149,7 @@ pub(crate) const CHAOS_PROMPTS: &[&str] = &[
     "dust bunny training for the Olympics",
     "keyboard missing only the useful keys",
     "coffee mug whispering spoilers",
-    "charging cable that ghosted everyone",
+    "charging cable tangled around a flamingo",
     "plant that rates your interior design",
     "alarm clock that negotiates snoozes",
     "shopping cart escaping the supermarket",
@@ -158,41 +158,41 @@ pub(crate) const CHAOS_PROMPTS: &[&str] = &[
     "laundry basket filing a complaint",
     "remote control hiding from the couch",
     "spatula auditioning for a cooking show",
-    "yogurt cup founding a startup",
+    "yogurt cup chased by a spoon",
     "garden gnome leading a heist",
     "bubble wrap popping for stress relief",
     "microwave timing a surprise party",
     "traffic jam that learned to dance",
     "lost sock opening a support group",
-    "ceiling fan spinning conspiracy theories",
+    "ceiling fan wearing six hats",
     "ice cube melting under pressure",
     "pencil eraser rewriting history",
-    "sticky note stuck to destiny",
-    "vacuum cleaner inhaling drama",
+    "sticky note covering a treasure map",
+    "vacuum cleaner swallowing a magician's cape",
     "tea kettle screaming the weather",
-    "puzzle piece looking for belonging",
+    "puzzle piece hiding in a sandwich",
     "flashlight afraid of the dark",
-    "rubber band stretching the truth",
+    "rubber band catapulting a tomato",
     "coin flip deciding dinner forever",
     "snow shovel dreaming of summer",
     "parking meter collecting secrets",
     "fire hydrant gossiping with dogs",
-    "mailbox sorting emotional baggage",
-    "doormat welcoming bad ideas",
+    "mailbox overflowing with rubber ducks",
+    "doormat surfing down a staircase",
     "coat hanger modeling haute couture",
     "toothbrush racing dental floss",
     "salt shaker seasoning a debate",
     "pepper mill grinding rumors",
     "napkin folding origami excuses",
-    "straw sipping through a crisis",
+    "straw trapped inside a giant coconut",
     "plastic fork hosting fine dining",
-    "paper bag reinventing itself",
-    "tape dispenser sticking to principles",
-    "scissors cutting awkward silences",
+    "paper bag chased by a leaf blower",
+    "tape dispenser wrapping a mummy",
+    "scissors dueling a lobster",
     "glue stick bonding strangers",
-    "ruler measuring peer pressure",
+    "ruler sword-fighting a baguette",
     "compass pointing toward snacks",
-    "thermometer judging the vibe",
+    "thermometer stuck in a snowman's mouth",
     "hourglass running late again",
     "calendar flipping out midweek",
     "bubble wand casting party spells",
@@ -202,12 +202,12 @@ pub(crate) const CHAOS_PROMPTS: &[&str] = &[
     "beach ball bouncing through customs",
     "trampoline launching apologies",
     "scooter commuting through a museum",
-    "skateboard filing expense reports",
+    "skateboard rolling through a car wash",
     "roller skate auditioning for ballet",
-    "unicycle balancing the budget",
+    "unicycle chased by three bowling balls",
     "kayak paddling through a cubicle",
     "surfboard catching WiFi waves",
-    "snowboard shredding a spreadsheet",
+    "snowboard racing a runaway sled",
     "parachute landing in a meeting",
     "telescope spying on leftovers",
     "microscope magnifying tiny problems",
@@ -216,8 +216,8 @@ pub(crate) const CHAOS_PROMPTS: &[&str] = &[
     "harmonica interrupting elevator music",
     "kazoo leading a serious meeting",
     "tambourine announcing lunch break",
-    "maraca shaking up the agenda",
-    "xylophone spelling out deadlines",
+    "maraca bouncing inside a washing machine",
+    "xylophone falling down the stairs",
     "bagpipe negotiating quiet hours",
     "tuba stuck in a revolving door",
     "accordion squeezing into small talk",
@@ -226,10 +226,10 @@ pub(crate) const CHAOS_PROMPTS: &[&str] = &[
     "drumstick conducting kitchen chaos",
     "cymbal crashing a book club",
     "trumpet waking the neighborhood politely",
-    "flute whistling while working remotely",
+    "flute stuck in a birdhouse",
     "violin crying over spilled soup",
-    "piano practicing elevator pitches",
-    "guitar string snapping under deadlines",
+    "piano trapped on an escalator",
+    "guitar stuck in a giant spiderweb",
     "amp turning whispers into announcements",
     "DJ booth mixing grocery lists",
     "karaoke machine forgetting the lyrics",
@@ -267,6 +267,8 @@ mod tests {
     use std::collections::HashSet;
 
     const MIN_PROMPTS_PER_PACK: usize = 100;
+    const EXPECTED_SAFE_PROMPT_COUNT: usize = 120;
+    const EXPECTED_CHAOS_PROMPT_COUNT: usize = 111;
 
     fn assert_pack_quality(id: &str, prompts: &[&str]) {
         assert!(!prompts.is_empty(), "prompt pack {id} must be non-empty");
@@ -291,10 +293,12 @@ mod tests {
     }
 
     #[test]
-    fn prompt_packs_are_non_empty_unique_and_meet_minimum_count() {
+    fn prompt_packs_are_non_empty_unique_and_keep_expected_counts() {
         assert_eq!(PROMPT_PACKS.len(), 2);
         assert_pack_quality(DEFAULT_PROMPT_PACK_ID, SAFE_PROMPTS);
         assert_pack_quality(PARTY_CHAOS_PROMPT_PACK_ID, CHAOS_PROMPTS);
+        assert_eq!(SAFE_PROMPTS.len(), EXPECTED_SAFE_PROMPT_COUNT);
+        assert_eq!(CHAOS_PROMPTS.len(), EXPECTED_CHAOS_PROMPT_COUNT);
 
         assert_eq!(
             prompt_pack_prompts(DEFAULT_PROMPT_PACK_ID),

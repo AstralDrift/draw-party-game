@@ -1,4 +1,5 @@
 import { useGame } from '../../app/GameProvider';
+import { optionLabel } from '../../option-label';
 import { Deadline } from '../../components/ui/Deadline';
 import { DrawingCanvas } from '../../components/ui/DrawingPadHost';
 import { GlassPanel } from '../../components/ui/GlassPanel';
@@ -102,9 +103,18 @@ export function SpectatorVoting(): React.JSX.Element {
         <p className="action-hint">Watch the vote on the TV.</p>
         <DrawingCanvas drawing={snapshot.currentDrawing} className="reveal-canvas phone-canvas" />
         <div className="vote-list compact player-vote-list">
-          {snapshot.votingOptions.map((option) => (
-            <div key={option.id} className="vote-option disabled">
-              <span className="vote-answer">{option.text}</span>
+          {snapshot.votingOptions.map((option, index) => (
+            <div
+              key={option.id}
+              className="vote-option disabled"
+              aria-label={`Option ${optionLabel(index)}: ${option.text}`}
+            >
+              <span className="vote-option-content">
+                <span className="option-label" aria-hidden="true">
+                  {optionLabel(index)}
+                </span>
+                <span className="vote-answer">{option.text}</span>
+              </span>
             </div>
           ))}
         </div>

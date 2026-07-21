@@ -1,4 +1,4 @@
-/* Party Glass is the final visual layer. Tokens mirror DESIGN.md. */
+/* Party Glass is the final visual layer. Tokens mirror the canonical docs/design.md. */
 :root {
   --color-canvas-deep: #080b12;
   --color-canvas-mid: #101827;
@@ -24,7 +24,7 @@
   --glass-shadow-soft: rgba(0, 5, 16, 0.22);
   --glass-dark-control: rgba(3, 9, 19, 0.46);
   --ambient-blue: rgba(74, 163, 255, 0.28);
-  --ambient-violet: rgba(156, 118, 255, 0.2);
+  --ambient-blue-soft: rgba(120, 190, 255, 0.18);
   --ambient-cyan: rgba(74, 222, 218, 0.14);
   --ambient-warm: rgba(255, 204, 128, 0.1);
   --focus-halo: rgba(100, 181, 255, 0.3);
@@ -39,7 +39,7 @@
   --radius-panel: 32px;
   --radius-card: 24px;
   --radius-control: 999px;
-  --blur-glass: 34px;
+  --blur-glass: 18px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -70,6 +70,7 @@
   --muted: var(--color-text-secondary);
   --muted-strong: var(--color-text-primary);
   --canvas: var(--color-paper);
+  --surface-art: var(--color-paper);
   --ink: var(--color-ink);
   --blue: var(--color-action-high);
   --blue-soft: var(--action-soft);
@@ -96,7 +97,7 @@ body {
 body {
   background-image:
     radial-gradient(circle at 12% 4%, var(--ambient-blue), transparent 34vw),
-    radial-gradient(circle at 94% 8%, var(--ambient-violet), transparent 30vw),
+    radial-gradient(circle at 94% 8%, var(--ambient-blue-soft), transparent 30vw),
     radial-gradient(circle at 56% 110%, var(--ambient-cyan), transparent 36vw),
     linear-gradient(145deg, var(--color-canvas-high), var(--color-canvas-deep) 44%, var(--color-canvas-mid));
   background-attachment: fixed;
@@ -154,7 +155,7 @@ body {
 .sprite-eraser,
 .sprite-tape,
 .room-tape {
-  background: radial-gradient(circle at 35% 30%, var(--glass-highlight), var(--ambient-violet) 34%, transparent 70%);
+  background: radial-gradient(circle at 35% 30%, var(--glass-highlight), var(--ambient-blue-soft) 34%, transparent 70%);
 }
 
 .sprite-brush,
@@ -178,24 +179,30 @@ body {
 .connection,
 .room-code-wrap,
 .player-room-chip,
-.player-ready-meter,
 .qr-stage,
 .turn-header,
 .tools-drawer,
 .draw-tools,
-.submit-dock,
-.player-row,
-.score-row,
-.breakdown-row,
-.highlight-card,
-.podium-place,
-.winner-callout,
-.empty-state {
+.submit-dock {
   border: 1px solid var(--glass-edge);
   background-color: var(--glass-fill);
   box-shadow: var(--shadow);
   backdrop-filter: blur(var(--blur-glass)) saturate(1.35);
   -webkit-backdrop-filter: blur(var(--blur-glass)) saturate(1.35);
+}
+
+/* One frosted layer per visual stack. Inner controls use tonal contrast instead
+   of repeatedly sampling the backdrop, which is clearer and cheaper on phones. */
+.topbar .connection,
+.panel .room-code-wrap,
+.panel .player-room-chip,
+.panel .qr-stage,
+.panel .turn-header,
+.panel .tools-drawer,
+.panel .draw-tools,
+.panel .submit-dock {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .topbar {
@@ -479,9 +486,13 @@ body {
 .podium-place,
 .winner-callout,
 .empty-state {
+  border: 1px solid var(--white-medium);
   border-radius: var(--radius-card);
-  background-image: linear-gradient(145deg, var(--white-medium), transparent 38%);
-  box-shadow: inset 0 1px 0 var(--white-medium), 0 12px 30px var(--glass-shadow-soft);
+  background-color: var(--surface-tv-soft);
+  background-image: linear-gradient(145deg, var(--white-soft), transparent 38%);
+  box-shadow: inset 0 1px 0 var(--white-medium);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .empty-state {
@@ -546,7 +557,7 @@ body {
 .primary,
 .tool-button,
 .vote-option {
-  min-height: 44px;
+  min-height: var(--touch);
   border-radius: var(--radius-control);
   font-weight: 650;
   letter-spacing: -0.015em;
@@ -635,7 +646,7 @@ body {
 .reveal-canvas {
   border: 1px solid var(--white-strong);
   border-radius: var(--radius-card);
-  background: var(--color-paper);
+  background: var(--surface-art);
   box-shadow: 0 24px 64px var(--glass-shadow), 0 0 0 1px var(--white-medium);
 }
 
@@ -653,7 +664,7 @@ body {
 .swatch.is-selected {
   border-color: var(--color-text-primary);
   box-shadow: 0 0 0 4px var(--color-action), 0 12px 28px var(--glass-shadow);
-  transform: scale(0.94);
+  transform: none;
 }
 
 .success-box,
@@ -678,7 +689,6 @@ body {
   color: var(--color-warning);
 }
 
-.player-row.online,
 .submission-row.is-submitted,
 .highlight-score,
 .player-lobby-card.is-ready {
@@ -822,7 +832,7 @@ input:focus-visible,
   }
 
   .display-grid-lobby .start-button {
-    min-height: 42px;
+    min-height: var(--touch);
     margin-top: 0;
   }
 
@@ -856,16 +866,6 @@ input:focus-visible,
     gap: var(--space-2);
   }
 
-  .display-results .round-highlights {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-2);
-  }
-
-  .display-results .highlight-card {
-    min-height: 0;
-    padding: var(--space-2) var(--space-3);
-  }
-
   .display-results .score-deltas {
     gap: var(--space-1);
   }
@@ -875,7 +875,7 @@ input:focus-visible,
   }
 
   .display-results .breakdown-row {
-    padding: var(--space-2) var(--space-3);
+    padding: 6px var(--space-2);
   }
 }
 
@@ -933,11 +933,11 @@ input:focus-visible,
   :root {
     --radius-panel: 26px;
     --radius-card: 20px;
-    --blur-glass: 26px;
+    --blur-glass: 18px;
   }
 
   body {
-    background-image: radial-gradient(circle at 12% 2%, var(--ambient-blue), transparent 72vw), radial-gradient(circle at 100% 44%, var(--ambient-violet), transparent 64vw), linear-gradient(165deg, var(--color-canvas-high), var(--color-canvas-deep) 52%, var(--color-canvas-mid));
+    background-image: radial-gradient(circle at 12% 2%, var(--ambient-blue), transparent 72vw), radial-gradient(circle at 100% 44%, var(--ambient-blue-soft), transparent 64vw), linear-gradient(165deg, var(--color-canvas-high), var(--color-canvas-deep) 52%, var(--color-canvas-mid));
   }
 
   .app-shell.player {

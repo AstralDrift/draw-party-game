@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { BellRing, BellOff, Pencil, Play } from 'lucide';
 import { useGame } from '../../app/GameProvider';
+import { PARTY_MIN_PLAYERS, supportsPracticeMode } from '../../controller';
 import { playerLobbyReadyNote } from '../../polish';
 import { activePlayers } from '../../spectator';
 import { isSelfHost } from '../../host';
@@ -12,7 +14,7 @@ import { Shell } from '../../components/ui/Shell';
 import { SpectatorBanner } from '../../components/ui/SpectatorBanner';
 
 export function PlayerLobby(): React.JSX.Element {
-  const { snapshot, clientId, setName, send, updateSettings } = useGame();
+  const { snapshot, clientId, soundOn, setName, send, updateSettings, toggleSound } = useGame();
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
 
@@ -25,12 +27,15 @@ export function PlayerLobby(): React.JSX.Element {
   }
 
   const connectedPlayers = activePlayers(snapshot.players);
-  const neededPlayers = Math.max(0, snapshot.minPlayers - connectedPlayers.length);
+  const partyMinimum = Math.max(PARTY_MIN_PLAYERS, snapshot.minPlayers);
+  const neededPlayers = Math.max(0, partyMinimum - connectedPlayers.length);
+  const practiceSupported = supportsPracticeMode(snapshot);
   const self = snapshot.players.find((player) => player.id === clientId);
   const spectating = Boolean(self?.spectator);
   const isHost = isSelfHost(snapshot.players, clientId ?? '');
   const ready = neededPlayers === 0;
-  const canStart = connectedPlayers.length >= snapshot.minPlayers;
+  const canStartParty = connectedPlayers.length >= partyMinimum;
+  const canPractice = practiceSupported && connectedPlayers.length === 1;
   const displayName = self?.name ?? 'Player';
 
   const startRename = () => {
@@ -112,7 +117,7 @@ export function PlayerLobby(): React.JSX.Element {
             <span>
               {spectating
                 ? 'You join as a player on the next drawing round.'
-                : playerLobbyReadyNote(connectedPlayers.length, snapshot.minPlayers)}
+                : playerLobbyReadyNote(connectedPlayers.length, partyMinimum)}
             </span>
           </div>
           {isHost ? (
@@ -120,28 +125,61 @@ export function PlayerLobby(): React.JSX.Element {
               <Button
                 className="spotlight-button"
                 wide
-                disabled={!canStart}
+                icon={Play}
+                disabled={!canStartParty}
                 onClick={() => send({ type: 'startGame' })}
               >
-                Start Game
+                Start Party
               </Button>
+              {practiceSupported ? (
+                <Button
+                  variant="secondary"
+                  wide
+                  icon={Pencil}
+                  disabled={!canPractice}
+                  onClick={() => send({ type: 'startPractice' })}
+                >
+                  Practice Drawing
+                </Button>
+              ) : null}
               <p className="muted">
-                You’re running the lobby from this phone. The TV just shows the room.
+                {canStartParty
+                  ? practiceSupported
+                    ? 'Party mode is ready. Practice is a score-free drawing warm-up.'
+                    : 'Party mode is ready.'
+                  : canPractice
+                    ? `Party mode needs ${partyMinimum} players. Solo practice is ready now.`
+                    : practiceSupported
+                      ? `Party mode needs ${partyMinimum} players. Practice is for one connected phone.`
+                      : `Party mode needs ${partyMinimum} players.`}
               </p>
             </>
           ) : (
             <p className="muted">
               {spectating
                 ? 'You’re watching for now. You’ll draw next round.'
-                : 'Watch the TV. The host phone starts the game.'}
+                : practiceSupported
+                  ? 'Watch the TV. The host phone starts Party or Practice.'
+                  : 'Watch the TV. The host phone starts Party.'}
             </p>
           )}
+          <Button
+            variant="ghost"
+            wide
+            icon={soundOn ? BellRing : BellOff}
+            className={`sound-toggle turn-alert ${soundOn ? 'is-selected' : ''}`}
+            aria-pressed={soundOn}
+            onClick={toggleSound}
+          >
+            {soundOn ? 'Turn alerts: On' : 'Turn alerts: Off'}
+          </Button>
+          <p className="muted fine-print">Best effort while this tab is open</p>
         </GlassPanel>
         {isHost ? (
           <RoomSettingsPanel
             settings={snapshot.settings}
             onSave={updateSettings}
-            subtitle="Timers and packs for this room."
+            subtitle="Choose a pace, then pick the prompt pack."
           />
         ) : null}
         <GlassPanel className="players-panel" tone="soft">

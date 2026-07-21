@@ -21,8 +21,8 @@ describe('ScoresPanel', () => {
     expect(markup.match(/class="podium-rank">1st</g)).toHaveLength(2);
     expect(markup.match(/class="podium-title">Champion</g)).toHaveLength(2);
     expect(markup.match(/class="podium-rank">3rd</g)).toHaveLength(2);
-    expect(markup.match(/class="podium-title">Crowd Favorite</g)).toHaveLength(2);
-    expect(markup).not.toContain('3. Di · Crowd Favorite');
+    expect(markup.match(/class="podium-title">Third Place</g)).toHaveLength(2);
+    expect(markup).not.toContain('3. Di · Third Place');
     expect(markup).not.toContain('class="score-list"');
     expect(markup).toContain('class="podium is-crowded"');
     expect(markup).not.toContain('Runner-up');
@@ -45,6 +45,37 @@ describe('ScoresPanel', () => {
     expect(markup.match(/class="podium-place place-1"/g)).toHaveLength(8);
     expect(markup).toContain('class="podium is-crowded"');
     expect(markup).not.toContain('class="score-list"');
+  });
+
+  it('presents practice as unscored instead of inventing a champion', () => {
+    const markup = renderToStaticMarkup(
+      <ScoresPanel scores={scores([['Ava', 0]])} podium role="player" practice />
+    );
+
+    expect(markup).toContain('Practice · scores off');
+    expect(markup).toContain('Warm-up complete');
+    expect(markup).not.toContain('Champion');
+    expect(markup).not.toContain('podium-place');
+    expect(markup).not.toContain('share-card-button');
+  });
+
+  it('keeps controller sharing direct while labeling the TV export as a fallback', () => {
+    const scoreEntries = scores([
+      ['Ava', 400],
+      ['Bo', 200]
+    ]);
+    const playerMarkup = renderToStaticMarkup(
+      <ScoresPanel scores={scoreEntries} podium role="player" />
+    );
+    const displayMarkup = renderToStaticMarkup(
+      <ScoresPanel scores={scoreEntries} podium role="display" />
+    );
+
+    expect(playerMarkup).toContain('Download Podium');
+    expect(playerMarkup).not.toContain('from TV (fallback)');
+    expect(displayMarkup).toContain('Download Podium from TV (fallback)');
+    expect(displayMarkup).toContain('tv-action-fallback');
+    expect(displayMarkup).toContain('btn--ghost');
   });
 });
 
