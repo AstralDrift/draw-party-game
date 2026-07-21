@@ -238,7 +238,7 @@ fn guess_matching_truth_is_accepted_and_locks_a_scored_correct_vote() {
 }
 
 #[test]
-fn sole_truth_option_still_gives_an_unsubmitted_guesser_a_vote() {
+fn sole_truth_option_auto_finishes_without_scoring_an_unsubmitted_guesser() {
     let mut room = room_with_players();
     reach_guessing(&mut room, 100);
     let artist = room.round.current_artist_id.clone().unwrap();
@@ -250,27 +250,16 @@ fn sole_truth_option_still_gives_an_unsubmitted_guesser_a_vote() {
     let deadline = room.deadline_ms.expect("guessing deadline");
     room.advance_if_expired(deadline).unwrap();
 
-    assert_eq!(room.phase, GamePhase::Voting);
+    assert_eq!(room.phase, GamePhase::Results);
     let truth_option = truth_option_id(&room);
     assert_eq!(room.round.votes.get(&voters[0]), Some(&truth_option));
     assert_eq!(room.round.votes.get(&voters[1]), None);
-
-    room.submit_vote(
-        &voters[1],
-        room.turn_token,
-        truth_option.clone(),
-        deadline + 1,
-    )
-    .unwrap();
-    assert_eq!(room.phase, GamePhase::Results);
-    for voter in &voters {
-        assert_eq!(room.round.votes.get(voter), Some(&truth_option));
-        assert_eq!(deltas_map(&room).get(voter), Some(&200));
-    }
+    assert_eq!(deltas_map(&room).get(&voters[0]), Some(&200));
+    assert_eq!(deltas_map(&room).get(&voters[1]), Some(&0));
     let result = room.round.result.as_ref().unwrap();
-    assert_eq!(result.correct_voter_names.len(), voters.len());
-    assert!(result.perfect_truth);
-    assert_eq!(deltas_map(&room).get(&artist), Some(&250));
+    assert_eq!(result.correct_voter_names.len(), 1);
+    assert!(!result.perfect_truth);
+    assert_eq!(deltas_map(&room).get(&artist), Some(&100));
 }
 
 #[test]

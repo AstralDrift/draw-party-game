@@ -447,20 +447,18 @@ fn drawing_timeout_with_partial_submissions_enters_guessing() {
 }
 
 #[test]
-fn guessing_timeout_without_guesses_requires_a_vote_and_awards_nothing_on_vote_timeout() {
+fn guessing_timeout_without_guesses_auto_finishes_and_awards_nothing() {
     let mut room = room_with_players();
     reach_guessing(&mut room, 100);
     let event = room
         .advance_if_expired(200 + room.settings.guess_seconds * 1000)
         .unwrap();
     assert_eq!(event, Some(EngineEvent::PhaseChanged));
-    assert_eq!(room.phase, GamePhase::Voting);
-    assert!(room.round.votes.is_empty());
-    assert!(room.round.result.is_none());
-
-    room.advance_if_expired(room.deadline_ms.unwrap()).unwrap();
     assert_eq!(room.phase, GamePhase::Results);
+    assert!(room.round.votes.is_empty());
     let result = room.round.result.as_ref().unwrap();
+    assert!(!result.nobody_found_it);
+    assert!(!result.perfect_truth);
     assert!(result.score_events.is_empty());
     assert!(result.score_deltas.iter().all(|delta| delta.delta == 0));
 }
@@ -490,7 +488,7 @@ fn room_expires_only_after_everyone_disconnects_and_ttl_passes() {
 }
 
 #[test]
-fn failed_between_rounds_timer_advance_does_not_starve_room_expiry() {
+fn all_disconnected_between_rounds_timer_quiesces_until_a_player_reconnects() {
     let mut room = room_with_players();
     room.update_settings(custom_settings(), 50).unwrap();
     room.handle_start_or_advance(100).unwrap();
@@ -513,15 +511,26 @@ fn failed_between_rounds_timer_advance_does_not_starve_room_expiry() {
     let deadline = room.deadline_ms.expect("results deadline");
 
     for tick in [deadline, deadline + 1_000, deadline + 2_000] {
-        assert_eq!(
-            room.advance_if_expired(tick).unwrap_err().code,
-            "not_enough_players"
-        );
+        assert_eq!(room.advance_if_expired(tick).unwrap(), None);
     }
 
     assert_eq!(room.phase, GamePhase::Results);
+    assert_eq!(room.deadline_ms, None);
     assert_eq!(room.last_active_ms, last_player_activity);
-    assert!(room.is_expired(last_player_activity + ROOM_TTL_MS + 1));
+    let abandoned_room = room.clone();
+    assert!(abandoned_room.is_expired(last_player_activity + ROOM_TTL_MS + 1));
+
+    let reconnect_at = deadline + 3_000;
+    room.upsert_player("p1".to_string(), "Ada".to_string(), reconnect_at)
+        .unwrap();
+    assert_eq!(room.deadline_ms, Some(reconnect_at));
+    assert_eq!(
+        room.advance_if_expired(reconnect_at).unwrap(),
+        Some(EngineEvent::PhaseChanged)
+    );
+    assert_eq!(room.phase, GamePhase::Drawing);
+    assert_eq!(room.current_round, 2);
+    assert_eq!(room.round.prompts.len(), 1);
 }
 
 #[test]

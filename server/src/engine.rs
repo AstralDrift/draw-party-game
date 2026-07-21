@@ -233,6 +233,7 @@ impl Room {
             );
         }
         self.ensure_host();
+        self.rearm_quiescent_results_deadline(now_ms);
 
         Ok(())
     }
@@ -658,10 +659,19 @@ impl Room {
                 Ok(Some(EngineEvent::PhaseChanged))
             }
             GamePhase::Results => {
-                if self.advance_after_results(now_ms)? {
-                    Ok(Some(EngineEvent::FinalScores))
-                } else {
-                    Ok(Some(EngineEvent::PhaseChanged))
+                match self.advance_after_results(now_ms) {
+                    Ok(true) => Ok(Some(EngineEvent::FinalScores)),
+                    Ok(false) => Ok(Some(EngineEvent::PhaseChanged)),
+                    Err(error)
+                        if error.code == "not_enough_players"
+                            && self.players.values().all(|player| !player.connected) =>
+                    {
+                        // No participant can make this transition succeed. Clear the expired
+                        // deadline so maintenance stays quiet; a returning player re-arms it.
+                        self.deadline_ms = None;
+                        Ok(None)
+                    }
+                    Err(error) => Err(error),
                 }
             }
             _ => Ok(None),
@@ -1118,7 +1128,7 @@ impl Room {
                 .votes
                 .insert(player_id, correct_option_id.clone());
         }
-        if self.round.voting_options.len() < 2 && self.connected_voters_done() {
+        if self.round.voting_options.len() < 2 {
             self.finish_voting(now_ms)?;
             return Ok(());
         }
@@ -1348,6 +1358,12 @@ impl Room {
 
         self.start_drawing_round(now_ms, None)?;
         Ok(false)
+    }
+
+    fn rearm_quiescent_results_deadline(&mut self, now_ms: u64) {
+        if self.phase == GamePhase::Results && self.deadline_ms.is_none() {
+            self.deadline_ms = Some(now_ms);
+        }
     }
 
     fn next_artist_with_drawing(&mut self) -> Option<String> {

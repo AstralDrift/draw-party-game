@@ -115,6 +115,12 @@ function writeStoredValue(key: string, value: string): void {
 const ACTIVE_PLAYER_ROOM_KEY = 'draw-party-active-player-room';
 const TAB_RECOVERY_NAME_PREFIX = 'draw-party-tab:';
 const MAX_RETAINED_REACTION_BURSTS = 12;
+const DEADLINE_CUE_PHASES = new Set<RoomSnapshot['phase']>([
+  'drawing',
+  'guessing',
+  'voting',
+  'results'
+]);
 const RETRYABLE_SUBMISSION_ERROR_CODES = new Set([
   'invalid_vote',
   'own_guess',
@@ -768,8 +774,13 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       const remaining = Math.max(0, current.deadlineMs - nowMs());
       const remainingSeconds = Math.ceil(remaining / 1000);
       const urgent = remaining <= 10_000;
+      const deadlineCueActive = DEADLINE_CUE_PHASES.has(current.phase);
+      if (!deadlineCueActive) {
+        lastTickSecondRef.current = -1;
+      }
       if (
         boot.role === 'display' &&
+        deadlineCueActive &&
         remaining > 0 &&
         remaining <= 3000 &&
         remainingSeconds !== lastTickSecondRef.current
