@@ -281,12 +281,8 @@ export class DrawingPad {
 
   private getPoint(event: PointerEvent): Point {
     const rect = this.canvas.getBoundingClientRect();
-    const x = Math.round(((event.clientX - rect.left) / rect.width) * CANVAS_WIDTH);
-    const y = Math.round(((event.clientY - rect.top) / rect.height) * CANVAS_HEIGHT);
-    return {
-      x: clamp(x, 0, CANVAS_WIDTH),
-      y: clamp(y, 0, CANVAS_HEIGHT)
-    };
+    const portraitDrawing = window.matchMedia('(max-width: 699px) and (orientation: portrait)').matches;
+    return mapPointerToDrawingPoint(event.clientX, event.clientY, rect, portraitDrawing);
   }
 
   private redraw(): void {
@@ -358,6 +354,24 @@ export class DrawingPad {
       button.title = `${selected ? 'Selected' : 'Use'} ${size}px brush`;
     }
   }
+}
+
+function mapPointerToDrawingPoint(
+  clientX: number,
+  clientY: number,
+  rect: Pick<DOMRect, 'left' | 'top' | 'right' | 'width' | 'height'>,
+  portraitDrawing: boolean
+): Point {
+  const x = portraitDrawing
+    ? Math.round(((clientY - rect.top) / rect.height) * CANVAS_WIDTH)
+    : Math.round(((clientX - rect.left) / rect.width) * CANVAS_WIDTH);
+  const y = portraitDrawing
+    ? Math.round(((rect.right - clientX) / rect.width) * CANVAS_HEIGHT)
+    : Math.round(((clientY - rect.top) / rect.height) * CANVAS_HEIGHT);
+  return {
+    x: clamp(x, 0, CANVAS_WIDTH),
+    y: clamp(y, 0, CANVAS_HEIGHT)
+  };
 }
 
 function iconButton(icon: IconNode, label: string, className: string): HTMLButtonElement {
@@ -461,5 +475,6 @@ export const drawingTestExports = {
   MAX_STROKES,
   MAX_POINTS_PER_STROKE,
   simplifyStrokePoints,
-  clamp
+  clamp,
+  mapPointerToDrawingPoint
 };

@@ -584,6 +584,152 @@
   margin: 0 auto;
 }
 
+/* A phone drawing turn is a focused task: ink owns the viewport and controls float above it. */
+@media (max-width: 699px) {
+  .app-shell.player.phase-drawing {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    height: 100dvh;
+    min-height: 100dvh;
+    padding:
+      max(4px, var(--safe-top))
+      max(0px, var(--safe-right))
+      max(4px, var(--safe-bottom))
+      max(0px, var(--safe-left));
+    overflow: hidden;
+  }
+
+  .player.phase-drawing .shell-chrome {
+    display: none;
+  }
+
+  .player.phase-drawing .player-turn-panel {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100%;
+    gap: 4px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .player.phase-drawing .turn-header {
+    min-height: 48px;
+    padding: 0 10px;
+  }
+
+  .player.phase-drawing .action-hint {
+    display: none;
+  }
+
+  .drawing-turn .drawing-pad-host,
+  .drawing-turn .drawing-pad {
+    min-height: 0;
+    height: 100%;
+  }
+
+  .drawing-turn .drawing-pad {
+    position: relative;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .drawing-turn .canvas-stage {
+    position: relative;
+    width: min(100%, calc(75svh * 3 / 4));
+    height: auto;
+    max-height: none;
+    aspect-ratio: 3 / 4;
+    align-self: start;
+  }
+
+  .drawing-turn .draw-canvas {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 133.333%;
+    max-width: none;
+    height: auto;
+    transform: translate(-50%, -50%) rotate(90deg);
+    transform-origin: center;
+  }
+
+  .drawing-turn .submit-slot-host {
+    position: absolute;
+    inset: 0;
+    display: block;
+    pointer-events: none;
+  }
+
+  .drawing-turn .submit-dock {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    display: block;
+    padding: 4px;
+    pointer-events: auto;
+    background: color-mix(in srgb, var(--surface-glass-strong) 92%, transparent);
+  }
+
+  .drawing-turn .submit-help {
+    display: none;
+  }
+
+  .drawing-turn .tools-drawer {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 1;
+    max-width: calc(100% - 16px);
+    padding: 4px 10px;
+    pointer-events: auto;
+    background: color-mix(in srgb, var(--surface-glass-strong) 92%, transparent);
+  }
+
+  .drawing-turn .tools-drawer[open] {
+    left: 8px;
+  }
+
+  .drawing-turn .tools-summary {
+    display: flex;
+    align-items: center;
+    min-height: var(--touch-target);
+    padding: 0;
+  }
+
+  .drawing-turn .draw-toolbar {
+    padding-top: 4px;
+  }
+
+  .drawing-turn .draw-status {
+    position: absolute;
+    bottom: 60px;
+    left: 12px;
+    z-index: 1;
+    margin: 0;
+    padding: 2px 6px;
+    border-radius: var(--radius-pill);
+    background: color-mix(in srgb, var(--surface-glass-strong) 92%, transparent);
+  }
+}
+
+@media (max-width: 699px) and (orientation: landscape) {
+  .drawing-turn .canvas-stage {
+    width: min(100%, calc(70svh * 4 / 3));
+    aspect-ratio: 4 / 3;
+  }
+
+  .drawing-turn .draw-canvas {
+    position: static;
+    width: 100%;
+    height: auto;
+    transform: none;
+  }
+}
+
 @media (min-width: 700px) {
   .app-shell.player {
     max-width: 920px;

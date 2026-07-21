@@ -189,6 +189,8 @@ test('phone drawing screen prioritizes canvas before controls on mobile', async 
     await expect(ava.locator('.submit-help')).toHaveText('Ready when you are.');
     await ava.locator('.tools-summary').click();
     await expect(ava.locator('.draw-toolbar')).toBeVisible();
+    await ava.locator('.swatch').nth(1).click();
+    await expect(ava.locator('.swatch').nth(1)).toHaveClass(/is-selected/);
     await expect(ava.getByRole('button', { name: /eraser/i })).toBeVisible();
     await ava.getByRole('button', { name: 'Clear drawing' }).click();
     await expect(ava.getByRole('button', { name: 'Tap again to clear drawing' })).toBeVisible();
@@ -263,7 +265,7 @@ test('solo drawing keeps live ink stable, ignores extra touches, and submits den
 
     await drawStroke(player);
     await expect(player.locator('.draw-status')).toHaveText('1 stroke');
-    await expect.poll(() => hasCanvasInkNear(player, 0.46, 0.48)).toBe(true);
+    await expect.poll(() => hasCanvasInkNear(player, 0.48, 0.54)).toBe(true);
 
     const canvas = player.locator('canvas.draw-canvas');
     await canvas.evaluate((element: HTMLCanvasElement) => {
@@ -287,7 +289,7 @@ test('solo drawing keeps live ink stable, ignores extra touches, and submits den
       fire('pointermove', 0.62, 0.66);
       fire('pointerup', 0.62, 0.66, 0);
     });
-    await expect.poll(() => hasCanvasInkNear(player, 0.46, 0.48)).toBe(true);
+    await expect.poll(() => hasCanvasInkNear(player, 0.66, 0.6)).toBe(true);
     await expect(player.locator('.draw-status')).toHaveText('2 strokes');
 
     await dispatchTwoFingerStroke(player);
