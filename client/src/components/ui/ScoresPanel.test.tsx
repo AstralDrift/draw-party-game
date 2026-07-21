@@ -21,8 +21,8 @@ describe('ScoresPanel', () => {
     expect(markup.match(/class="podium-rank">1st</g)).toHaveLength(2);
     expect(markup.match(/class="podium-title">Champion</g)).toHaveLength(2);
     expect(markup.match(/class="podium-rank">3rd</g)).toHaveLength(2);
-    expect(markup.match(/class="podium-title">Crowd Favorite</g)).toHaveLength(2);
-    expect(markup).not.toContain('3. Di · Crowd Favorite');
+    expect(markup.match(/class="podium-title">Third Place</g)).toHaveLength(2);
+    expect(markup).not.toContain('3. Di · Third Place');
     expect(markup).not.toContain('class="score-list"');
     expect(markup).toContain('class="podium is-crowded"');
     expect(markup).not.toContain('Runner-up');
@@ -45,6 +45,18 @@ describe('ScoresPanel', () => {
     expect(markup.match(/class="podium-place place-1"/g)).toHaveLength(8);
     expect(markup).toContain('class="podium is-crowded"');
     expect(markup).not.toContain('class="score-list"');
+  });
+
+  it('presents practice as unscored instead of inventing a champion', () => {
+    const markup = renderToStaticMarkup(
+      <ScoresPanel scores={scores([['Ava', 0]])} podium role="player" practice />
+    );
+
+    expect(markup).toContain('Practice · scores off');
+    expect(markup).toContain('Warm-up complete');
+    expect(markup).not.toContain('Champion');
+    expect(markup).not.toContain('podium-place');
+    expect(markup).not.toContain('share-card-button');
   });
 });
 

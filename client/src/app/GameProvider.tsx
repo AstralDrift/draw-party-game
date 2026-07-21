@@ -11,14 +11,29 @@ import {
 import { GameSocket } from '../net';
 import { HostTokenCache } from '../host-token-cache';
 import {
+  acknowledgeDuplicateSubmission,
+  playerActionAlert,
+  reconcilePendingSubmission,
+  retryPendingSubmission,
+  type PendingSubmission,
+  type SubmissionKind,
+  type SubmissionMessage
+} from '../controller';
+import {
   type ClientMessage,
   type ReactionEmoji,
   type RoomSettings,
   type RoomSnapshot,
   type ServerMessage
 } from '../protocol';
-import { playCue, setSoundEnabled, soundEnabled } from '../sound';
-import { formatDeadline, nowMs, syncServerClock } from '../time';
+import { playCue, setSoundEnabled, setSoundScope, soundEnabled } from '../sound';
+import {
+  beginServerClockSession,
+  formatDeadline,
+  nowMs,
+  syncServerClock,
+  syncServerTime
+} from '../time';
 
 export type ClientRole = 'display' | 'player';
 
@@ -29,6 +44,7 @@ export interface PendingJoin {
 
 export interface ReactionBurst {
   id: number;
+  playerId: string;
   name: string;
   emoji: ReactionEmoji;
 }
@@ -44,7 +60,7 @@ interface GameContextValue {
   playerName: string;
   roomCodeDraft: string;
   pendingJoin: PendingJoin | null;
-  selectedVote: { turnToken: number; optionId: string } | null;
+  pendingSubmission: PendingSubmission | null;
   deadlineLabel: string;
   deadlineUrgent: boolean;
   soundOn: boolean;
@@ -53,11 +69,15 @@ interface GameContextValue {
   setRoomCodeDraft: (code: string) => void;
   setErrorMessage: (message: string) => void;
   clearError: () => void;
-  setSelectedVote: (vote: { turnToken: number; optionId: string } | null) => void;
   joinRoom: (roomCode: string, name: string) => void;
   setName: (name: string) => void;
   cancelJoin: () => void;
   send: (message: ClientMessage) => boolean;
+  submitAction: (
+    kind: SubmissionKind,
+    message: SubmissionMessage,
+    optionId?: string
+  ) => boolean;
   updateSettings: (settings: RoomSettings) => void;
   toggleSound: () => void;
   haptic: (pattern?: number | number[]) => void;
@@ -83,9 +103,15 @@ function writeStoredValue(key: string, value: string): void {
 
 const ACTIVE_PLAYER_ROOM_KEY = 'draw-party-active-player-room';
 const TAB_RECOVERY_NAME_PREFIX = 'draw-party-tab:';
-const RETRYABLE_VOTE_ERROR_CODES = new Set([
+const MAX_RETAINED_REACTION_BURSTS = 12;
+const RETRYABLE_SUBMISSION_ERROR_CODES = new Set([
   'invalid_vote',
   'own_guess',
+  'guess_conflict',
+  'empty_guess',
+  'invalid_drawing_size',
+  'blank_drawing',
+  'drawing_too_large',
   'stale_turn',
   'deadline_expired',
   'invalid_phase',
@@ -177,6 +203,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   const socketRef = useRef<GameSocket | null>(null);
   const reconnectTimerRef = useRef(0);
   const lastPhaseRef = useRef('');
+  const lastActionCueKeyRef = useRef('');
   const lastTickSecondRef = useRef(-1);
   const pendingJoinRef = useRef<PendingJoin | null>(initialPendingJoin);
   const snapshotRef = useRef<RoomSnapshot | null>(null);
@@ -184,6 +211,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   const connectRef = useRef<(roomCode?: string) => void>(() => undefined);
   const hostTokens = useMemo(() => new HostTokenCache(), []);
   const burstIdRef = useRef(0);
+  const pendingSubmissionRef = useRef<PendingSubmission | null>(null);
 
   const [snapshot, setSnapshot] = useState<RoomSnapshot | null>(null);
   const [prompt, setPrompt] = useState('');
@@ -192,7 +220,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   const [playerName, setPlayerName] = useState(storedPlayerName);
   const [roomCodeDraft, setRoomCodeDraft] = useState(boot.initialRoomCode);
   const [pendingJoin, setPendingJoin] = useState<PendingJoin | null>(initialPendingJoin);
-  const [selectedVote, setSelectedVote] = useState<{ turnToken: number; optionId: string } | null>(null);
+  const [pendingSubmission, setPendingSubmission] = useState<PendingSubmission | null>(null);
   const [deadlineLabel, setDeadlineLabel] = useState('');
   const [deadlineUrgent, setDeadlineUrgent] = useState(false);
   const [soundOn, setSoundOn] = useState(() => soundEnabled());
@@ -205,6 +233,10 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   useEffect(() => {
     snapshotRef.current = snapshot;
   }, [snapshot]);
+
+  useEffect(() => {
+    setSoundScope(boot.role === 'player' ? 'controller' : 'display');
+  }, [boot.role]);
 
   const haptic = useCallback((pattern: number | number[] = 10) => {
     try {
@@ -221,21 +253,84 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
     return socketRef.current?.send(message) ?? false;
   }, []);
 
+  const commitPendingSubmission = useCallback((next: PendingSubmission | null) => {
+    pendingSubmissionRef.current = next;
+    setPendingSubmission(next);
+  }, []);
+
+  const submitAction = useCallback(
+    (kind: SubmissionKind, message: SubmissionMessage, optionId?: string) => {
+      const current = pendingSubmissionRef.current;
+      if (
+        current?.turnToken === message.turnToken &&
+        (current.state === 'sending' || current.state === 'accepted')
+      ) {
+        return false;
+      }
+
+      const next: PendingSubmission = {
+        kind,
+        turnToken: message.turnToken,
+        state: 'sending',
+        ...(optionId ? { optionId } : {})
+      };
+      commitPendingSubmission(next);
+      if (send(message)) {
+        return true;
+      }
+      commitPendingSubmission({ ...next, state: 'retry' });
+      return false;
+    },
+    [commitPendingSubmission, send]
+  );
+
   const applySnapshot = useCallback(
     (next: RoomSnapshot) => {
       syncServerClock(next);
+      snapshotRef.current = next;
+      if (next.deadlineMs) {
+        const remaining = Math.max(0, next.deadlineMs - nowMs());
+        setDeadlineLabel(formatDeadline(next));
+        setDeadlineUrgent(remaining <= 10_000);
+      } else {
+        setDeadlineLabel('');
+        setDeadlineUrgent(false);
+      }
       const phaseChanged = Boolean(lastPhaseRef.current && lastPhaseRef.current !== next.phase);
-      if (phaseChanged) {
+      if (boot.role === 'display' && phaseChanged) {
         playCue(next.phase === 'results' ? 'results' : next.phase === 'finalScores' ? 'podium' : 'phase');
       }
       lastPhaseRef.current = next.phase;
-      setSnapshot(next);
-      setSelectedVote((current) => {
-        if (next.phase !== 'voting' || current?.turnToken !== next.turnToken) {
-          return null;
+
+      const pending = pendingSubmissionRef.current;
+      const reconciliation = reconcilePendingSubmission(pending, next, clientId);
+      if (reconciliation.newlyAccepted) {
+        playCue('submit');
+        haptic(12);
+      }
+      if (reconciliation.next !== pending) {
+        commitPendingSubmission(reconciliation.next);
+      }
+
+      if (boot.role === 'player') {
+        const actionAlert = playerActionAlert(
+          next,
+          clientId,
+          lastActionCueKeyRef.current,
+          soundEnabled()
+        );
+        if (actionAlert) {
+          lastActionCueKeyRef.current = actionAlert.key;
+          if (actionAlert.playSound) {
+            playCue('phase');
+          }
+          if (actionAlert.haptic) {
+            haptic([30, 50, 30]);
+          }
         }
-        return current;
-      });
+      }
+
+      setSnapshot(next);
 
       if (boot.role === 'player') {
         const self = next.players.find((player) => player.id === clientId);
@@ -254,7 +349,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
         }
       }
     },
-    [boot.role, clientId, currentTabId]
+    [boot.role, clientId, commitPendingSubmission, currentTabId, haptic]
   );
 
   const handleServerMessage = useCallback(
@@ -304,24 +399,43 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
           break;
         case 'finalScores':
           setSnapshot((current) => (current ? { ...current, finalScores: message.scores } : current));
-          playCue('podium');
           break;
         case 'reactionBurst': {
           const id = ++burstIdRef.current;
-          setReactionBursts((current) => [...current, { id, name: message.name, emoji: message.emoji }]);
+          setReactionBursts((current) =>
+            [
+              ...current,
+              { id, playerId: message.playerId, name: message.name, emoji: message.emoji }
+            ].slice(-MAX_RETAINED_REACTION_BURSTS)
+          );
           window.setTimeout(() => {
             setReactionBursts((current) => current.filter((burst) => burst.id !== id));
           }, 1600);
           break;
         }
         case 'pong':
+          syncServerTime(message.nowMs);
           break;
         case 'error':
-          if (RETRYABLE_VOTE_ERROR_CODES.has(message.code)) {
-            setSelectedVote(null);
+          if (message.code === 'duplicate_submission') {
+            const duplicateAck = acknowledgeDuplicateSubmission(
+              pendingSubmissionRef.current,
+              snapshotRef.current
+            );
+            if (duplicateAck.newlyAccepted) {
+              commitPendingSubmission(duplicateAck.next);
+              setErrorMessage('');
+              playCue('submit');
+              haptic(12);
+              break;
+            }
+          }
+          if (RETRYABLE_SUBMISSION_ERROR_CODES.has(message.code)) {
+            commitPendingSubmission(retryPendingSubmission(pendingSubmissionRef.current));
           }
           if (message.code === 'session_in_use' || message.code === 'invalid_player_session') {
             reconnectSuppressedRef.current = true;
+            commitPendingSubmission(null);
             setErrorMessage(
               message.code === 'session_in_use'
                 ? 'This game controller is already active in another tab.'
@@ -340,6 +454,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
             }
             setSnapshot(null);
             snapshotRef.current = null;
+            commitPendingSubmission(null);
             setErrorMessage("Couldn't reattach to that room. Creating a fresh lobby…");
             socketRef.current?.close();
             connectRef.current();
@@ -348,6 +463,10 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
           setErrorMessage(message.message);
           if (['room_not_found', 'room_full'].includes(message.code)) {
             clearActivePlayerRoom();
+            commitPendingSubmission(null);
+            setSnapshot(null);
+            snapshotRef.current = null;
+            setPrompt('');
             setPendingJoin(null);
             pendingJoinRef.current = null;
             setStatus('Ready to join');
@@ -364,12 +483,13 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
         }
       }
     },
-    [applySnapshot, boot.role, hostTokens]
+    [applySnapshot, boot.role, commitPendingSubmission, haptic, hostTokens]
   );
 
   const connect = useCallback(
     (roomCode?: string) => {
       socketRef.current?.close();
+      beginServerClockSession();
       let socket: GameSocket;
       socket = new GameSocket({
         role: boot.role,
@@ -405,7 +525,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
           if (socketRef.current !== socket) {
             return;
           }
-          setSelectedVote(null);
+          commitPendingSubmission(retryPendingSubmission(pendingSubmissionRef.current));
           if (reconnectSuppressedRef.current) {
             return;
           }
@@ -440,10 +560,12 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       socketRef.current = socket;
       socket.connect();
     },
-    [boot.role, clientId, handleServerMessage, hostTokens, sessionToken]
+    [boot.role, clientId, commitPendingSubmission, handleServerMessage, hostTokens, sessionToken]
   );
 
-  connectRef.current = connect;
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     if (boot.role === 'display') {
@@ -472,7 +594,12 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       const remaining = Math.max(0, current.deadlineMs - nowMs());
       const remainingSeconds = Math.ceil(remaining / 1000);
       const urgent = remaining <= 10_000;
-      if (remaining > 0 && remaining <= 3000 && remainingSeconds !== lastTickSecondRef.current) {
+      if (
+        boot.role === 'display' &&
+        remaining > 0 &&
+        remaining <= 3000 &&
+        remainingSeconds !== lastTickSecondRef.current
+      ) {
         lastTickSecondRef.current = remainingSeconds;
         playCue('tick');
       }
@@ -482,12 +609,16 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
     tick();
     const id = window.setInterval(tick, 250);
     return () => window.clearInterval(id);
-  }, [snapshot?.deadlineMs, snapshot?.turnToken]);
+  }, [boot.role, snapshot?.deadlineMs, snapshot?.turnToken]);
 
   const joinRoom = useCallback(
     (roomCode: string, name: string) => {
       const normalizedRoomCode = roomCode.trim().toUpperCase();
-      const safeName = name.trim() || 'Player';
+      const safeName = name.trim();
+      if (!safeName) {
+        setErrorMessage('Enter your name so everyone knows who is playing.');
+        return;
+      }
       clearActivePlayerRoom();
       writeStoredValue('draw-party-name', safeName);
       setPlayerName(safeName);
@@ -529,13 +660,15 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
     setPendingJoin(null);
     pendingJoinRef.current = null;
     socketRef.current?.close();
+    commitPendingSubmission(null);
     setSnapshot(null);
     setRoomCodeDraft('');
     setStatus('Ready to join');
+    setErrorMessage('');
     if (window.location.pathname !== '/join') {
       window.history.replaceState(null, '', '/join');
     }
-  }, []);
+  }, [commitPendingSubmission]);
 
   const updateSettings = useCallback(
     (settings: RoomSettings) => {
@@ -564,7 +697,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       playerName,
       roomCodeDraft,
       pendingJoin,
-      selectedVote,
+      pendingSubmission,
       deadlineLabel,
       deadlineUrgent,
       soundOn,
@@ -573,11 +706,11 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       setRoomCodeDraft,
       setErrorMessage,
       clearError: () => setErrorMessage(''),
-      setSelectedVote,
       joinRoom,
       setName,
       cancelJoin,
       send,
+      submitAction,
       updateSettings,
       toggleSound,
       haptic
@@ -593,7 +726,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       playerName,
       roomCodeDraft,
       pendingJoin,
-      selectedVote,
+      pendingSubmission,
       deadlineLabel,
       deadlineUrgent,
       soundOn,
@@ -602,6 +735,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       setName,
       cancelJoin,
       send,
+      submitAction,
       updateSettings,
       toggleSound,
       haptic

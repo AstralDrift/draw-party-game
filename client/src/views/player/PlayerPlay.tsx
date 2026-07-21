@@ -1,20 +1,21 @@
 import { useState } from 'react';
 import { Send } from 'lucide';
 import { useGame } from '../../app/GameProvider';
+import { playerSubmissionAccepted, voteOptionAccessibleName } from '../../controller';
+import { optionLabel } from '../../option-label';
 import { playerActionHint } from '../../polish';
-import { playCue } from '../../sound';
 import { Button } from '../../components/ui/Button';
 import { Deadline } from '../../components/ui/Deadline';
 import { DrawingCanvas } from '../../components/ui/DrawingPadHost';
 import { Field, TextInput } from '../../components/ui/Field';
 import { GlassPanel } from '../../components/ui/GlassPanel';
+import { HostTimeExtension } from '../../components/ui/HostTimeExtension';
 import { ReactionBar, ReactionBursts } from '../../components/ui/ReactionBar';
 import { Shell } from '../../components/ui/Shell';
 
 export function PlayerGuessing(): React.JSX.Element {
-  const { snapshot, clientId, send, setErrorMessage, haptic } = useGame();
+  const { snapshot, clientId, pendingSubmission, submitAction, setErrorMessage } = useGame();
   const [guess, setGuess] = useState('');
-  const [submissionError, setSubmissionError] = useState('');
 
   if (!snapshot) {
     return (
@@ -25,22 +26,23 @@ export function PlayerGuessing(): React.JSX.Element {
   }
 
   const isArtist = snapshot.currentArtistId === clientId;
-  const submitted = snapshot.guessSubmittedIds.includes(clientId);
   const turnToken = snapshot.turnToken;
+  const submission =
+    pendingSubmission?.kind === 'guess' && pendingSubmission.turnToken === turnToken
+      ? pendingSubmission
+      : null;
+  const submitted = playerSubmissionAccepted(snapshot, clientId, 'guess', pendingSubmission);
+  const sending = submission?.state === 'sending';
+  const retrying = submission?.state === 'retry';
   const submitGuess = () => {
     const next = guess.trim();
     if (!next) {
       setErrorMessage('Enter a fake title first.');
       return;
     }
-    if (!send({ type: 'submitGuess', turnToken, guess: next })) {
-      setSubmissionError('Connection lost—submit again when Connected.');
-      return;
+    if (submitAction('guess', { type: 'submitGuess', turnToken, guess: next })) {
+      setErrorMessage('');
     }
-    setSubmissionError('');
-    setErrorMessage('');
-    playCue('submit');
-    haptic(10);
   };
 
   return (
@@ -51,7 +53,10 @@ export function PlayerGuessing(): React.JSX.Element {
             <p className="eyebrow">{isArtist ? 'Your drawing' : 'Fool the room'}</p>
             <div className="prompt small">{isArtist ? 'Fake titles incoming' : 'Write a title that could be real'}</div>
           </div>
-          <Deadline />
+          <div className="turn-timing-controls">
+            <Deadline />
+            <HostTimeExtension />
+          </div>
         </div>
         <p className="action-hint">{playerActionHint('guessing', isArtist)}</p>
         <DrawingCanvas drawing={snapshot.currentDrawing} className="reveal-canvas phone-canvas" />
@@ -65,27 +70,35 @@ export function PlayerGuessing(): React.JSX.Element {
               submitGuess();
             }}
           >
-            {submissionError ? (
+            {retrying ? (
               <div className="error" role="alert">
-                {submissionError}
+                Not accepted yet. Your title is still here—edit it or try again.
               </div>
             ) : null}
             <Field label="Fake title">
               <TextInput
                 maxLength={60}
                 placeholder="Something that sounds legit…"
-                disabled={submitted}
+                disabled={submitted || sending}
                 value={guess}
                 enterKeyHint="send"
                 onChange={(event) => setGuess(event.target.value)}
               />
             </Field>
-            <Button wide type="submit" icon={Send} disabled={submitted}>
-              Submit Fake Title
+            <Button wide type="submit" icon={Send} disabled={submitted || sending}>
+              {sending ? 'Sending…' : retrying ? 'Try Again' : 'Submit Fake Title'}
             </Button>
             {submitted ? (
-              <p className="success-box" role="status" aria-live="polite">
-                Title locked in. Waiting for the room…
+              <p
+                className="success-box submission-state is-accepted"
+                role="status"
+                aria-live="polite"
+              >
+                Title sent! Waiting for the room…
+              </p>
+            ) : sending ? (
+              <p className="submit-help submission-state is-pending" role="status" aria-busy="true">
+                Sending… waiting for server confirmation.
               </p>
             ) : null}
           </form>
@@ -98,16 +111,7 @@ export function PlayerGuessing(): React.JSX.Element {
 }
 
 export function PlayerVoting(): React.JSX.Element {
-  const {
-    snapshot,
-    clientId,
-    selectedVote,
-    setSelectedVote,
-    send,
-    setErrorMessage,
-    haptic
-  } = useGame();
-  const [submissionError, setSubmissionError] = useState('');
+  const { snapshot, clientId, pendingSubmission, submitAction, setErrorMessage } = useGame();
 
   if (!snapshot) {
     return (
@@ -118,9 +122,14 @@ export function PlayerVoting(): React.JSX.Element {
   }
 
   const isArtist = snapshot.currentArtistId === clientId;
-  const submitted = snapshot.voteSubmittedIds.includes(clientId);
   const turnToken = snapshot.turnToken;
-  const selectedVoteForTurn = selectedVote?.turnToken === turnToken ? selectedVote : null;
+  const submission =
+    pendingSubmission?.kind === 'vote' && pendingSubmission.turnToken === turnToken
+      ? pendingSubmission
+      : null;
+  const submitted = playerSubmissionAccepted(snapshot, clientId, 'vote', pendingSubmission);
+  const sending = submission?.state === 'sending';
+  const retrying = submission?.state === 'retry';
 
   return (
     <Shell title="Vote">
@@ -130,44 +139,64 @@ export function PlayerVoting(): React.JSX.Element {
             <p className="eyebrow">{isArtist ? 'Your drawing' : 'Find the truth'}</p>
             <div className="prompt small">{isArtist ? 'Watch them sweat' : 'Which one is real?'}</div>
           </div>
-          <Deadline />
+          <div className="turn-timing-controls">
+            <Deadline />
+            <HostTimeExtension />
+          </div>
         </div>
         <p className="action-hint">{playerActionHint('voting', isArtist)}</p>
         <DrawingCanvas drawing={snapshot.currentDrawing} className="reveal-canvas phone-canvas" />
-        {submissionError ? (
+        {retrying ? (
           <div className="error" role="alert">
-            {submissionError}
+            Not accepted yet. Tap the selected choice again or choose another.
           </div>
         ) : null}
         {isArtist ? (
           <div className="success-box">You’re the artist. Watch who takes the bait.</div>
         ) : (
           <div className="vote-list compact player-vote-list">
-            {snapshot.votingOptions.map((option) => {
+            {snapshot.votingOptions.map((option, index) => {
+              const label = optionLabel(index);
               const ownGuess = option.authorPlayerId === clientId;
-              const selected = selectedVoteForTurn?.optionId === option.id;
-              const waitingForVoteAck = Boolean(selectedVoteForTurn);
-              const disabled = submitted || ownGuess || waitingForVoteAck;
+              const selected = submission?.optionId === option.id;
+              const disabled = submitted || ownGuess || sending;
               return (
                 <button
                   key={option.id}
                   type="button"
                   className={`${disabled ? 'vote-option disabled' : 'vote-option'}${selected ? ' is-selected' : ''}`}
                   disabled={disabled}
+                  aria-label={voteOptionAccessibleName(label, option.text, {
+                    ownGuess,
+                    selected,
+                    sending,
+                    retrying,
+                    submitted
+                  })}
+                  aria-pressed={selected}
                   onClick={() => {
-                    if (!send({ type: 'submitVote', turnToken, optionId: option.id })) {
-                      setSubmissionError('Connection lost—choose again when Connected.');
-                      return;
+                    if (
+                      submitAction(
+                        'vote',
+                        { type: 'submitVote', turnToken, optionId: option.id },
+                        option.id
+                      )
+                    ) {
+                      setErrorMessage('');
                     }
-                    setSubmissionError('');
-                    setErrorMessage('');
-                    setSelectedVote({ turnToken, optionId: option.id });
-                    playCue('submit');
-                    haptic(10);
                   }}
                 >
-                  <span className="vote-answer">{option.text}</span>
-                  {selected ? <span className="vote-reason">Your vote</span> : null}
+                  <span className="vote-option-content">
+                    <span className="option-label" aria-hidden="true">
+                      {label}
+                    </span>
+                    <span className="vote-answer">{option.text}</span>
+                  </span>
+                  {selected && sending ? <span className="vote-reason">Sending…</span> : null}
+                  {selected && retrying ? (
+                    <span className="vote-reason">Tap again to retry</span>
+                  ) : null}
+                  {selected && submitted ? <span className="vote-reason">Your vote</span> : null}
                   {ownGuess ? <span className="vote-reason">Your fake answer</span> : null}
                   {submitted && !ownGuess && !selected ? (
                     <span className="vote-reason">Vote submitted</span>
@@ -177,6 +206,16 @@ export function PlayerVoting(): React.JSX.Element {
             })}
           </div>
         )}
+        {!isArtist && sending ? (
+          <p className="submission-state is-pending" role="status" aria-busy="true">
+            Sending your vote…
+          </p>
+        ) : null}
+        {!isArtist && submitted ? (
+          <p className="submission-state is-accepted" role="status" aria-live="polite">
+            Vote locked!
+          </p>
+        ) : null}
         <ReactionBar />
       </GlassPanel>
       <ReactionBursts />

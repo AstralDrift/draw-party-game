@@ -529,6 +529,8 @@ async fn handle_client_message(state: &AppState, session: &SessionKey, message: 
             update_room_settings(state, session, settings).await
         }
         ClientMessage::StartGame => start_or_advance(state, session).await,
+        ClientMessage::StartPractice => start_practice(state, session).await,
+        ClientMessage::ExtendDeadline => extend_deadline(state, session).await,
         ClientMessage::SubmitDrawing {
             turn_token,
             drawing,
@@ -697,6 +699,40 @@ async fn start_or_advance(state: &AppState, session: &SessionKey) {
     };
     mutate_room(state, session, &room_code, |room| {
         room.handle_start_or_advance(now_ms())
+    })
+    .await;
+}
+
+async fn start_practice(state: &AppState, session: &SessionKey) {
+    let Some(room_code) = authorized_controller_room_code(state, session).await else {
+        send_error(
+            state,
+            session,
+            "not_authorized",
+            "Only the TV display or the host phone can start Practice.",
+        )
+        .await;
+        return;
+    };
+    mutate_room(state, session, &room_code, |room| {
+        room.handle_start_practice(now_ms())
+    })
+    .await;
+}
+
+async fn extend_deadline(state: &AppState, session: &SessionKey) {
+    let Some(room_code) = authorized_controller_room_code(state, session).await else {
+        send_error(
+            state,
+            session,
+            "not_authorized",
+            "Only the TV display or the host phone can add time.",
+        )
+        .await;
+        return;
+    };
+    mutate_room(state, session, &room_code, |room| {
+        room.extend_deadline(now_ms())
     })
     .await;
 }
@@ -1138,7 +1174,12 @@ mod tests {
         (room_code, host_token, snapshot)
     }
 
-    async fn join_player(url: &str, room_code: &str, client_id: &str, name: &str) -> TestSocket {
+    async fn join_player_with_snapshot(
+        url: &str,
+        room_code: &str,
+        client_id: &str,
+        name: &str,
+    ) -> (TestSocket, Value) {
         let (mut player, _) = connect_async(format!(
             "{url}?role=player&room={room_code}&clientId={client_id}&sessionToken={client_id}-session"
         ))
@@ -1152,8 +1193,28 @@ mod tests {
             })))
             .await
             .unwrap();
-        let _ = read_until_type(&mut player, "roomSnapshot").await;
-        player
+        let snapshot = read_until_type(&mut player, "roomSnapshot").await;
+        (player, snapshot)
+    }
+
+    async fn join_player(url: &str, room_code: &str, client_id: &str, name: &str) -> TestSocket {
+        join_player_with_snapshot(url, room_code, client_id, name)
+            .await
+            .0
+    }
+
+    fn player_name<'a>(message: &'a Value, player_id: &str) -> Option<&'a str> {
+        message
+            .get("players")
+            .or_else(|| message.pointer("/snapshot/players"))
+            .and_then(Value::as_array)
+            .and_then(|players| {
+                players
+                    .iter()
+                    .find(|player| player.get("id").and_then(Value::as_str) == Some(player_id))
+            })
+            .and_then(|player| player.get("name"))
+            .and_then(Value::as_str)
     }
 
     #[tokio::test]
@@ -1277,7 +1338,7 @@ mod tests {
                 .get("settings")
                 .and_then(|settings| settings.get("rounds"))
                 .and_then(Value::as_u64),
-            Some(5)
+            Some(2)
         );
         assert!(snapshot.get("serverNowMs").and_then(Value::as_u64).unwrap() > 0);
 
@@ -1286,7 +1347,7 @@ mod tests {
                 "type": "updateRoomSettings",
                 "settings": {
                     "rounds": 3,
-                    "drawSeconds": 30,
+                    "drawSeconds": 60,
                     "guessSeconds": 20,
                     "voteSeconds": 15,
                     "resultsSeconds": 12,
@@ -1302,11 +1363,53 @@ mod tests {
             .unwrap();
         assert_eq!(
             settings.get("drawSeconds").and_then(Value::as_u64),
-            Some(30)
+            Some(60)
         );
         assert_eq!(
             settings.get("promptPackId").and_then(Value::as_str),
             Some("safe-party")
+        );
+
+        // A cached client from the previous release can still send its former timer minima.
+        // The server accepts the message and broadcasts the normalized safe settings.
+        display
+            .send(text_message(json!({
+                "type": "updateRoomSettings",
+                "settings": {
+                    "rounds": 1,
+                    "drawSeconds": 30,
+                    "guessSeconds": 15,
+                    "voteSeconds": 10,
+                    "resultsSeconds": 5,
+                    "promptPackId": "safe-party"
+                }
+            })))
+            .await
+            .unwrap();
+        let legacy_low = read_until_settings_rounds(&mut display, 1).await;
+        assert_eq!(
+            legacy_low
+                .pointer("/snapshot/settings/drawSeconds")
+                .and_then(Value::as_u64),
+            Some(45)
+        );
+        assert_eq!(
+            legacy_low
+                .pointer("/snapshot/settings/guessSeconds")
+                .and_then(Value::as_u64),
+            Some(20)
+        );
+        assert_eq!(
+            legacy_low
+                .pointer("/snapshot/settings/voteSeconds")
+                .and_then(Value::as_u64),
+            Some(15)
+        );
+        assert_eq!(
+            legacy_low
+                .pointer("/snapshot/settings/resultsSeconds")
+                .and_then(Value::as_u64),
+            Some(6)
         );
 
         let (mut player, _) =
@@ -1332,22 +1435,46 @@ mod tests {
             .send(text_message(json!({
                 "type": "updateRoomSettings",
                 "settings": {
-                    "rounds": 4,
-                    "drawSeconds": 30,
-                    "guessSeconds": 20,
-                    "voteSeconds": 15,
-                    "resultsSeconds": 12,
+                    "rounds": 12,
+                    "drawSeconds": 180,
+                    "guessSeconds": 120,
+                    "voteSeconds": 90,
+                    "resultsSeconds": 30,
                     "promptPackId": "safe-party"
                 }
             })))
             .await
             .unwrap();
-        let host_updated = read_until_settings_rounds(&mut player, 4).await;
+        let host_updated = read_until_settings_rounds(&mut player, 3).await;
         assert_eq!(
             host_updated
                 .pointer("/snapshot/settings/rounds")
                 .and_then(Value::as_u64),
-            Some(4)
+            Some(3)
+        );
+        assert_eq!(
+            host_updated
+                .pointer("/snapshot/settings/drawSeconds")
+                .and_then(Value::as_u64),
+            Some(120)
+        );
+        assert_eq!(
+            host_updated
+                .pointer("/snapshot/settings/guessSeconds")
+                .and_then(Value::as_u64),
+            Some(60)
+        );
+        assert_eq!(
+            host_updated
+                .pointer("/snapshot/settings/voteSeconds")
+                .and_then(Value::as_u64),
+            Some(40)
+        );
+        assert_eq!(
+            host_updated
+                .pointer("/snapshot/settings/resultsSeconds")
+                .and_then(Value::as_u64),
+            Some(15)
         );
 
         let (mut guest, _) =
@@ -1368,7 +1495,7 @@ mod tests {
                 "type": "updateRoomSettings",
                 "settings": {
                     "rounds": 2,
-                    "drawSeconds": 30,
+                    "drawSeconds": 60,
                     "guessSeconds": 20,
                     "voteSeconds": 15,
                     "resultsSeconds": 12,
@@ -1385,6 +1512,176 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn websocket_disambiguates_names_and_preserves_the_name_on_reconnect() {
+        let url = spawn_ws_server().await;
+        let (mut display, _) = connect_async(format!("{url}?role=display&clientId=display"))
+            .await
+            .unwrap();
+        let (room_code, _, _) = create_test_room(&mut display).await;
+
+        let (mut p1, first_join) = join_player_with_snapshot(&url, &room_code, "p1", "Ada").await;
+        assert_eq!(player_name(&first_join, "p1"), Some("Ada"));
+
+        let (mut p2, second_join) = join_player_with_snapshot(&url, &room_code, "p2", "ada").await;
+        assert_eq!(player_name(&second_join, "p1"), Some("Ada"));
+        assert_eq!(player_name(&second_join, "p2"), Some("ada 2"));
+
+        p2.send(text_message(json!({
+            "type": "setName",
+            "name": "ADA"
+        })))
+        .await
+        .unwrap();
+        let renamed = read_until_type(&mut p2, "playerListChanged").await;
+        assert_eq!(player_name(&renamed, "p1"), Some("Ada"));
+        assert_eq!(player_name(&renamed, "p2"), Some("ADA 2"));
+
+        p1.send(text_message(json!({ "type": "leaveRoom" })))
+            .await
+            .unwrap();
+        let disconnected = read_until_type(&mut p2, "playerListChanged").await;
+        assert_eq!(
+            disconnected
+                .get("players")
+                .and_then(Value::as_array)
+                .and_then(|players| {
+                    players
+                        .iter()
+                        .find(|player| player.get("id").and_then(Value::as_str) == Some("p1"))
+                })
+                .and_then(|player| player.get("connected"))
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+
+        let (_p3, third_join) = join_player_with_snapshot(&url, &room_code, "p3", "aDa").await;
+        assert_eq!(player_name(&third_join, "p1"), Some("Ada"));
+        assert_eq!(player_name(&third_join, "p2"), Some("ADA 2"));
+        assert_eq!(player_name(&third_join, "p3"), Some("aDa 3"));
+
+        let (_restored, reconnect) =
+            join_player_with_snapshot(&url, &room_code, "p1", "Mallory").await;
+        assert_eq!(player_name(&reconnect, "p1"), Some("Ada"));
+        assert_eq!(player_name(&reconnect, "p2"), Some("ADA 2"));
+        assert_eq!(player_name(&reconnect, "p3"), Some("aDa 3"));
+    }
+
+    #[tokio::test]
+    async fn websocket_controller_extends_a_deadline_once_and_guest_is_rejected() {
+        let url = spawn_ws_server().await;
+        let (mut display, _) = connect_async(format!("{url}?role=display&clientId=display"))
+            .await
+            .unwrap();
+        let (room_code, _, _) = create_test_room(&mut display).await;
+        let _host = join_player(&url, &room_code, "p1", "Ada").await;
+        let mut guest = join_player(&url, &room_code, "p2", "Grace").await;
+        let _third = join_player(&url, &room_code, "p3", "Linus").await;
+
+        display
+            .send(text_message(json!({ "type": "startGame" })))
+            .await
+            .unwrap();
+        let phase = read_until_type(&mut display, "phaseChanged").await;
+        let original_deadline = phase
+            .pointer("/snapshot/deadlineMs")
+            .and_then(Value::as_u64)
+            .unwrap();
+        assert_eq!(
+            phase
+                .pointer("/snapshot/deadlineExtensionAvailable")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        let initial_snapshot = read_until_type(&mut display, "roomSnapshot").await;
+        assert_eq!(
+            initial_snapshot
+                .pointer("/snapshot/deadlineMs")
+                .and_then(Value::as_u64),
+            Some(original_deadline)
+        );
+
+        guest
+            .send(text_message(json!({ "type": "extendDeadline" })))
+            .await
+            .unwrap();
+        let unauthorized = read_until_type(&mut guest, "error").await;
+        assert_eq!(
+            unauthorized.get("code").and_then(Value::as_str),
+            Some("not_authorized")
+        );
+
+        display
+            .send(text_message(json!({ "type": "extendDeadline" })))
+            .await
+            .unwrap();
+        let extended = read_until_type(&mut display, "roomSnapshot").await;
+        assert_eq!(
+            extended
+                .pointer("/snapshot/deadlineMs")
+                .and_then(Value::as_u64),
+            Some(original_deadline + 30_000)
+        );
+        assert_eq!(
+            extended
+                .pointer("/snapshot/deadlineExtensionAvailable")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+
+        display
+            .send(text_message(json!({ "type": "extendDeadline" })))
+            .await
+            .unwrap();
+        let duplicate = read_until_type(&mut display, "error").await;
+        assert_eq!(
+            duplicate.get("code").and_then(Value::as_str),
+            Some("deadline_extension_used")
+        );
+    }
+
+    #[tokio::test]
+    async fn websocket_party_requires_three_but_solo_practice_starts() {
+        let url = spawn_ws_server().await;
+        let (mut display, _) = connect_async(format!("{url}?role=display&clientId=display"))
+            .await
+            .unwrap();
+        let (room_code, _, _) = create_test_room(&mut display).await;
+        let _player = join_player(&url, &room_code, "p1", "Ada").await;
+
+        display
+            .send(text_message(json!({ "type": "startGame" })))
+            .await
+            .unwrap();
+        let party_error = read_until_type(&mut display, "error").await;
+        assert_eq!(
+            party_error.get("code").and_then(Value::as_str),
+            Some("not_enough_players")
+        );
+
+        display
+            .send(text_message(json!({ "type": "startPractice" })))
+            .await
+            .unwrap();
+        let practice = read_until_type(&mut display, "phaseChanged").await;
+        assert_eq!(
+            practice.pointer("/snapshot/phase").and_then(Value::as_str),
+            Some("drawing")
+        );
+        assert_eq!(
+            practice
+                .pointer("/snapshot/gameMode")
+                .and_then(Value::as_str),
+            Some("practice")
+        );
+        assert_eq!(
+            practice
+                .pointer("/snapshot/totalRounds")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+    }
+
+    #[tokio::test]
     async fn websocket_display_reconnect_requires_host_token() {
         let url = spawn_ws_server().await;
         let (mut display, _) = connect_async(format!("{url}?role=display&clientId=display"))
@@ -1394,6 +1691,7 @@ mod tests {
 
         let _p1 = join_player(&url, &room_code, "p1", "Ada").await;
         let _p2 = join_player(&url, &room_code, "p2", "Grace").await;
+        let _p3 = join_player(&url, &room_code, "p3", "Linus").await;
 
         let (mut unauthorized, _) =
             connect_async(format!("{url}?role=display&room={room_code}&clientId=evil"))
@@ -1563,7 +1861,7 @@ mod tests {
             "type": "updateRoomSettings",
             "settings": {
                 "rounds": 3,
-                "drawSeconds": 30,
+                "drawSeconds": 60,
                 "guessSeconds": 20,
                 "voteSeconds": 15,
                 "resultsSeconds": 12,
@@ -1614,7 +1912,7 @@ mod tests {
                 "type": "updateRoomSettings",
                 "settings": {
                     "rounds": 3,
-                    "drawSeconds": 30,
+                    "drawSeconds": 60,
                     "guessSeconds": 20,
                     "voteSeconds": 15,
                     "resultsSeconds": 12,
@@ -1661,13 +1959,17 @@ mod tests {
 
         let mut restored = join_player(&url, &room_code, "host-phone", "Ada").await;
         restored
-            .send(text_message(json!({ "type": "startGame" })))
+            .send(text_message(json!({ "type": "startPractice" })))
             .await
             .unwrap();
         let phase = read_until_type(&mut restored, "phaseChanged").await;
         assert_eq!(
             phase.pointer("/snapshot/phase").and_then(Value::as_str),
             Some("drawing")
+        );
+        assert_eq!(
+            phase.pointer("/snapshot/gameMode").and_then(Value::as_str),
+            Some("practice")
         );
     }
 
@@ -1760,6 +2062,7 @@ mod tests {
 
         let mut p1 = join_player(&url, &room_code, "p1", "Ada").await;
         let mut p2 = join_player(&url, &room_code, "p2", "Grace").await;
+        let mut p3 = join_player(&url, &room_code, "p3", "Linus").await;
 
         display
             .send(text_message(json!({ "type": "startGame" })))
@@ -1773,13 +2076,13 @@ mod tests {
             .unwrap();
 
         let (mut late, _) =
-            connect_async(format!("{url}?role=player&room={room_code}&clientId=p3"))
+            connect_async(format!("{url}?role=player&room={room_code}&clientId=p4"))
                 .await
                 .unwrap();
         late.send(text_message(json!({
-            "type": "joinRoom",
-            "roomCode": room_code,
-            "name": "Linus"
+                "type": "joinRoom",
+                "roomCode": room_code,
+                "name": "Margaret"
         })))
         .await
         .unwrap();
@@ -1791,7 +2094,7 @@ mod tests {
             .and_then(|players| {
                 players
                     .iter()
-                    .find(|player| player.get("id").and_then(Value::as_str) == Some("p3"))
+                    .find(|player| player.get("id").and_then(Value::as_str) == Some("p4"))
             })
             .and_then(|player| player.get("spectator"))
             .and_then(Value::as_bool);
@@ -1805,6 +2108,13 @@ mod tests {
         .await
         .unwrap();
         p2.send(text_message(json!({
+            "type": "submitDrawing",
+            "turnToken": turn_token,
+            "drawing": drawing_value()
+        })))
+        .await
+        .unwrap();
+        p3.send(text_message(json!({
             "type": "submitDrawing",
             "turnToken": turn_token,
             "drawing": drawing_value()

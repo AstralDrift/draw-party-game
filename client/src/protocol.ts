@@ -3,6 +3,7 @@ export const CANVAS_HEIGHT = 768;
 
 export type Role = 'display' | 'player';
 export type GamePhase = 'lobby' | 'drawing' | 'guessing' | 'voting' | 'results' | 'finalScores';
+export type GameMode = 'party' | 'practice';
 export type PromptPackId = 'safe-party' | 'party-chaos';
 export const PROMPT_PACK_OPTIONS = [
   { id: 'safe-party', label: 'Party Safe' },
@@ -70,6 +71,8 @@ export interface RoundResult {
   correctVoterNames: string[];
   breakdown: VoteBreakdown[];
   scoreDeltas: ScoreDelta[];
+  /** Additive so a just-updated client can still present results from an older server. */
+  scoreEvents?: ScoreEvent[];
   nobodyFoundIt: boolean;
   perfectTruth: boolean;
 }
@@ -84,6 +87,24 @@ export interface ScoreDelta {
   playerId: string;
   name: string;
   delta: number;
+  /** Authoritative score after this reveal; absent on older servers. */
+  scoreAfter?: number;
+}
+
+export type ScoreEventKind =
+  | 'foundTruth'
+  | 'artistClarity'
+  | 'fooledPlayer'
+  | 'nobodyFoundIt'
+  | 'perfectTruth';
+
+export interface ScoreEvent {
+  kind: ScoreEventKind;
+  playerId: string;
+  name: string;
+  points: number;
+  relatedPlayerId?: string | null;
+  relatedPlayerName?: string | null;
 }
 
 export interface RoomSnapshot {
@@ -97,6 +118,9 @@ export interface RoomSnapshot {
   settings: RoomSettings;
   turnToken: number;
   serverNowMs: number;
+  /** Additive deployment-skew fields; older servers are treated as Party with no extension. */
+  gameMode?: GameMode;
+  deadlineExtensionAvailable?: boolean;
   deadlineMs?: number | null;
   currentArtistId?: string | null;
   currentArtistName?: string | null;
@@ -115,6 +139,8 @@ export type ClientMessage =
   | { type: 'setName'; name: string }
   | { type: 'updateRoomSettings'; settings: RoomSettings }
   | { type: 'startGame' }
+  | { type: 'startPractice' }
+  | { type: 'extendDeadline' }
   | { type: 'submitDrawing'; turnToken: number; drawing: DrawingDoc }
   | { type: 'submitGuess'; turnToken: number; guess: string }
   | { type: 'submitVote'; turnToken: number; optionId: string }
@@ -199,11 +225,11 @@ export function phaseLabel(phase: GamePhase): string {
 
 export function defaultRoomSettings(): RoomSettings {
   return {
-    rounds: 5,
+    rounds: 2,
     drawSeconds: 75,
-    guessSeconds: 40,
-    voteSeconds: 25,
-    resultsSeconds: 10,
+    guessSeconds: 30,
+    voteSeconds: 20,
+    resultsSeconds: 8,
     promptPackId: 'safe-party'
   };
 }
@@ -238,6 +264,10 @@ function isGamePhase(value: unknown): value is GamePhase {
     value === 'results' ||
     value === 'finalScores'
   );
+}
+
+function isGameMode(value: unknown): value is GameMode {
+  return value === 'party' || value === 'practice';
 }
 
 function isRoomSettings(value: unknown): value is RoomSettings {
@@ -344,8 +374,39 @@ function isScoreDelta(value: unknown): value is ScoreDelta {
     isRecord(value) &&
     typeof value.playerId === 'string' &&
     typeof value.name === 'string' &&
-    isFiniteNumber(value.delta)
+    isFiniteNumber(value.delta) &&
+    (value.scoreAfter === undefined || isFiniteNumber(value.scoreAfter))
   );
+}
+
+function isScoreEventKind(value: unknown): value is ScoreEventKind {
+  return (
+    value === 'foundTruth' ||
+    value === 'artistClarity' ||
+    value === 'fooledPlayer' ||
+    value === 'nobodyFoundIt' ||
+    value === 'perfectTruth'
+  );
+}
+
+function isScoreEvent(value: unknown): value is ScoreEvent {
+  return (
+    isRecord(value) &&
+    isScoreEventKind(value.kind) &&
+    typeof value.playerId === 'string' &&
+    typeof value.name === 'string' &&
+    isFiniteNumber(value.points) &&
+    (value.relatedPlayerId === undefined ||
+      value.relatedPlayerId === null ||
+      typeof value.relatedPlayerId === 'string') &&
+    (value.relatedPlayerName === undefined ||
+      value.relatedPlayerName === null ||
+      typeof value.relatedPlayerName === 'string')
+  );
+}
+
+function isScoreEvents(value: unknown): value is ScoreEvent[] {
+  return Array.isArray(value) && value.every(isScoreEvent);
 }
 
 function isScoreEntries(value: unknown): value is ScoreEntry[] {
@@ -368,6 +429,7 @@ function isRoundResult(value: unknown): value is RoundResult {
     Array.isArray(value.breakdown) &&
     value.breakdown.every(isVoteBreakdown) &&
     isScoreDeltas(value.scoreDeltas) &&
+    (value.scoreEvents === undefined || isScoreEvents(value.scoreEvents)) &&
     typeof value.nobodyFoundIt === 'boolean' &&
     typeof value.perfectTruth === 'boolean'
   );
@@ -400,6 +462,9 @@ function isRoomSnapshot(value: unknown): value is RoomSnapshot {
     isRoomSettings(value.settings) &&
     isFiniteNumber(value.turnToken) &&
     isFiniteNumber(value.serverNowMs) &&
+    (value.gameMode === undefined || isGameMode(value.gameMode)) &&
+    (value.deadlineExtensionAvailable === undefined ||
+      typeof value.deadlineExtensionAvailable === 'boolean') &&
     (value.deadlineMs === undefined ||
       value.deadlineMs === null ||
       isFiniteNumber(value.deadlineMs)) &&

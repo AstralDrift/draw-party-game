@@ -1,6 +1,6 @@
 import type { GamePhase, RoundResult, ScoreEntry } from './protocol';
 
-/** Soft party-size guidance. Server `MIN_PLAYERS` stays 1 for solo/demo. */
+/** Party mode starts at three; the lobby offers a separate unscored solo Practice action. */
 export const RECOMMENDED_PARTY_SIZE = 3;
 
 type RoundOutcomeInput = Pick<
@@ -71,6 +71,30 @@ export function finalWinnerText(scores: ScoreEntry[]): string {
   return `${winners.length} players tie`;
 }
 
+export function rematchPrompt(scores: ScoreEntry[]): string {
+  if (scores.length <= 1) {
+    return 'One more masterpiece?';
+  }
+
+  const topScore = scores[0]?.score;
+  if (topScore === undefined) {
+    return 'One more masterpiece?';
+  }
+  const winners = scores.filter((score) => score.score === topScore);
+  if (winners.length === 2) {
+    return `${winners[0].name} and ${winners[1].name} tied—settle it?`;
+  }
+  if (winners.length > 2) {
+    return `${winners.length} players tied—settle it?`;
+  }
+
+  const runnerUp = scores.find((score) => score.score < topScore);
+  if (!runnerUp || !winners[0]) {
+    return 'Run it back?';
+  }
+  return `${winners[0].name} won by ${topScore - runnerUp.score}—take it back?`;
+}
+
 export function playerActionHint(phase: GamePhase, isArtist: boolean): string {
   switch (phase) {
     case 'lobby':
@@ -128,7 +152,6 @@ export function podiumTitles(scores: ScoreEntry[]): PodiumTitle[] {
     return [];
   }
 
-  const lowestScore = Math.min(...scores.map((score) => score.score));
   return scores.flatMap((score) => {
     const rank = competitionRank(scores, score);
     if (rank === 1) {
@@ -138,10 +161,7 @@ export function podiumTitles(scores: ScoreEntry[]): PodiumTitle[] {
       return [{ playerId: score.playerId, title: 'Runner-up' }];
     }
     if (rank === 3) {
-      return [{ playerId: score.playerId, title: 'Crowd Favorite' }];
-    }
-    if (scores.length > 3 && score.score === lowestScore) {
-      return [{ playerId: score.playerId, title: 'Dark Horse' }];
+      return [{ playerId: score.playerId, title: 'Third Place' }];
     }
     return [];
   });

@@ -6,6 +6,7 @@ import {
   playerActionHint,
   playerLobbyReadyNote,
   podiumTitles,
+  rematchPrompt,
   roundOutcomeText
 } from './polish';
 import type { RoundResult, ScoreEntry } from './protocol';
@@ -33,6 +34,17 @@ describe('party polish copy', () => {
     expect(finalWinnerText(scores([['Ava', 450], ['Bo', 200]]))).toBe('Ava wins');
     expect(finalWinnerText(scores([['Ava', 300], ['Bo', 300]]))).toBe('Ava and Bo tie');
     expect(finalWinnerText(scores([['Ava', 100], ['Bo', 100], ['Cy', 100]]))).toBe('3 players tie');
+    expect(rematchPrompt(scores([]))).toBe('One more masterpiece?');
+    expect(rematchPrompt(scores([['Ava', 0]]))).toBe('One more masterpiece?');
+    expect(rematchPrompt(scores([['Ava', 450], ['Bo', 300]]))).toBe(
+      'Ava won by 150—take it back?'
+    );
+    expect(rematchPrompt(scores([['Ava', 300], ['Bo', 300], ['Cy', 100]]))).toBe(
+      'Ava and Bo tied—settle it?'
+    );
+    expect(rematchPrompt(scores([['Ava', 100], ['Bo', 100], ['Cy', 100]]))).toBe(
+      '3 players tied—settle it?'
+    );
   });
 
   it('guides hosts toward a fuller party while keeping solo startable', () => {
@@ -63,12 +75,10 @@ describe('party polish copy', () => {
     expect(podiumTitles(four)).toEqual([
       { playerId: 'p0', title: 'Champion' },
       { playerId: 'p1', title: 'Runner-up' },
-      { playerId: 'p2', title: 'Crowd Favorite' },
-      { playerId: 'p3', title: 'Dark Horse' }
+      { playerId: 'p2', title: 'Third Place' }
     ]);
-    expect(podiumTitles(scores([['Ava', 3], ['Bo', 2], ['Cy', 1]])).some((t) => t.title === 'Dark Horse')).toBe(
-      false
-    );
+    expect(podiumTitles(four).some((title) => title.title === 'Dark Horse')).toBe(false);
+    expect(podiumTitles(four).some((title) => title.title === 'Crowd Favorite')).toBe(false);
 
     const tied = scores([
       ['Ava', 400],
@@ -81,9 +91,8 @@ describe('party polish copy', () => {
     expect(podiumTitles(tied)).toEqual([
       { playerId: 'p0', title: 'Champion' },
       { playerId: 'p1', title: 'Champion' },
-      { playerId: 'p2', title: 'Crowd Favorite' },
-      { playerId: 'p3', title: 'Crowd Favorite' },
-      { playerId: 'p4', title: 'Dark Horse' }
+      { playerId: 'p2', title: 'Third Place' },
+      { playerId: 'p3', title: 'Third Place' }
     ]);
     expect(podiumTitles(tied).some((title) => title.title === 'Runner-up')).toBe(false);
 

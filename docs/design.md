@@ -36,7 +36,10 @@ Party play is dark-first (TV living rooms). Tokens below are the product palette
 | Warning | `--status-warning` | `#ffd60a` | Urgent timers |
 | Danger | `--status-danger` | `#ff453a` | Errors |
 | Canvas | `--canvas` | `#ffffff` | Drawing surface |
+| Artwork surface | `--surface-art` | `#fbfcff` | Explicit opaque drawing and reveal surface |
 | Ink | `--ink` | `#1d1d1f` | On-canvas / QR dark |
+
+Player identity uses eight non-purple accents (`--player-accent-0` through `--player-accent-7`): blue, cyan, mint, lime, yellow, orange, coral, and slate. Accents decorate the identity rail and doodle badge; names remain white and state remains explicit text.
 
 ### Rules
 - Accent is for interactive actions and focus only — not decorative fills.
@@ -64,6 +67,8 @@ Syne carries the brand mark and TV headlines; DM Sans handles controller UI. Avo
 | Caption | 0.8125rem | 500 | 1.35 | 0.02em | Labels, meta |
 | Overline | 0.6875rem | 600 | 1.3 | 0.14em | Eyebrows (uppercase) |
 
+Display-only responsive tokens keep secondary TV content couch-readable: `--display-body: clamp(1rem, 0.63vw, 1.5rem)`, `--display-meta: clamp(0.8125rem, 0.47vw, 1.125rem)`, and `--display-panel-title: clamp(1.25rem, 0.83vw, 2rem)`.
+
 ## 4. Spacing & Layout
 
 Base unit: **4px**.
@@ -87,6 +92,8 @@ Base unit: **4px**.
 
 TV shell: centered, max ~2520px, one composition per phase. Phone shell: max 680px, safe-area aware, large tap targets.
 
+Results use a contained two-column scene on TV (truth/art on the left; A-H answers and causal score events on the right) plus a compact always-visible Continue/next rail. Phone results remain a single-column look-up companion.
+
 ## 5. Elevation & Depth
 
 | Level | Treatment |
@@ -98,6 +105,8 @@ TV shell: centered, max ~2520px, one composition per phase. Phone shell: max 680
 TV display shell uses opaque glass fills (no `backdrop-filter`) and skips enter transforms — TV Bro / living-room WebViews otherwise ghost or clip lobby type. QR sizing is stage-driven (`vh` with `svh` progressive enhancement) so canvases never keep a 640px intrinsic size that overlaps the join URL / Start CTA. Validate display CSS with `npm run e2e:tv` (geometry) and `npm run e2e:tvbro` (WebView-shaped pixel baselines); optional real-APK glance: `npm run review:tvbro:device` (see [contributing.md](contributing.md#tv-layout-gate-living-room--tv-bro)).
 
 Shadows are soft and short (`0 12px 40px rgba(0,0,0,0.35)`), never hard pixel-offset arcade shadows.
+
+Backdrop blur is capped at 18px and reserved for outer chrome/panels. Nested roster, score, answer, podium, and empty-state rows use tonal fills, hairlines, and inset highlights without backdrop blur or floating shadows. Drawing and reveal canvases remain fully opaque.
 
 ## 6. Motion
 

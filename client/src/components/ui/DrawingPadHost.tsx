@@ -6,19 +6,29 @@ import type { DrawingDoc } from '../../protocol';
 interface DrawingPadHostProps {
   onReadyChange: (ready: boolean) => void;
   padRef: React.MutableRefObject<DrawingPad | null>;
+  locked?: boolean;
   children?: ReactNode;
 }
 
 export function DrawingPadHost({
   onReadyChange,
   padRef,
+  locked = false,
   children
 }: DrawingPadHostProps): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null);
   const onReadyChangeRef = useRef(onReadyChange);
+  const lockedRef = useRef(locked);
   const [portalTarget, setPortalTarget] = useState<HTMLDivElement | null>(null);
 
-  onReadyChangeRef.current = onReadyChange;
+  useLayoutEffect(() => {
+    onReadyChangeRef.current = onReadyChange;
+  }, [onReadyChange]);
+
+  useLayoutEffect(() => {
+    lockedRef.current = locked;
+    padRef.current?.setLocked(locked);
+  }, [locked, padRef]);
 
   // Mount the imperative DrawingPad once. Callbacks stay in refs so ready/submit
   // re-renders never destroy live ink. flushSync portals the submit dock before paint
@@ -35,6 +45,7 @@ export function DrawingPadHost({
     const pad = new DrawingPad(() => {
       onReadyChangeRef.current(pad.hasInk());
     }, submitSlot);
+    pad.setLocked(lockedRef.current);
     padRef.current = pad;
     host.replaceChildren(pad.root);
     flushSync(() => {
@@ -43,6 +54,7 @@ export function DrawingPadHost({
     onReadyChangeRef.current(pad.hasInk());
 
     return () => {
+      pad.destroy();
       padRef.current = null;
       flushSync(() => {
         setPortalTarget(null);
@@ -53,7 +65,7 @@ export function DrawingPadHost({
 
   return (
     <>
-      <div ref={hostRef} className="drawing-pad-host" />
+      <div ref={hostRef} className="drawing-pad-host" aria-busy={locked || undefined} />
       {portalTarget && children ? createPortal(children, portalTarget) : null}
     </>
   );

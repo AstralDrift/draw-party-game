@@ -3,26 +3,28 @@ use serde::{Deserialize, Serialize};
 pub const CANVAS_WIDTH: u16 = 1024;
 pub const CANVAS_HEIGHT: u16 = 768;
 pub const MAX_PLAYERS: usize = 8; // includes spectators — late-join watchers still consume a seat
-pub const MIN_PLAYERS: usize = 1;
-pub const DEFAULT_TOTAL_ROUNDS: u8 = 5;
+pub const MIN_PLAYERS: usize = 3;
+pub const PRACTICE_PLAYERS: usize = 1;
+pub const DEFAULT_TOTAL_ROUNDS: u8 = 2;
 pub const TOTAL_ROUNDS: u8 = DEFAULT_TOTAL_ROUNDS;
 pub const MIN_ROUNDS: u8 = 1;
-pub const MAX_ROUNDS: u8 = 12;
+pub const MAX_ROUNDS: u8 = 3;
 pub const DEFAULT_DRAW_SECONDS: u64 = 75;
 pub const DRAW_SECONDS: u64 = DEFAULT_DRAW_SECONDS;
-pub const MIN_DRAW_SECONDS: u64 = 15;
-pub const MAX_DRAW_SECONDS: u64 = 300;
-pub const DEFAULT_GUESS_SECONDS: u64 = 40;
+pub const MIN_DRAW_SECONDS: u64 = 45;
+pub const MAX_DRAW_SECONDS: u64 = 120;
+pub const DEFAULT_GUESS_SECONDS: u64 = 30;
 pub const GUESS_SECONDS: u64 = DEFAULT_GUESS_SECONDS;
-pub const MIN_GUESS_SECONDS: u64 = 10;
-pub const MAX_GUESS_SECONDS: u64 = 180;
-pub const DEFAULT_VOTE_SECONDS: u64 = 25;
+pub const MIN_GUESS_SECONDS: u64 = 20;
+pub const MAX_GUESS_SECONDS: u64 = 60;
+pub const DEFAULT_VOTE_SECONDS: u64 = 20;
 pub const VOTE_SECONDS: u64 = DEFAULT_VOTE_SECONDS;
-pub const MIN_VOTE_SECONDS: u64 = 10;
-pub const MAX_VOTE_SECONDS: u64 = 120;
-pub const DEFAULT_RESULTS_SECONDS: u64 = 10;
-pub const MIN_RESULTS_SECONDS: u64 = 5;
-pub const MAX_RESULTS_SECONDS: u64 = 30;
+pub const MIN_VOTE_SECONDS: u64 = 15;
+pub const MAX_VOTE_SECONDS: u64 = 40;
+pub const DEFAULT_RESULTS_SECONDS: u64 = 8;
+pub const MIN_RESULTS_SECONDS: u64 = 6;
+pub const MAX_RESULTS_SECONDS: u64 = 15;
+pub const DEADLINE_EXTENSION_SECONDS: u64 = 30;
 pub const DEFAULT_PROMPT_PACK_ID: &str = "safe-party";
 pub const PARTY_CHAOS_PROMPT_PACK_ID: &str = "party-chaos";
 pub const ROOM_TTL_MS: u64 = 3 * 60 * 60 * 1000;
@@ -49,6 +51,14 @@ pub enum GamePhase {
     Voting,
     Results,
     FinalScores,
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum GameMode {
+    #[default]
+    Party,
+    Practice,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -135,6 +145,29 @@ pub struct ScoreDelta {
     pub player_id: String,
     pub name: String,
     pub delta: i32,
+    #[serde(default)]
+    pub score_after: i32,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ScoreEventKind {
+    FoundTruth,
+    ArtistClarity,
+    FooledPlayer,
+    NobodyFoundIt,
+    PerfectTruth,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScoreEvent {
+    pub kind: ScoreEventKind,
+    pub player_id: String,
+    pub name: String,
+    pub points: i32,
+    pub related_player_id: Option<String>,
+    pub related_player_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -146,6 +179,8 @@ pub struct RoundResult {
     pub correct_voter_names: Vec<String>,
     pub breakdown: Vec<VoteBreakdown>,
     pub score_deltas: Vec<ScoreDelta>,
+    #[serde(default)]
+    pub score_events: Vec<ScoreEvent>,
     pub nobody_found_it: bool,
     pub perfect_truth: bool,
 }
@@ -172,6 +207,8 @@ pub struct ReactionBurst {
 pub struct RoomSnapshot {
     pub room_code: String,
     pub phase: GamePhase,
+    #[serde(default)]
+    pub game_mode: GameMode,
     pub players: Vec<PlayerPublic>,
     pub min_players: usize,
     pub max_players: usize,
@@ -181,6 +218,8 @@ pub struct RoomSnapshot {
     pub total_rounds: u8,
     pub turn_token: u64,
     pub deadline_ms: Option<u64>,
+    #[serde(default)]
+    pub deadline_extension_available: bool,
     pub current_artist_id: Option<String>,
     pub current_artist_name: Option<String>,
     pub current_drawing: Option<DrawingDoc>,
@@ -211,6 +250,8 @@ pub enum ClientMessage {
         settings: RoomSettings,
     },
     StartGame,
+    StartPractice,
+    ExtendDeadline,
     SubmitDrawing {
         turn_token: u64,
         drawing: DrawingDoc,

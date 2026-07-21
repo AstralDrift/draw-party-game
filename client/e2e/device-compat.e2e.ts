@@ -5,6 +5,7 @@ import {
   expectNoVerticalOverflow,
   TV_VIEWPORTS
 } from './tv-layout';
+import { startPractice } from './helpers';
 
 type Viewport = {
   width: number;
@@ -130,18 +131,20 @@ test('TV remote focus stays visible for liquid glass living-room navigation', as
     await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
     const roomCode = (await tv.locator('.room-code').innerText()).trim();
 
-    const playerContext = await browser.newContext({
-      hasTouch: true,
-      isMobile: true,
-      viewport: { width: 390, height: 844 }
-    });
-    contexts.push(playerContext);
-    const player = await playerContext.newPage();
-    await player.goto(appUrl(`/join/${roomCode}`));
-    await player.getByPlaceholder('Your name').fill('Remote');
-    await player.getByRole('button', { name: 'Join the Party' }).click();
+    for (const name of ['Remote', 'Second', 'Third']) {
+      const playerContext = await browser.newContext({
+        hasTouch: true,
+        isMobile: true,
+        viewport: { width: 390, height: 844 }
+      });
+      contexts.push(playerContext);
+      const player = await playerContext.newPage();
+      await player.goto(appUrl(`/join/${roomCode}`));
+      await player.getByPlaceholder('Your name').fill(name);
+      await player.getByRole('button', { name: 'Join the Party' }).click();
+    }
 
-    const startButton = tv.getByRole('button', { name: 'Start Game' });
+    const startButton = tv.getByRole('button', { name: 'Start Party' });
     await expect(startButton).toBeEnabled();
     await startButton.focus();
 
@@ -158,7 +161,7 @@ test('TV remote focus stays visible for liquid glass living-room navigation', as
         innerHeight: window.innerHeight
       };
     });
-    expect(focus.text).toContain('Start Game');
+    expect(focus.text).toContain('Start Party');
     expect(focus.outline).not.toBe('none');
     expect(focus.top).toBeGreaterThanOrEqual(0);
     expect(focus.bottom).toBeLessThanOrEqual(focus.innerHeight + 4);
@@ -182,7 +185,7 @@ test('TV guessing phase fits 720p without page scroll', async ({ baseURL, browse
     const roomCode = (await tv.locator('.room-code').innerText()).trim();
 
     const players: Page[] = [];
-    for (const name of ['FitA', 'FitB']) {
+    for (const name of ['FitA', 'FitB', 'FitC']) {
       const playerContext = await browser.newContext({
         hasTouch: true,
         isMobile: true,
@@ -197,8 +200,8 @@ test('TV guessing phase fits 720p without page scroll', async ({ baseURL, browse
       players.push(player);
     }
 
-    await expect(tv.getByRole('button', { name: 'Start Game' })).toBeEnabled();
-    await tv.getByRole('button', { name: 'Start Game' }).click();
+    await expect(tv.getByRole('button', { name: 'Start Party' })).toBeEnabled();
+    await tv.getByRole('button', { name: 'Start Party' }).click();
     for (const player of players) {
       await expect(player.locator('canvas.draw-canvas')).toBeVisible({ timeout: 15_000 });
       await drawStroke(player);
@@ -290,7 +293,7 @@ async function startSoloDrawing(
   await player.goto(appUrl(`/join/${roomCode}`));
   await player.getByPlaceholder('Your name').fill(target.name);
   await player.getByRole('button', { name: 'Join the Party' }).click();
-  await tv.getByRole('button', { name: 'Start Game' }).click();
+  await startPractice(player);
   await expect(player.locator('canvas.draw-canvas')).toBeVisible();
   return { player, tv };
 }

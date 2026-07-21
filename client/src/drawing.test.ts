@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment happy-dom
+
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from './protocol';
-import { createEmptyDrawing, drawingTestExports, estimateDrawingBytes } from './drawing';
+import { DrawingPad, createEmptyDrawing, drawingTestExports, estimateDrawingBytes } from './drawing';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('drawing utilities', () => {
   it('creates protocol-sized empty drawings', () => {
@@ -35,15 +41,181 @@ describe('drawing utilities', () => {
     expect(drawingTestExports.clamp(Number.POSITIVE_INFINITY, 0, 10)).toBe(0);
   });
 
-  it('inverse-maps a portrait touch into the fixed landscape drawing document', () => {
-    const point = drawingTestExports.mapPointerToDrawingPoint(
-      85,
-      120,
-      { left: 10, top: 20, right: 310, width: 300, height: 400 },
-      true
-    );
+  it('maps portrait touches into a centered upright frame in the canonical document', () => {
+    const rect = { left: 10, top: 20, right: 310, width: 300, height: 400 };
+    const map = (clientX: number, clientY: number) =>
+      drawingTestExports.mapPointerToDrawingPoint(clientX, clientY, rect, true);
 
-    expect(point).toEqual({ x: 256, y: 576 });
+    expect(map(10, 20)).toEqual({ x: 224, y: 0 });
+    expect(map(310, 20)).toEqual({ x: 800, y: 0 });
+    expect(map(10, 420)).toEqual({ x: 224, y: 768 });
+    expect(map(310, 420)).toEqual({ x: 800, y: 768 });
+    expect(map(160, 220)).toEqual({ x: 512, y: 384 });
+  });
+
+  it('inverse-transforms canonical portrait points for the rotated live preview', () => {
+    const rect = { left: 10, top: 20, right: 310, width: 300, height: 400 };
+    const screenPoints = [
+      { x: 10, y: 20 },
+      { x: 310, y: 20 },
+      { x: 10, y: 420 },
+      { x: 310, y: 420 },
+      { x: 85, y: 120 }
+    ];
+
+    for (const screenPoint of screenPoints) {
+      const canonical = drawingTestExports.mapPointerToDrawingPoint(screenPoint.x, screenPoint.y, rect, true);
+      const preview = drawingTestExports.mapDrawingPointToPortraitPreview(canonical);
+      const recoveredScreenRatio = {
+        x: (CANVAS_HEIGHT - preview.y) / CANVAS_HEIGHT,
+        y: preview.x / CANVAS_WIDTH
+      };
+
+      expect(recoveredScreenRatio.x).toBeCloseTo((screenPoint.x - rect.left) / rect.width, 3);
+      expect(recoveredScreenRatio.y).toBeCloseTo((screenPoint.y - rect.top) / rect.height, 3);
+    }
+  });
+
+  it('keeps landscape and tablet touches mapped across the full canonical canvas', () => {
+    const rect = { left: 10, top: 20, right: 410, width: 400, height: 300 };
+    const map = (clientX: number, clientY: number) =>
+      drawingTestExports.mapPointerToDrawingPoint(clientX, clientY, rect, false);
+
+    expect(map(10, 20)).toEqual({ x: 0, y: 0 });
+    expect(map(410, 320)).toEqual({ x: 1024, y: 768 });
+    expect(map(210, 170)).toEqual({ x: 512, y: 384 });
+  });
+
+  it('serializes taps as identical points and recognizes live and submitted dots', () => {
+    const tap = {
+      color: '#111111',
+      size: 6,
+      points: [{ x: 123, y: 456 }]
+    };
+    const completed = drawingTestExports.completeTapStroke(tap);
+
+    expect(completed.points).toEqual([
+      { x: 123, y: 456 },
+      { x: 123, y: 456 }
+    ]);
+    expect(completed.points[0]).not.toBe(completed.points[1]);
+    expect(tap.points).toHaveLength(1);
+    expect(drawingTestExports.isDotStroke(tap)).toBe(true);
+    expect(drawingTestExports.isDotStroke(completed)).toBe(true);
+    expect(
+      drawingTestExports.isDotStroke({
+        ...tap,
+        points: [
+          { x: 123, y: 456 },
+          { x: 124, y: 456 }
+        ]
+      })
+    ).toBe(false);
+  });
+
+  it('locks every drawing mutation while sending and restores intact ink for retry', () => {
+    const mediaLists: Array<MediaQueryList & { removeEventListener: ReturnType<typeof vi.fn> }> = [];
+    vi.spyOn(window, 'matchMedia').mockImplementation((query: string) => {
+      const media = {
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(() => true)
+      } as unknown as MediaQueryList & { removeEventListener: ReturnType<typeof vi.fn> };
+      mediaLists.push(media);
+      return media;
+    });
+
+    const context = {
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      transform: vi.fn(),
+      beginPath: vi.fn(),
+      arc: vi.fn(),
+      fill: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 1,
+      lineCap: 'butt',
+      lineJoin: 'miter'
+    } as unknown as CanvasRenderingContext2D;
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context);
+
+    const onChange = vi.fn();
+    const pad = new DrawingPad(onChange);
+    const canvas = pad.root.querySelector('canvas.draw-canvas');
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      throw new Error('Drawing pad must include its canvas.');
+    }
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(
+      DOMRect.fromRect({ x: 0, y: 0, width: 400, height: 300 })
+    );
+    const tap = (pointerId: number, clientX: number, clientY: number) => {
+      canvas.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          cancelable: true,
+          pointerId,
+          buttons: 1,
+          clientX,
+          clientY
+        })
+      );
+      canvas.dispatchEvent(
+        new PointerEvent('pointerup', {
+          bubbles: true,
+          cancelable: true,
+          pointerId,
+          buttons: 0,
+          clientX,
+          clientY
+        })
+      );
+    };
+
+    tap(1, 100, 100);
+    expect(pad.getDrawing().strokes).toHaveLength(1);
+    const captured = pad.getDrawing();
+
+    pad.setLocked(true);
+    expect(pad.root.classList.contains('is-locked')).toBe(true);
+    expect(pad.root.getAttribute('aria-disabled')).toBe('true');
+    expect(pad.root.getAttribute('aria-busy')).toBe('true');
+    expect(canvas.getAttribute('aria-disabled')).toBe('true');
+    expect(canvas.tabIndex).toBe(-1);
+    for (const button of pad.root.querySelectorAll('button')) {
+      expect(button.disabled).toBe(true);
+    }
+
+    tap(2, 300, 200);
+    expect(pad.getDrawing()).toEqual(captured);
+
+    pad.setLocked(false);
+    expect(pad.root.classList.contains('is-locked')).toBe(false);
+    expect(pad.root.getAttribute('aria-disabled')).toBe('false');
+    expect(pad.root.hasAttribute('aria-busy')).toBe(false);
+    expect(canvas.getAttribute('aria-disabled')).toBe('false');
+    expect(canvas.tabIndex).toBe(0);
+    for (const button of pad.root.querySelectorAll('button')) {
+      expect(button.disabled).toBe(false);
+    }
+    expect(pad.getDrawing()).toEqual(captured);
+
+    tap(3, 300, 200);
+    expect(pad.getDrawing().strokes).toHaveLength(2);
+    expect(onChange).toHaveBeenCalledTimes(2);
+
+    pad.destroy();
+    expect(mediaLists[0]?.removeEventListener).toHaveBeenCalledWith('change', expect.any(Function));
   });
 
   it('caps dense stroke points while preserving endpoints and edge lengths', () => {

@@ -17,10 +17,12 @@ function baseSnapshot(overrides: Partial<RoomSnapshot> = {}): RoomSnapshot {
     minPlayers: 1,
     maxPlayers: 8,
     currentRound: 0,
-    totalRounds: 5,
+    totalRounds: 2,
     settings: defaultRoomSettings(),
     turnToken: 0,
     serverNowMs: 123,
+    gameMode: 'party',
+    deadlineExtensionAvailable: false,
     deadlineMs: null,
     currentArtistId: null,
     currentArtistName: null,
@@ -55,7 +57,17 @@ const validRoundResult = {
       authorName: null
     }
   ],
-  scoreDeltas: [{ playerId: 'p1', name: 'Ada', delta: 100 }],
+  scoreDeltas: [{ playerId: 'p1', name: 'Ada', delta: 100, scoreAfter: 300 }],
+  scoreEvents: [
+    {
+      kind: 'artistClarity',
+      playerId: 'p1',
+      name: 'Ada',
+      points: 100,
+      relatedPlayerId: 'p2',
+      relatedPlayerName: 'Bo'
+    }
+  ],
   nobodyFoundIt: false,
   perfectTruth: false
 };
@@ -153,6 +165,18 @@ describe('protocol helpers', () => {
     expect(
       isServerMessage({
         type: 'roomSnapshot',
+        snapshot: { ...base, gameMode: 'ranked' }
+      })
+    ).toBe(false);
+    expect(
+      isServerMessage({
+        type: 'roomSnapshot',
+        snapshot: { ...base, deadlineExtensionAvailable: 'yes' }
+      })
+    ).toBe(false);
+    expect(
+      isServerMessage({
+        type: 'roomSnapshot',
         snapshot: {
           ...base,
           players: [{ id: 'a', name: 'A', score: 0, connected: true }]
@@ -216,6 +240,56 @@ describe('protocol helpers', () => {
         result: { ...validRoundResult, scoreDeltas: undefined }
       })
     ).toBe(false);
+    expect(
+      isServerMessage({
+        type: 'roundResult',
+        result: {
+          ...validRoundResult,
+          scoreDeltas: [{ playerId: 'p1', name: 'Ada', delta: 100, scoreAfter: Number.NaN }]
+        }
+      })
+    ).toBe(false);
+    expect(
+      isServerMessage({
+        type: 'roundResult',
+        result: {
+          ...validRoundResult,
+          scoreEvents: [{ ...validRoundResult.scoreEvents[0], kind: 'madeUp' }]
+        }
+      })
+    ).toBe(false);
+    expect(
+      isServerMessage({
+        type: 'roundResult',
+        result: {
+          ...validRoundResult,
+          scoreEvents: [{ ...validRoundResult.scoreEvents[0], points: Number.POSITIVE_INFINITY }]
+        }
+      })
+    ).toBe(false);
+    expect(
+      isServerMessage({
+        type: 'roundResult',
+        result: {
+          ...validRoundResult,
+          scoreEvents: [{ ...validRoundResult.scoreEvents[0], relatedPlayerName: 2 }]
+        }
+      })
+    ).toBe(false);
+  });
+
+  it('accepts older server snapshots and round results without additive fields', () => {
+    const snapshot = baseSnapshot();
+    delete snapshot.gameMode;
+    delete snapshot.deadlineExtensionAvailable;
+    const legacyResult = {
+      ...validRoundResult,
+      scoreDeltas: validRoundResult.scoreDeltas.map(({ scoreAfter: _scoreAfter, ...delta }) => delta)
+    };
+    delete (legacyResult as Partial<typeof legacyResult>).scoreEvents;
+
+    expect(isServerMessage({ type: 'roomSnapshot', snapshot })).toBe(true);
+    expect(isServerMessage({ type: 'roundResult', result: legacyResult })).toBe(true);
   });
 
   it('labels every phase and validates pack/emoji helpers', () => {
@@ -235,6 +309,13 @@ describe('protocol helpers', () => {
     expect(isPromptPackId('other')).toBe(false);
     expect(isReactionEmoji('🔥')).toBe(true);
     expect(isReactionEmoji('🙂')).toBe(false);
-    expect(defaultRoomSettings().promptPackId).toBe('safe-party');
+    expect(defaultRoomSettings()).toEqual({
+      rounds: 2,
+      drawSeconds: 75,
+      guessSeconds: 30,
+      voteSeconds: 20,
+      resultsSeconds: 8,
+      promptPackId: 'safe-party'
+    });
   });
 });

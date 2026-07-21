@@ -120,7 +120,7 @@ export async function assertDisplayLobbyLayout(
 ): Promise<LobbyLayoutMetrics> {
   await expect(page.locator('.room-code')).toHaveText(/[A-Z]{4}/);
   await expect(page.locator('.qr')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Start Game' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start Party' })).toBeVisible();
   await expect(page.getByText('Everybody draws. Everybody guesses.')).toBeVisible();
   await expectNoHorizontalOverflow(page);
   await expectNoVerticalOverflow(page);
@@ -158,6 +158,23 @@ export async function assertDisplayLobbyLayout(
         expect(row.top).toBeGreaterThanOrEqual(metrics.playerRows[index - 1].bottom - 1);
       }
     }
+  }
+
+  if (viewport.width >= 3840 && metrics.playerRows.length > 0) {
+    const typeSizes = await page.evaluate(() => {
+      const sizes = (selector: string) =>
+        Array.from(document.querySelectorAll(selector)).map((element) =>
+          Number.parseFloat(getComputedStyle(element).fontSize)
+        );
+      return {
+        names: sizes('.player-name'),
+        meta: sizes('.player-meta, .player-status, .player-score')
+      };
+    });
+    expect(typeSizes.names.length).toBeGreaterThan(0);
+    expect(typeSizes.meta.length).toBeGreaterThan(0);
+    expect(typeSizes.names.every((size) => size >= 24)).toBe(true);
+    expect(typeSizes.meta.every((size) => size >= 18)).toBe(true);
   }
 
   return metrics;

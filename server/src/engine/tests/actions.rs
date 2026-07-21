@@ -189,6 +189,57 @@ fn start_or_advance_rejected_during_drawing() {
 }
 
 #[test]
+fn deadline_can_be_extended_once_per_timed_turn() {
+    let mut room = room_with_players();
+    room.handle_start_or_advance(100).unwrap();
+    let original_deadline = room.deadline_ms.unwrap();
+    assert!(room.snapshot(101).deadline_extension_available);
+
+    room.extend_deadline(200).unwrap();
+
+    assert_eq!(room.deadline_ms, Some(original_deadline + 30_000));
+    assert!(!room.snapshot(201).deadline_extension_available);
+    assert_eq!(
+        room.extend_deadline(202).unwrap_err().code,
+        "deadline_extension_used"
+    );
+}
+
+#[test]
+fn deadline_extension_resets_for_each_guessing_and_voting_turn() {
+    let mut room = room_with_players();
+    room.handle_start_or_advance(100).unwrap();
+    room.extend_deadline(150).unwrap();
+    submit_all_drawings(&mut room, 200);
+    assert_eq!(room.phase, GamePhase::Guessing);
+    assert!(room.snapshot(201).deadline_extension_available);
+
+    room.extend_deadline(202).unwrap();
+    let voters = non_artist_ids(&room);
+    let token = room.turn_token;
+    room.submit_guess(&voters[0], token, "fake one".to_string(), 203)
+        .unwrap();
+    room.submit_guess(&voters[1], token, "fake two".to_string(), 204)
+        .unwrap();
+
+    assert_eq!(room.phase, GamePhase::Voting);
+    assert!(room.snapshot(205).deadline_extension_available);
+}
+
+#[test]
+fn expired_or_untimed_phase_cannot_be_extended() {
+    let mut room = room_with_players();
+    assert_eq!(room.extend_deadline(50).unwrap_err().code, "invalid_phase");
+    room.handle_start_or_advance(100).unwrap();
+    let deadline = room.deadline_ms.unwrap();
+
+    assert_eq!(
+        room.extend_deadline(deadline).unwrap_err().code,
+        "deadline_expired"
+    );
+}
+
+#[test]
 fn drawing_rejected_during_voting() {
     let mut room = room_with_players();
     reach_voting(&mut room, 200);

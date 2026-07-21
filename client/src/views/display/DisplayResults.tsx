@@ -1,15 +1,35 @@
+import { useEffect, useState } from 'react';
 import { useGame } from '../../app/GameProvider';
+import {
+  finalReplayPlan,
+  shouldResetPendingServerAction,
+  type ReplayAction
+} from '../../controller';
 import { useRevealStage } from '../../hooks/useRevealStage';
+import { rematchPrompt } from '../../polish';
 import { Button } from '../../components/ui/Button';
+import { Deadline } from '../../components/ui/Deadline';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { ReactionBursts } from '../../components/ui/ReactionBar';
 import { ResultsPanel } from '../../components/ui/ResultsPanel';
 import { ScoresPanel } from '../../components/ui/ScoresPanel';
 
 export function DisplayResults(): React.JSX.Element {
-  const { snapshot, send } = useGame();
+  const { snapshot, status, errorMessage, clearError, send } = useGame();
+  const [advancePending, setAdvancePending] = useState(false);
   const result = snapshot?.roundResult;
-  const { stage, complete } = useRevealStage(result, snapshot?.turnToken ?? 0);
+  const { stage, complete } = useRevealStage(
+    result,
+    snapshot?.turnToken ?? 0,
+    snapshot?.deadlineMs,
+    snapshot?.settings.resultsSeconds
+  );
+
+  useEffect(() => {
+    if (shouldResetPendingServerAction(advancePending, status, errorMessage)) {
+      setAdvancePending(false);
+    }
+  }, [advancePending, errorMessage, status]);
 
   if (!snapshot) {
     return <GlassPanel />;
@@ -24,27 +44,30 @@ export function DisplayResults(): React.JSX.Element {
             drawing={snapshot.currentDrawing}
             stage={stage}
             includeDrawing
+            practice={(snapshot.gameMode ?? 'party') === 'practice'}
+            controls={
+              <div className="advance-panel result-advance">
+                <p className="eyebrow">Next up in</p>
+                <Deadline />
+                <Button
+                  id="advance-button"
+                  variant="secondary"
+                  wide
+                  disabled={!complete || advancePending}
+                  onClick={() => {
+                    clearError();
+                    if (send({ type: 'startGame' })) setAdvancePending(true);
+                  }}
+                >
+                  {advancePending ? 'Continuing…' : 'Continue'}
+                </Button>
+                <p className="muted">Host phone can Continue early, or the game moves on at zero.</p>
+              </div>
+            }
           />
         ) : (
           <GlassPanel className="results-panel">Waiting for results...</GlassPanel>
         )}
-        <GlassPanel className="advance-panel" tone="soft">
-          <p className="eyebrow">Keep it moving</p>
-          <Button
-            id="advance-button"
-            variant="secondary"
-            wide
-            disabled={Boolean(result) && !complete}
-            onClick={() => send({ type: 'startGame' })}
-          >
-            Continue
-          </Button>
-          <p className="muted">
-            {snapshot.deadlineMs
-              ? 'Host phone can Continue early, or the TV auto-continues at zero.'
-              : 'Continue from the host phone when you’re ready.'}
-          </p>
-        </GlassPanel>
       </div>
       <ReactionBursts />
     </>
@@ -52,10 +75,28 @@ export function DisplayResults(): React.JSX.Element {
 }
 
 export function DisplayFinal(): React.JSX.Element {
-  const { snapshot, send, setErrorMessage } = useGame();
+  const { snapshot, status, errorMessage, clearError, send, setErrorMessage } = useGame();
+  const [advancePending, setAdvancePending] = useState<ReplayAction | null>(null);
+  const replay = snapshot ? finalReplayPlan(snapshot) : null;
+
+  useEffect(() => {
+    if (
+      shouldResetPendingServerAction(
+        Boolean(advancePending),
+        status,
+        errorMessage,
+        replay?.action === advancePending
+      )
+    ) {
+      setAdvancePending(null);
+    }
+  }, [advancePending, errorMessage, replay?.action, status]);
+
   if (!snapshot) {
     return <GlassPanel />;
   }
+
+  const practice = (snapshot.gameMode ?? 'party') === 'practice';
 
   return (
     <>
@@ -64,20 +105,31 @@ export function DisplayFinal(): React.JSX.Element {
           scores={snapshot.finalScores}
           podium
           role="display"
+          practice={practice}
           onShareFailed={() => setErrorMessage('Could not export the podium card.')}
         />
         <GlassPanel className="advance-panel encore-panel" tone="soft">
-          <p className="eyebrow">One more round?</p>
-          <h2 className="encore-title">Don’t stop now</h2>
+          <p className="eyebrow">{practice ? 'Practice · scores off' : 'One more round?'}</p>
+          <h2 className="encore-title">{rematchPrompt(snapshot.finalScores)}</h2>
           <Button
             id="advance-button"
             variant="secondary"
             wide
-            onClick={() => send({ type: 'startGame' })}
+            disabled={!replay?.action || Boolean(advancePending)}
+            onClick={() => {
+              const action = replay?.action;
+              if (!action) return;
+              clearError();
+              const sent =
+                action === 'practice'
+                  ? send({ type: 'startPractice' })
+                  : send({ type: 'startGame' });
+              if (sent) setAdvancePending(action);
+            }}
           >
-            Play Again
+            {advancePending ? 'Starting…' : replay?.label}
           </Button>
-          <p className="muted">Play Again from the host phone — or here if you have a remote.</p>
+          <p className="muted">{replay?.guidance}</p>
         </GlassPanel>
       </div>
       <ReactionBursts />

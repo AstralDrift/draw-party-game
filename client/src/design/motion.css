@@ -12,6 +12,28 @@
   }
 }
 
+@keyframes player-join-stamp {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  24%,
+  68% {
+    opacity: 0.9;
+  }
+}
+
+@keyframes reveal-option-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .app-shell.display .fade-rise {
   animation: none;
   opacity: 1;
@@ -29,5 +51,16 @@
 
   .atmosphere__orb {
     animation: none !important;
+  }
+
+  .player-row::after {
+    animation: none !important;
+    opacity: 0;
+  }
+
+  .results-panel[data-reveal-stage="tally"] .reveal-stage-tally.is-visible .breakdown-row {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
   }
 }

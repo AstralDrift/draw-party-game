@@ -20,12 +20,53 @@ fn advances_through_guess_vote_and_scores() {
         prompts.get(&artist).unwrap().to_string()
     );
     let deltas = deltas_map(&room);
-    assert_eq!(deltas.get(&artist), Some(&200));
-    assert_eq!(deltas.get(&voters[0]), Some(&225));
-    assert_eq!(deltas.get(&voters[1]), Some(&225));
+    assert_eq!(deltas.get(&artist), Some(&250));
+    assert_eq!(deltas.get(&voters[0]), Some(&200));
+    assert_eq!(deltas.get(&voters[1]), Some(&200));
     assert!(result.perfect_truth);
     assert!(!result.nobody_found_it);
-    assert_eq!(room.players.get(&artist).unwrap().score, 200);
+    assert_eq!(room.players.get(&artist).unwrap().score, 250);
+    assert_eq!(
+        result
+            .score_events
+            .iter()
+            .filter(|event| event.kind == ScoreEventKind::FoundTruth)
+            .count(),
+        2
+    );
+    assert_eq!(
+        result
+            .score_events
+            .iter()
+            .filter(|event| event.kind == ScoreEventKind::ArtistClarity)
+            .count(),
+        2
+    );
+    assert_eq!(
+        result
+            .score_events
+            .iter()
+            .filter(|event| event.kind == ScoreEventKind::PerfectTruth)
+            .count(),
+        2
+    );
+    assert!(result
+        .score_events
+        .iter()
+        .all(|event| event.related_player_id.is_some() && event.related_player_name.is_some()));
+    for delta in &result.score_deltas {
+        let event_total: i32 = result
+            .score_events
+            .iter()
+            .filter(|event| event.player_id == delta.player_id)
+            .map(|event| event.points)
+            .sum();
+        assert_eq!(event_total, delta.delta);
+        assert_eq!(
+            delta.score_after,
+            room.players.get(&delta.player_id).unwrap().score
+        );
+    }
     assert!(room.deadline_ms.is_some());
 }
 
@@ -57,6 +98,15 @@ fn nobody_found_it_awards_artist_bonus() {
     assert_eq!(deltas.get(&artist), Some(&50));
     assert_eq!(deltas.get(&voters[0]), Some(&50));
     assert_eq!(deltas.get(&voters[1]), Some(&50));
+    let nobody_event = result
+        .score_events
+        .iter()
+        .find(|event| event.kind == ScoreEventKind::NobodyFoundIt)
+        .unwrap();
+    assert_eq!(nobody_event.player_id, artist);
+    assert_eq!(nobody_event.points, 50);
+    assert!(nobody_event.related_player_id.is_none());
+    assert!(nobody_event.related_player_name.is_none());
 }
 
 #[test]
@@ -85,7 +135,7 @@ fn mixed_votes_score_correct_and_fake_author_exactly() {
 }
 
 #[test]
-fn perfect_truth_false_when_disconnected_eligible_voter_misses() {
+fn disconnected_non_voter_is_excluded_from_perfect_truth_cohort() {
     let mut room = room_with_players();
     reach_guessing(&mut room, 100);
     let voters = non_artist_ids(&room);
@@ -99,12 +149,34 @@ fn perfect_truth_false_when_disconnected_eligible_voter_misses() {
         .unwrap();
 
     assert_eq!(room.phase, GamePhase::Results);
-    assert!(!room.round.result.as_ref().unwrap().perfect_truth);
+    assert!(room.round.result.as_ref().unwrap().perfect_truth);
     assert_eq!(deltas_map(&room).get(&voters[0]), Some(&200));
+    let artist = room.round.current_artist_id.as_ref().unwrap();
+    assert_eq!(deltas_map(&room).get(artist), Some(&125));
 }
 
 #[test]
-fn vote_timeout_with_zero_votes_awards_nobody_found() {
+fn voter_who_disconnects_after_voting_remains_in_perfect_truth_cohort() {
+    let mut room = room_with_players();
+    let voters = reach_voting(&mut room, 100);
+    let artist = room.round.current_artist_id.clone().unwrap();
+    let token = room.turn_token;
+    let truth = truth_option_id(&room);
+
+    room.submit_vote(&voters[1], token, truth.clone(), 400)
+        .unwrap();
+    room.mark_disconnected(&voters[1], 401);
+    room.submit_vote(&voters[0], token, truth, 402).unwrap();
+
+    let result = room.round.result.as_ref().unwrap();
+    assert!(result.perfect_truth);
+    assert_eq!(deltas_map(&room).get(&artist), Some(&250));
+    assert_eq!(deltas_map(&room).get(&voters[0]), Some(&200));
+    assert_eq!(deltas_map(&room).get(&voters[1]), Some(&200));
+}
+
+#[test]
+fn vote_timeout_with_zero_votes_awards_no_nobody_found_bonus() {
     let mut room = room_with_players();
     reach_voting(&mut room, 100);
     let artist = room.round.current_artist_id.clone().unwrap();
@@ -112,9 +184,10 @@ fn vote_timeout_with_zero_votes_awards_nobody_found() {
     room.advance_if_expired(deadline).unwrap();
     assert_eq!(room.phase, GamePhase::Results);
     let result = room.round.result.as_ref().unwrap();
-    assert!(result.nobody_found_it);
+    assert!(!result.nobody_found_it);
     assert!(!result.perfect_truth);
-    assert_eq!(deltas_map(&room).get(&artist), Some(&50));
+    assert_eq!(deltas_map(&room).get(&artist), Some(&0));
+    assert!(result.score_events.is_empty());
 }
 
 #[test]

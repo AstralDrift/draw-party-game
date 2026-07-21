@@ -217,7 +217,7 @@ fn displaced_prompt_owner_cannot_inherit_another_prompt_during_retry() {
 }
 
 #[test]
-fn play_again_starts_a_fresh_prompt_history() {
+fn play_again_preserves_prompt_history_while_unused_prompts_remain() {
     let mut room = room_with_player_count(3);
     let settings = RoomSettings {
         rounds: 1,
@@ -225,6 +225,12 @@ fn play_again_starts_a_fresh_prompt_history() {
     };
     room.update_settings(settings, 10).unwrap();
     room.handle_start_or_advance(20).unwrap();
+    let first_game_prompts: BTreeSet<String> = room
+        .round
+        .prompts
+        .values()
+        .map(|prompt| normalized(prompt))
+        .collect();
     assert_eq!(room.used_prompt_keys.len(), 3);
 
     submit_all_drawings(&mut room, 30);
@@ -245,8 +251,32 @@ fn play_again_starts_a_fresh_prompt_history() {
         .collect();
     assert_eq!(room.phase, GamePhase::Drawing);
     assert_eq!(room.current_round, 1);
-    assert_eq!(room.used_prompt_keys, replay_prompts);
-    assert_eq!(room.used_prompt_keys.len(), 3);
+    assert!(first_game_prompts.is_disjoint(&replay_prompts));
+    assert!(first_game_prompts.is_subset(&room.used_prompt_keys));
+    assert!(replay_prompts.is_subset(&room.used_prompt_keys));
+    assert_eq!(room.used_prompt_keys.len(), 6);
+}
+
+#[test]
+fn prompt_history_rolls_over_only_when_next_full_assignment_will_not_fit() {
+    let mut room = room_with_player_count(3);
+    let pack = prompt_pack_prompts(DEFAULT_PROMPT_PACK_ID).unwrap();
+    room.used_prompt_keys = pack
+        .iter()
+        .skip(2)
+        .map(|prompt| normalized(prompt))
+        .collect();
+
+    room.handle_start_or_advance(20).unwrap();
+
+    let assigned: BTreeSet<String> = room
+        .round
+        .prompts
+        .values()
+        .map(|prompt| normalized(prompt))
+        .collect();
+    assert_eq!(assigned.len(), 3);
+    assert_eq!(room.used_prompt_keys, assigned);
 }
 
 fn room_with_player_count(count: usize) -> Room {

@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defaultRoomSettings, type RoomSnapshot } from './protocol';
-import { formatDeadline, nowMs, syncServerClock } from './time';
+import {
+  beginServerClockSession,
+  formatDeadline,
+  nowMs,
+  resetServerClock,
+  syncServerClock,
+  syncServerTime
+} from './time';
 
 function snapshot(serverNowMs: number, deadlineMs: number | null): RoomSnapshot {
   return {
@@ -29,6 +36,7 @@ function snapshot(serverNowMs: number, deadlineMs: number | null): RoomSnapshot 
 
 describe('deadline formatting', () => {
   afterEach(() => {
+    resetServerClock();
     vi.useRealTimers();
   });
 
@@ -61,5 +69,32 @@ describe('deadline formatting', () => {
     expect(formatDeadline(snapshot(10_000, 10_500))).toBe('0:01');
     syncServerClock(snapshot(10_000, 11_001));
     expect(formatDeadline(snapshot(10_000, 11_001))).toBe('0:02');
+  });
+
+  it('retains the least-delayed offset instead of extending timers on slow inbound samples', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    syncServerTime(10_000);
+    expect(nowMs()).toBe(10_000);
+
+    vi.setSystemTime(1_400);
+    syncServerTime(10_200); // 200ms more transit delay than the first sample.
+    expect(nowMs()).toBe(10_400);
+
+    vi.setSystemTime(1_600);
+    syncServerTime(10_700); // A better sample is allowed to improve the estimate.
+    expect(nowMs()).toBe(10_700);
+  });
+
+  it('starts a fresh maximum window for a new connection without an interim clock jump', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    syncServerTime(10_000);
+    expect(nowMs()).toBe(10_000);
+
+    beginServerClockSession();
+    expect(nowMs()).toBe(10_000);
+    syncServerTime(9_500); // First sample replaces the previous connection's maximum.
+    expect(nowMs()).toBe(9_500);
   });
 });

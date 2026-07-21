@@ -1,9 +1,16 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import {
+  canvasHasInkNear,
+  completeCurrentReveal,
   createPlayers,
+  drawTopLeftLandmark,
   drawStroke,
   hostSaveRounds,
   makeAppUrl,
+  startParty,
+  startPractice,
+  waitForArtistIndex,
+  waitForGuessers,
   waitForPagesWithVisibleLocatorCount,
   type PlayerViewport
 } from './helpers';
@@ -29,7 +36,7 @@ test('staged results reveal enables Continue after the show beat', async ({ base
     await player.goto(appUrl(`/join/${roomCode}`));
     await player.getByPlaceholder('Your name').fill('Reveal');
     await player.getByRole('button', { name: 'Join the Party' }).click();
-    await tv.getByRole('button', { name: 'Start Game' }).click();
+    await startPractice(player);
     await expect(player.locator('canvas.draw-canvas')).toBeVisible();
     const canvas = player.locator('canvas.draw-canvas');
     const box = await canvas.boundingBox();
@@ -51,22 +58,81 @@ test('staged results reveal enables Continue after the show beat', async ({ base
   }
 });
 
-test('phone join screen starts neutral and renders local validation errors', async ({ baseURL, page }) => {
+test('manual join keyboard flow requires a name and joins exactly once', async ({ baseURL, browser }) => {
   const appUrl = makeAppUrl(baseURL);
+  const contexts: BrowserContext[] = [];
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
 
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(appUrl('/join/ABCD'));
+    const phoneContext = await browser.newContext({
+      hasTouch: true,
+      isMobile: true,
+      viewport: { width: 375, height: 667 }
+    });
+    contexts.push(phoneContext);
+    const phone = await phoneContext.newPage();
+    await phone.goto(appUrl('/join'));
 
-  await expect(page.locator('#connection-text')).toHaveText('Ready to join');
-  await expect(page.getByText('Disconnected')).toHaveCount(0);
+    await expect(phone.locator('#connection-text')).toHaveText('Ready to join');
+    const code = phone.locator('input.code-input');
+    const name = phone.getByPlaceholder('Your name');
+    await code.fill(roomCode);
+    await code.press('Enter');
+    await expect(name).toBeFocused();
+    await expect(tv.locator('.player-row')).toHaveCount(0);
 
-  await page.locator('input.code-input').fill('AB');
-  await page.getByPlaceholder('Your name').fill('Ava');
-  await page.getByRole('button', { name: 'Join the Party' }).click();
-  await expect(page.getByRole('alert')).toHaveText('Enter the four-letter room code from the TV.');
+    await name.press('Enter');
+    await expect(phone.getByRole('alert')).toHaveText(/enter your name/i);
+    await expect(tv.locator('.player-row')).toHaveCount(0);
 
-  await page.locator('input.code-input').fill('ABCD');
-  await expect(page.getByRole('alert')).toHaveCount(0);
+    await name.fill('Keyboard Ava');
+    await name.press('Enter');
+    await expect(phone.locator('.app-shell.player .brand')).toHaveText('Lobby');
+    await expect(tv.locator('.player-row')).toHaveCount(1);
+    await expect(tv.locator('.player-name-text', { hasText: /^Keyboard Ava$/ })).toHaveText('Keyboard Ava');
+  } finally {
+    await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
+  }
+});
+
+test('QR join confirms the room and offers a manual fallback without an editable code', async ({ baseURL, browser }) => {
+  const appUrl = makeAppUrl(baseURL);
+  const contexts: BrowserContext[] = [];
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const phoneContext = await browser.newContext({
+      hasTouch: true,
+      isMobile: true,
+      viewport: { width: 390, height: 844 }
+    });
+    contexts.push(phoneContext);
+    const phone = await phoneContext.newPage();
+    await phone.goto(appUrl(`/join/${roomCode}`));
+
+    await expect(phone.locator('.player-room-chip')).toContainText(roomCode);
+    await expect(phone.locator('input.code-input')).toHaveCount(0);
+    await expect(phone.getByPlaceholder('Your name')).toBeFocused();
+    await phone.getByRole('button', { name: 'Change room' }).click();
+    await expect(phone).toHaveURL(/\/join$/);
+    await expect(phone.locator('input.code-input')).toBeVisible();
+
+    await phone.goto(appUrl(`/join/${roomCode}`));
+    await phone.getByPlaceholder('Your name').fill('QR Quinn');
+    await phone.getByRole('button', { name: 'Join the Party' }).click();
+    await expect(phone.locator('.app-shell.player .brand')).toHaveText('Lobby');
+    await expect(tv.locator('.player-name-text', { hasText: /^QR Quinn$/ })).toHaveText('QR Quinn');
+  } finally {
+    await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
+  }
 });
 
 test('TV lobby gives room code and QR the showcase hierarchy', async ({ baseURL, page }) => {
@@ -83,7 +149,7 @@ test('TV lobby gives room code and QR the showcase hierarchy', async ({ baseURL,
 
     await expect(page.locator('.room-code')).toHaveText(/[A-Z]{4}/);
     await expect(page.locator('.qr')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Start Game' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Start Party' })).toBeVisible();
     await expect(page.getByText('Everybody draws. Everybody guesses.')).toBeVisible();
     await expect(page.locator('.settings-panel')).toBeVisible();
     const roomCode = (await page.locator('.room-code').innerText()).trim();
@@ -98,7 +164,7 @@ test('TV lobby gives room code and QR the showcase hierarchy', async ({ baseURL,
     const roomPanel = await page.locator('.room-panel').boundingBox();
     const settingsPanel = await page.locator('.settings-panel').boundingBox();
     const qr = await page.locator('.qr').boundingBox();
-    const start = await page.getByRole('button', { name: 'Start Game' }).boundingBox();
+    const start = await page.getByRole('button', { name: 'Start Party' }).boundingBox();
     if (!roomPanel || !settingsPanel || !qr || !start) {
       throw new Error('TV lobby panels must have layout boxes.');
     }
@@ -121,29 +187,38 @@ test('large-phone lobby presents player-ready hierarchy without clipping', async
     await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
     const roomCode = (await tv.locator('.room-code').innerText()).trim();
 
-    const [ava, bo] = await createPlayers(browser, contexts, appUrl, roomCode, ['Ava', 'Bo'], [
-      { width: 430, height: 932, isMobile: true },
+    const [ava] = await createPlayers(browser, contexts, appUrl, roomCode, ['Ava'], [
       { width: 430, height: 932, isMobile: true }
     ]);
 
     await expect(ava.locator('.player-lobby-card')).toBeVisible();
     await expect(ava.locator('.mini-room-code')).toHaveText(roomCode);
-    await expect(ava.getByText('Ready when you are')).toBeVisible();
-    await expect(ava.getByRole('button', { name: 'Start Game' })).toBeVisible();
-    await expect(ava.getByText('Invite 1 more for better voting.')).toBeVisible();
+    await expect(ava.getByRole('button', { name: 'Start Party' })).toBeDisabled();
+    await expect(ava.getByRole('button', { name: 'Practice Drawing' })).toBeEnabled();
+    const [bo] = await createPlayers(browser, contexts, appUrl, roomCode, ['Bo'], [
+      { width: 430, height: 932, isMobile: true }
+    ]);
+    await expect(ava.getByRole('button', { name: 'Practice Drawing' })).toBeDisabled();
+    await expect(ava.getByText(/1 more|one more/i)).toBeVisible();
     await expect(ava.getByRole('button', { name: 'Edit name' })).toBeVisible();
     await expect(ava.locator('.players-panel')).toBeVisible();
     await expect(bo.locator('.player-lobby-card')).toBeVisible();
-    await expect(bo.getByText('Party is ready')).toBeVisible();
-    await expect(tv.getByRole('button', { name: 'Start Game' })).toBeEnabled();
-    await expect(tv.getByText(/2 ready — playable now/)).toBeVisible();
+    await expect(tv.getByRole('button', { name: 'Start Party' })).toBeDisabled();
     await expectNoHorizontalOverflow(ava);
+
+    const [cy] = await createPlayers(browser, contexts, appUrl, roomCode, ['Cy'], [
+      { width: 430, height: 932, isMobile: true }
+    ]);
+    await expect(ava.getByRole('button', { name: 'Start Party' })).toBeEnabled();
+    await expect(bo.getByText('Party is ready')).toBeVisible();
+    await expect(cy.getByText('Party is ready')).toBeVisible();
+    await expect(tv.getByRole('button', { name: 'Start Party' })).toBeEnabled();
 
     await ava.getByRole('button', { name: 'Edit name' }).click();
     await ava.getByLabel('Your name').fill('Ava Renamed');
     await ava.getByRole('button', { name: 'Save name' }).click();
     await expect(ava.getByText("Ava Renamed, you're the host")).toBeVisible();
-    await expect(tv.locator('.player-name', { hasText: 'Ava Renamed' })).toBeVisible();
+    await expect(tv.locator('.player-name-text', { hasText: /^Ava Renamed$/ })).toHaveText('Ava Renamed');
 
     const lobbyBox = await ava.locator('.player-lobby-card').boundingBox();
     const playersBox = await ava.locator('.players-panel').boundingBox();
@@ -169,8 +244,8 @@ test('phone drawing screen prioritizes canvas before controls on mobile', async 
     await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
     const roomCode = (await tv.locator('.room-code').innerText()).trim();
 
-    const [ava, bo] = await createPlayers(browser, contexts, appUrl, roomCode, ['Ava', 'Bo']);
-    await tv.getByRole('button', { name: 'Start Game' }).click();
+    const [ava, bo] = await createPlayers(browser, contexts, appUrl, roomCode, ['Ava', 'Bo', 'Cy']);
+    await startParty(ava);
 
     await expect(ava.locator('canvas.draw-canvas')).toBeVisible();
     await expect(ava.getByRole('button', { name: 'Submit Drawing' })).toBeVisible();
@@ -245,11 +320,12 @@ test('iPad portrait and landscape drawing use expanded tools without overflow', 
     await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
     const roomCode = (await tv.locator('.room-code').innerText()).trim();
 
-    const [portrait, landscape] = await createPlayers(browser, contexts, appUrl, roomCode, ['Ava', 'Bo'], [
+    const [portrait, landscape] = await createPlayers(browser, contexts, appUrl, roomCode, ['Ava', 'Bo', 'Cy'], [
       { width: 768, height: 1024 },
-      { width: 1024, height: 768 }
+      { width: 1024, height: 768 },
+      { width: 390, height: 844, isMobile: true }
     ]);
-    await tv.getByRole('button', { name: 'Start Game' }).click();
+    await startParty(portrait);
 
     for (const page of [portrait, landscape]) {
       await expect(page.locator('canvas.draw-canvas')).toBeVisible();
@@ -279,6 +355,59 @@ test('iPad portrait and landscape drawing use expanded tools without overflow', 
   }
 });
 
+test('portrait-phone and tablet landmarks keep their orientation on the TV', async ({ baseURL, browser }) => {
+  test.setTimeout(60_000);
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+    const players = await createPlayers(
+      browser,
+      contexts,
+      appUrl,
+      roomCode,
+      ['Portrait', 'Tablet', 'Filler'],
+      [
+        { width: 390, height: 844, isMobile: true },
+        { width: 768, height: 1024 },
+        { width: 390, height: 844, isMobile: true }
+      ]
+    );
+    await startParty(players[0]);
+    await drawTopLeftLandmark(players[0]);
+    await drawTopLeftLandmark(players[1]);
+    await drawStroke(players[2]);
+    for (const player of players) {
+      await player.getByRole('button', { name: 'Submit Drawing' }).click();
+    }
+
+    let sawPortrait = false;
+    let sawTablet = false;
+    for (let reveal = 0; reveal < players.length; reveal += 1) {
+      await expect(tv.getByText('What did they draw?')).toBeVisible();
+      const artistIndex = await waitForArtistIndex(players);
+      if (artistIndex === 0) {
+        await expect.poll(() => canvasHasInkNear(tv, 'canvas.reveal-canvas', 0.3, 0.1)).toBe(true);
+        await expect.poll(() => canvasHasInkNear(tv, 'canvas.reveal-canvas', 0.1, 0.86)).toBe(false);
+        sawPortrait = true;
+      }
+      if (artistIndex === 1) {
+        await expect.poll(() => canvasHasInkNear(tv, 'canvas.reveal-canvas', 0.14, 0.1)).toBe(true);
+        sawTablet = true;
+      }
+      await completeCurrentReveal(tv, players, `orientation-${reveal}`);
+    }
+    expect(sawPortrait).toBe(true);
+    expect(sawTablet).toBe(true);
+  } finally {
+    await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
+  }
+});
+
 test('solo drawing keeps live ink stable, ignores extra touches, and submits dense strokes', async ({ baseURL, browser }) => {
   const contexts: BrowserContext[] = [];
   const appUrl = makeAppUrl(baseURL);
@@ -293,8 +422,7 @@ test('solo drawing keeps live ink stable, ignores extra touches, and submits den
 
     const [player] = await createPlayers(browser, contexts, appUrl, roomCode, ['Solo']);
     await hostSaveRounds(player, '1');
-    await expect(tv.getByRole('button', { name: 'Start Game' })).toBeEnabled();
-    await tv.getByRole('button', { name: 'Start Game' }).click();
+    await startPractice(player);
 
     await drawStroke(player);
     await expect(player.locator('.draw-status')).toHaveText('1 stroke');
@@ -333,11 +461,11 @@ test('solo drawing keeps live ink stable, ignores extra touches, and submits den
     await player.getByRole('button', { name: 'Submit Drawing' }).click();
 
     await expect(tv.getByText('The real prompt was')).toBeVisible();
-    await expect(player.getByText('The real prompt was')).toBeVisible();
+    await expect(player.locator('.player-result-companion')).toContainText('Look up at the TV for the reveal');
     await expect(tv.getByRole('button', { name: 'Continue' })).toBeEnabled({ timeout: 7000 });
     await tv.getByRole('button', { name: 'Continue' }).click();
-    await expect(tv.getByText('Final Podium')).toBeVisible();
-    await expect(player.getByText('Final Podium')).toBeVisible();
+    await expect(tv.locator('.scores-panel .panel-title')).toHaveText('Practice complete');
+    await expect(player.locator('.scores-panel .panel-title')).toHaveText('Practice complete');
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }
@@ -355,8 +483,19 @@ test('phone vote selection stays confirmed while the table is still voting', asy
     await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
     const roomCode = (await tv.locator('.room-code').innerText()).trim();
 
-    const players = await createPlayers(browser, contexts, appUrl, roomCode, ['Ava', 'Bo', 'Cy']);
-    await tv.getByRole('button', { name: 'Start Game' }).click();
+    const players = await createPlayers(
+      browser,
+      contexts,
+      appUrl,
+      roomCode,
+      ['Ava', 'Bo', 'Cy'],
+      [
+        { width: 375, height: 667, isMobile: true },
+        { width: 390, height: 844, isMobile: true },
+        { width: 390, height: 844, isMobile: true }
+      ]
+    );
+    await startParty(players[0]);
     for (const player of players) {
       await drawStroke(player);
       await player.getByRole('button', { name: 'Submit Drawing' }).click();
@@ -396,7 +535,7 @@ test('TV progress names submitted players and who is still waiting', async ({ ba
     const names = ['Ava', 'Bo', 'Cy'];
     const players = await createPlayers(browser, contexts, appUrl, roomCode, names);
     const nameForPage = new Map<Page, string>(players.map((player, index) => [player, names[index]]));
-    await tv.getByRole('button', { name: 'Start Game' }).click();
+    await startParty(players[0]);
     await expect(tv.getByText('Phones are drawing')).toBeVisible();
 
     await drawStroke(players[0]);
@@ -466,10 +605,21 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
     await expect(tv.locator('.room-code')).toHaveText(/[A-Z]{4}/);
     const roomCode = (await tv.locator('.room-code').innerText()).trim();
 
-    const players = await createPlayers(browser, contexts, appUrl, roomCode, ['Ava', 'Bo']);
+    const players = await createPlayers(
+      browser,
+      contexts,
+      appUrl,
+      roomCode,
+      ['Ava', 'Bo', 'Cy'],
+      [
+        { width: 375, height: 667, isMobile: true },
+        { width: 390, height: 844, isMobile: true },
+        { width: 390, height: 844, isMobile: true }
+      ]
+    );
     await hostSaveRounds(players[0], '1');
 
-    await tv.getByRole('button', { name: 'Start Game' }).click();
+    await startParty(players[0]);
     for (const player of players) {
       await drawStroke(player);
       await player.getByRole('button', { name: 'Submit Drawing' }).click();
@@ -477,14 +627,18 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
 
     for (let turn = 0; turn < players.length; turn += 1) {
       await expect(tv.getByText('What did they draw?')).toBeVisible();
-      const guessers = await waitForPagesWithVisibleLocator(players, 'input[placeholder="Something that sounds legit…"]');
+      const guessers = await waitForGuessers(players);
       for (const [index, guesser] of guessers.entries()) {
         await guesser.getByPlaceholder('Something that sounds legit…').fill(`fake finale ${turn} ${index}`);
         await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
       }
 
       await expect(tv.getByText('Which title is real?')).toBeVisible();
-      const voters = await waitForPagesWithVisibleLocator(players, 'button.vote-option:not([disabled])');
+      const voters = await waitForPagesWithVisibleLocatorCount(
+        players,
+        'button.vote-option:not([disabled])',
+        players.length - 1
+      );
       for (const voter of voters) {
         await voter.locator('button.vote-option:not([disabled])').first().click();
       }
@@ -496,14 +650,19 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
 
     await expect(tv.getByText('Final Podium')).toBeVisible();
     await expect(tv.getByRole('button', { name: 'Play Again' })).toBeVisible();
-    await expect(tv.getByText('Don’t stop now')).toBeVisible();
+    await expect(tv.locator('.encore-title')).toHaveText(/won by|take it back|tied|settle it/i);
     // Host phone keeps the spotlight CTA; TV Play Again stays secondary.
     await expect(players[0].locator('.spotlight-button')).toBeVisible();
+    const hostReplay = await players[0].getByRole('button', { name: 'Play Again' }).boundingBox();
+    if (!hostReplay) throw new Error('Host rematch CTA must have a layout box.');
+    expect(hostReplay.y + hostReplay.height).toBeLessThanOrEqual(667);
+    for (const player of players.slice(1)) {
+      await expect(player.locator('.advance-panel')).toContainText('Host decides.');
+    }
     await expect(tv.getByRole('button', { name: /Podium/ })).toBeVisible();
-    await expect(tv.locator('.podium-place')).toHaveCount(2);
-    await expect(tv.locator('.podium-rank')).toHaveText(['1st', '1st']);
-    await expect(tv.locator('.podium-title')).toHaveText(['Champion', 'Champion']);
-    await expect(tv.getByText('Runner-up')).toHaveCount(0);
+    await expect(tv.locator('.podium-place')).toHaveCount(3);
+    const titles = await tv.locator('.podium-title').allTextContents();
+    expect(titles.every((title) => ['Champion', 'Runner-up', 'Third Place'].includes(title))).toBe(true);
     await expect(tv.locator('.score-row')).toHaveCount(0);
 
     const scoresPanel = await tv.locator('.scores-panel').boundingBox();
@@ -516,7 +675,7 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
     for (const player of players) {
       await expect(player.locator('.scores-panel')).toBeVisible();
       await expect(player.locator('.winner-callout')).toBeVisible();
-      await expect(player.locator('.podium-place')).toHaveCount(2);
+      await expect(player.locator('.podium-place')).toHaveCount(3);
       await expect(player.getByRole('button', { name: /Podium/ })).toBeVisible();
       await expectNoHorizontalOverflow(player);
       const playerScoresPanel = await player.locator('.scores-panel').boundingBox();

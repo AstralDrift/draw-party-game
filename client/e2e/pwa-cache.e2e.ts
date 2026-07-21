@@ -46,8 +46,10 @@ test('keeps app routes on the browser shell and API routes on JSON', async ({ pa
 
   await page.goto('/join/ABCD');
   await expect(page.getByText('Join Game')).toBeVisible();
-  await expect(page.locator('input.code-input')).toHaveValue('ABCD');
-  await page.locator('input.code-input').fill('A');
+  await expect(page.locator('.player-room-chip')).toContainText('ABCD');
+  await expect(page.locator('input.code-input')).toHaveCount(0);
   await page.getByRole('button', { name: 'Join the Party' }).click();
-  await expect(page.getByText('Enter the four-letter room code from the TV.')).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveText(/enter your name/i);
+  await page.getByRole('button', { name: /Change room/i }).click();
+  await expect(page.locator('input.code-input')).toBeVisible();
 });
