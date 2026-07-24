@@ -17,7 +17,7 @@
     "test": "vitest"
   },
   "dependencies": {
-    "lucide": "^1.24.0",
+    "lucide": "^1.26.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
