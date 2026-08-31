@@ -2,17 +2,49 @@ import { useEffect, useMemo, useState } from 'react';
 import { Send } from 'lucide';
 import { useGame } from '../../app/GameProvider';
 import { playerSubmissionAccepted, voteOptionAccessibleName } from '../../controller';
+import { isSelfHost } from '../../host';
 import { optionLabel } from '../../option-label';
-import { playerActionHint } from '../../polish';
 import { TurnDraftCache } from '../../turn-draft-cache';
 import { Button } from '../../components/ui/Button';
 import { Deadline } from '../../components/ui/Deadline';
-import { DrawingCanvas } from '../../components/ui/DrawingPadHost';
 import { Field, TextInput } from '../../components/ui/Field';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { HostTimeExtension } from '../../components/ui/HostTimeExtension';
 import { ReactionBar, ReactionBursts } from '../../components/ui/ReactionBar';
 import { Shell } from '../../components/ui/Shell';
+
+function PlayerTurnChrome({
+  lookUp,
+  showClock,
+  showHostExtend = false
+}: {
+  lookUp: boolean;
+  showClock: boolean;
+  showHostExtend?: boolean;
+}): React.JSX.Element | null {
+  const { snapshot, clientId } = useGame();
+  const isHost = isSelfHost(snapshot?.players ?? [], clientId ?? '');
+  const extend = isHost && showHostExtend;
+  if (!lookUp && !showClock && !extend) {
+    return null;
+  }
+
+  return (
+    <div className="turn-header compact">
+      {lookUp ? (
+        <div className="turn-copy">
+          <div className="prompt small">Look up</div>
+        </div>
+      ) : null}
+      {showClock || extend ? (
+        <div className="turn-timing-controls">
+          {showClock ? <Deadline /> : null}
+          <HostTimeExtension />
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function PlayerGuessing(): React.JSX.Element {
   const { snapshot, clientId, pendingSubmission, submitAction, setErrorMessage } = useGame();
@@ -52,6 +84,8 @@ export function PlayerGuessing(): React.JSX.Element {
     );
   }
 
+  const titleReady = guess.trim().length > 0;
+
   const submitGuess = () => {
     const next = guess.trim();
     if (!next) {
@@ -66,20 +100,15 @@ export function PlayerGuessing(): React.JSX.Element {
   return (
     <Shell title="Guess">
       <GlassPanel className="play-panel player-turn-panel guessing-turn">
-        <div className="turn-header compact">
-          <div className="turn-copy">
-            <p className="eyebrow">{isArtist ? 'Your drawing' : 'Fool the room'}</p>
-            <div className="prompt small">{isArtist ? 'Fake titles incoming' : 'Write a title that could be real'}</div>
-          </div>
-          <div className="turn-timing-controls">
-            <Deadline />
-            <HostTimeExtension />
-          </div>
-        </div>
-        <p className="action-hint">{playerActionHint('guessing', isArtist)}</p>
-        <DrawingCanvas drawing={snapshot.currentDrawing} className="reveal-canvas phone-canvas" />
-        {isArtist ? (
-          <div className="success-box">You’re the artist. Sit back and enjoy the chaos.</div>
+        <PlayerTurnChrome lookUp={isArtist} showClock={false} showHostExtend={isArtist || submitted} />
+        {isArtist ? null : submitted ? (
+          <p
+            className="success-box submission-state is-accepted"
+            role="status"
+            aria-live="polite"
+          >
+            Watch the TV.
+          </p>
         ) : (
           <form
             className="player-action-form"
@@ -93,11 +122,12 @@ export function PlayerGuessing(): React.JSX.Element {
                 Not accepted yet. Your title is still here—edit it or try again.
               </div>
             ) : null}
-            <Field label="Fake title">
+            <Field label="Fake title" hideLabel>
               <TextInput
                 maxLength={60}
                 placeholder="Something that sounds legit…"
-                disabled={submitted || sending}
+                disabled={sending}
+                autoFocus
                 value={guess}
                 enterKeyHint="send"
                 onChange={(event) => {
@@ -107,18 +137,18 @@ export function PlayerGuessing(): React.JSX.Element {
                 }}
               />
             </Field>
-            <Button wide type="submit" icon={Send} disabled={submitted || sending}>
-              {sending ? 'Sending…' : retrying ? 'Try Again' : 'Submit Fake Title'}
-            </Button>
-            {submitted ? (
-              <p
-                className="success-box submission-state is-accepted"
-                role="status"
-                aria-live="polite"
+            {titleReady || sending || retrying ? (
+              <Button
+                wide
+                type="submit"
+                icon={Send}
+                disabled={sending}
+                aria-label={retrying ? 'Try Again' : 'Submit Fake Title'}
               >
-                Title sent! Waiting for the room…
-              </p>
-            ) : sending ? (
+                {sending ? 'Sending…' : retrying ? 'Try Again' : 'Submit Fake Title'}
+              </Button>
+            ) : null}
+            {sending ? (
               <p className="submit-help submission-state is-pending" role="status" aria-busy="true">
                 Sending… waiting for server confirmation.
               </p>
@@ -164,43 +194,35 @@ export function PlayerVoting(): React.JSX.Element {
   return (
     <Shell title="Vote">
       <GlassPanel className="play-panel player-turn-panel voting-turn">
-        <div className="turn-header compact">
-          <div className="turn-copy">
-            <p className="eyebrow">{isArtist ? 'Your drawing' : 'Find the truth'}</p>
-            <div className="prompt small">{isArtist ? 'Watch them sweat' : 'Which one is real?'}</div>
-          </div>
-          <div className="turn-timing-controls">
-            <Deadline />
-            <HostTimeExtension />
-          </div>
-        </div>
-        <p className="action-hint">
-          {nailedIt ? 'Your title matched the prompt, so the server locked the correct vote.' : playerActionHint('voting', isArtist)}
-        </p>
-        <DrawingCanvas drawing={snapshot.currentDrawing} className="reveal-canvas phone-canvas" />
+        <PlayerTurnChrome
+          lookUp={isArtist || nailedIt}
+          showClock={false}
+          showHostExtend={isArtist || nailedIt || submitted}
+        />
         {retrying ? (
           <div className="error" role="alert">
             Not accepted yet. Tap the selected choice again or choose another.
           </div>
         ) : null}
-        {isArtist ? (
-          <div className="success-box">You’re the artist. Watch who takes the bait.</div>
-        ) : nailedIt ? (
-          <div className="success-box" role="status" aria-live="polite">
-            Nailed it — correct vote locked.
-          </div>
-        ) : (
+        {isArtist || nailedIt || submitted ? null : (
           <div className="vote-list compact player-vote-list">
             {snapshot.votingOptions.map((option, index) => {
               const label = optionLabel(index);
               const ownGuess = option.authorPlayerId === clientId;
               const selected = submission?.optionId === option.id;
-              const disabled = submitted || ownGuess || sending;
+              const disabled = ownGuess || sending;
+              const caption = ownGuess
+                ? 'Yours'
+                : selected && sending
+                  ? 'Sending…'
+                  : selected && retrying
+                    ? 'Tap again to retry'
+                    : '';
               return (
                 <button
                   key={option.id}
                   type="button"
-                  className={`${disabled ? 'vote-option disabled' : 'vote-option'}${selected ? ' is-selected' : ''}`}
+                  className={`${disabled ? 'vote-option disabled' : 'vote-option'}${selected ? ' is-selected' : ''}${ownGuess ? ' is-own' : ''}`}
                   disabled={disabled}
                   aria-label={voteOptionAccessibleName(label, option.text, {
                     ownGuess,
@@ -226,17 +248,11 @@ export function PlayerVoting(): React.JSX.Element {
                     <span className="option-label" aria-hidden="true">
                       {label}
                     </span>
-                    <span className="vote-answer">{option.text}</span>
+                    <span className="vote-answer visually-hidden" aria-hidden="true">
+                      {option.text}
+                    </span>
                   </span>
-                  {selected && sending ? <span className="vote-reason">Sending…</span> : null}
-                  {selected && retrying ? (
-                    <span className="vote-reason">Tap again to retry</span>
-                  ) : null}
-                  {selected && submitted ? <span className="vote-reason">Your vote</span> : null}
-                  {ownGuess ? <span className="vote-reason">Your fake answer</span> : null}
-                  {submitted && !ownGuess && !selected ? (
-                    <span className="vote-reason">Vote submitted</span>
-                  ) : null}
+                  <span className="vote-reason">{caption}</span>
                 </button>
               );
             })}
@@ -249,7 +265,7 @@ export function PlayerVoting(): React.JSX.Element {
         ) : null}
         {!isArtist && !nailedIt && submitted ? (
           <p className="submission-state is-accepted" role="status" aria-live="polite">
-            Vote locked!
+            Watch the TV.
           </p>
         ) : null}
         <ReactionBar />

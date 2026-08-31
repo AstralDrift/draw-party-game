@@ -7,11 +7,11 @@ The phased UX plan and its current execution status live in [ui-ux-improvement-p
 
 ## Phase coverage
 
-1. **Lobby** — TV create/QR (read-only pace + pack) + host phone settings/start + phone join/wait
-2. **Drawing** — phone stroke pad + TV progress
-3. **Guessing / Voting** — reveal canvas, fake answers, vote options, reactions
-4. **Results** — staged reveal (hold → tally → correct → deltas → complete) + Continue gate
-5. **Final Scores** — podium, titles, share card
+1. **Lobby** — TV is pitch, QR, code, and names. The can’t-scan URL is recovery type, not a primary action. Host phone owns pace/pack/start. TV Start is an icon beside Sound, not a second Start Party panel. Scan join is the code, then your name, then Join the Party — Change room is quiet recovery, not a second primary. No seating interstitial. Seating count lives on the TV and the host phone. Non-host phones watch the TV.
+2. **Drawing** — phone stroke pad + TV count of who is in; names still out sit under the count with no Waiting on coach line. The prompt owns the phone header; tools sit in the clock row; Submit appears after ink. Reconnect overlays the pad instead of hiding. Retry errors float above the pad without blocking Submit.
+3. **Guessing / Voting** — Guessing TV is a living-room-sized drawing (no coach headline, no By artist eyebrow) with the wait count in the header; voting TV is the lettered titles (no coach headline) with the wait count in the header. Phones write a fake title (field focused, Submit after text), then tap a uniform letter grid — no phone countdown. Join and fake-title stay above the on-screen keyboard. Reconnect and retry errors overlay the title and letters instead of pushing them. Host +30 stays off those jobs until the phone looks up. After a vote locks, the letter grid leaves.
+4. **Results** — hold is the drawing (no artist eyebrow), tally is the lettered titles (no vote chips, no Option A labels), correct is the prompt alone, scores open with the room outcome. Phones stay on Look up through the punchline; personal points wait until it is over. Host Continue has no phone clock. TV Continue is an icon after the punchline.
+5. **Final Scores** — podium owns the TV; host Play Again after the podium beat; TV Play Again is an icon and Download Podium stays a labeled TV-only fallback after the same beat
 
 ## Architecture
 
@@ -23,6 +23,7 @@ client/src/
   design/                  # Tokens + base + layout + motion + drawing styles
   components/ui/           # Glass primitives + results/scores/progress
   hooks/useRevealStage.ts  # Results reveal staging timing + React hook
+  hooks/useKeyboardInset.ts # Phone keyboard inset so join/title stay on-screen
   spectator.ts             # Active/playing/spectator roster helpers
   views/display/           # TV phase screens
   views/player/            # Phone phase screens + SpectatorWatch
@@ -32,7 +33,7 @@ client/src/
   time.ts, polish.ts, sound.ts, share-card.ts
 ```
 
-Mid-game joiners become `PlayerPublic.spectator` until the next drawing round (server promotes). Lobby readiness and progress panels count active (non-spectator) players only.
+Mid-game joiners become `PlayerPublic.spectator` until the next drawing round (server promotes). Lobby readiness and progress panels count active (non-spectator) players only. Spectator phones look up; Spectating and you play next round live in the accessible name. They do not duplicate the TV drawing. Lobby spectators watch the TV the same way — no Spectating pill. TV roster names have no Watching pills.
 
 ## Non-negotiables
 

@@ -5,8 +5,15 @@ import {
   createPlayers,
   drawTopLeftLandmark,
   drawStroke,
+  expectTvDrawingStage,
+  expectTvGuessingStage,
+  expectTvVotingStage,
+  expectUniformVoteLetterHeights,
+  expectWithinViewportHeight,
   hostSaveRounds,
+  installControllableVisualViewport,
   makeAppUrl,
+  setVisualViewportHeight,
   startParty,
   startPractice,
   waitForArtistIndex,
@@ -49,20 +56,42 @@ test('mixed motion preferences keep Continue behind the shared show beat', async
     await player.mouse.move(box.x + 120, box.y + 90, { steps: 6 });
     await player.mouse.up();
     await player.getByRole('button', { name: 'Submit Drawing' }).click();
-    await expect(tv.locator('#advance-button')).toBeVisible();
-    await expect(tv.locator('#advance-button')).toBeDisabled();
-    const playerContinue = player.getByRole('button', { name: 'Continue' });
-    await expect(playerContinue).toBeVisible();
-    await expect(playerContinue).toBeDisabled();
+    await expect(tv.locator('.results-panel')).toBeVisible();
+    await expect(tv.locator('#advance-button')).toHaveCount(0);
+    await expect(player.getByRole('button', { name: 'Continue' })).toHaveCount(0);
     await expect(tv.locator('#advance-button')).toBeEnabled({ timeout: 8000 });
-    await expect(playerContinue).toBeEnabled();
+    await expect(player.getByRole('button', { name: 'Continue' })).toBeEnabled();
+    await expect(player.locator('#deadline-text')).toHaveCount(0);
+    await expect(tv.locator('#deadline-text')).toBeVisible();
     await expect(tv.locator('.results-panel')).toHaveAttribute('data-reveal-stage', 'complete');
     const tvContinue = tv.getByRole('button', {
       name: 'Continue from TV (fallback)',
       exact: true
     });
     await expect(tvContinue).toBeVisible();
+    await expect(tvContinue).toHaveText('');
+    await expect(tvContinue).toHaveClass(/tv-icon-fallback/);
     await expect(tvContinue).toHaveClass(/btn--ghost/);
+    const continueBox = await tvContinue.boundingBox();
+    if (!continueBox) {
+      throw new Error('TV Continue must have a layout box.');
+    }
+    expect(continueBox.width).toBeLessThanOrEqual(56);
+    expect(continueBox.height).toBeGreaterThanOrEqual(52);
+    await expect(tv.locator('.result-advance')).not.toContainText('Use the host phone');
+    await expect(tv.getByText('Next drawing in')).toHaveCount(0);
+    const punchlineRank = await tv.evaluate(() => {
+      const scoreLine = document.querySelector('.causal-score-event');
+      const continueButton = document.querySelector('#advance-button');
+      if (!scoreLine || !continueButton) {
+        throw new Error('Score beat and Continue must be on the TV.');
+      }
+      return {
+        score: parseFloat(getComputedStyle(scoreLine).fontSize),
+        continueButton: parseFloat(getComputedStyle(continueButton).fontSize)
+      };
+    });
+    expect(punchlineRank.score).toBeGreaterThan(punchlineRank.continueButton);
     await expect(player.locator('.spotlight-button')).toBeVisible();
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
@@ -89,6 +118,9 @@ test('manual join keyboard flow requires a name and joins exactly once', async (
     await phone.goto(appUrl('/join'));
 
     await expect(phone.locator('#connection-text')).toHaveText('Ready to join');
+    await expect(phone.getByText('Type the code')).toBeVisible();
+    await expect(phone.getByText('Jump into the party')).toHaveCount(0);
+    await expect(phone.getByText(/Type the 4-letter/)).toHaveCount(0);
     const code = phone.locator('input.code-input');
     const name = phone.getByPlaceholder('Your name');
     await code.fill(roomCode);
@@ -129,17 +161,38 @@ test('QR join confirms the room and offers a manual fallback without an editable
     const phone = await phoneContext.newPage();
     await phone.goto(appUrl(`/join/${roomCode}`));
 
-    await expect(phone.locator('.player-room-chip')).toContainText(roomCode);
+    await expect(phone.locator('.player-join-card .eyebrow')).toHaveText(roomCode);
+    await expect(phone.locator('.player-room-chip')).toHaveCount(0);
     await expect(phone.locator('input.code-input')).toHaveCount(0);
+    await expect(phone.getByText('Room found')).toHaveCount(0);
     await expect(phone.getByPlaceholder('Your name')).toBeFocused();
-    await phone.getByRole('button', { name: 'Change room' }).click();
+    await expect(phone.getByText(/Join before kickoff/)).toHaveCount(0);
+    await expect(phone.getByText(/Name yourself/)).toHaveCount(0);
+    await expect(phone.getByText(/TV is waiting/)).toHaveCount(0);
+    const joinParty = phone.getByRole('button', { name: 'Join the Party' });
+    const changeRoom = phone.getByRole('button', { name: 'Change room' });
+    await expect(joinParty).toHaveClass(/btn--primary/);
+    await expect(joinParty).toHaveClass(/btn--wide/);
+    await expect(changeRoom).toHaveClass(/btn--ghost/);
+    await expect(changeRoom).not.toHaveClass(/btn--wide/);
+    await expect(changeRoom).not.toHaveClass(/btn--secondary/);
+    const joinBox = await joinParty.boundingBox();
+    const changeBox = await changeRoom.boundingBox();
+    if (!joinBox || !changeBox) {
+      throw new Error('Join and Change room must have layout boxes.');
+    }
+    expect(joinBox.width).toBeGreaterThan(changeBox.width);
+    expect(joinBox.height).toBeGreaterThanOrEqual(changeBox.height);
+    await changeRoom.click();
     await expect(phone).toHaveURL(/\/join$/);
     await expect(phone.locator('input.code-input')).toBeVisible();
+    await expect(phone.getByText('Type the code')).toBeVisible();
 
     await phone.goto(appUrl(`/join/${roomCode}`));
     await phone.getByPlaceholder('Your name').fill('QR Quinn');
     await phone.getByRole('button', { name: 'Join the Party' }).click();
     await expect(phone.locator('.app-shell.player .brand')).toHaveText('Lobby');
+    await expect(phone.getByText('Almost in')).toHaveCount(0);
     await expect(tv.locator('.player-name-text', { hasText: /^QR Quinn$/ })).toHaveText('QR Quinn');
   } finally {
     await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
@@ -160,31 +213,65 @@ test('TV lobby gives room code and QR the showcase hierarchy', async ({ baseURL,
 
     await expect(page.locator('.room-code')).toHaveText(/[A-Z]{4}/);
     await expect(page.locator('.qr')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Start from TV (fallback)' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Start from TV (fallback)' })).toHaveCount(0);
     await expect(page.getByText('Everybody draws. Everybody guesses.')).toBeVisible();
-    await expect(page.locator('.settings-panel')).toBeVisible();
+    await expect(page.getByText('Scan to play')).toHaveCount(0);
+    await expect(page.getByText('Join on a phone, then look back here.')).toHaveCount(0);
+    await expect(page.locator('.room-code-label')).toHaveCount(0);
+    await expect(page.locator('.room-code-wrap')).toHaveAttribute('aria-label', /Room Code/);
+    await expect(page.getByText('This party', { exact: true })).toHaveCount(0);
+    await expect(page.locator('.settings-summary-panel')).toHaveCount(0);
+    await expect(page.locator('.settings-summary')).toHaveCount(0);
+    await expect(page.getByText('Pace', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Pack', { exact: true })).toHaveCount(0);
+    await expect(page.locator('.room-panel .start-note')).toHaveCount(0);
+    await expect(page.locator('.players-panel .panel-title')).toHaveCount(0);
+    await expect(page.locator('.players-panel')).toHaveAttribute('aria-label', 'Players');
+    await expect(page.locator('.players-panel .start-note')).toHaveText(/Need \d+\+ phones\./);
+    await expect(page.locator('.start-note')).not.toContainText('Scan the QR');
+    await expect(page.locator('.empty-state')).not.toContainText('Waiting for phones');
+    await expect(page.getByText('host controller')).toHaveCount(0);
+    await expect(page.getByText('host phone')).toHaveCount(0);
+    await expect(page.locator('.settings-panel')).toHaveCount(0);
+    const tvSound = page.getByRole('button', { name: /Sound (On|Off)/ });
+    await expect(tvSound).toBeVisible();
+    await expect(tvSound).toHaveText('');
     const roomCode = (await page.locator('.room-code').innerText()).trim();
     await expect(page.locator('.manual-join')).toContainText('/join');
-    await expect(page.locator('.manual-join')).toContainText(roomCode);
-    const manualJoinFontSize = await page
-      .locator('.manual-join')
-      .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
-    expect(manualJoinFontSize).toBeGreaterThanOrEqual(14);
+    await expect(page.locator('.manual-join')).not.toContainText(roomCode);
+    await expect(page.locator('.manual-join')).not.toContainText('Can’t scan');
+    await expect(page.locator('.manual-join')).toHaveAttribute('aria-label', /Can’t scan\?/);
+    const joinRank = await page.evaluate(() => {
+      const roomCode = document.querySelector('.room-code');
+      const pitch = document.querySelector('.room-hero-copy h2');
+      const url = document.querySelector('.manual-join-url');
+      if (!roomCode || !pitch || !url) {
+        throw new Error('TV join hierarchy must include code, pitch, and URL.');
+      }
+      return {
+        code: parseFloat(getComputedStyle(roomCode).fontSize),
+        pitch: parseFloat(getComputedStyle(pitch).fontSize),
+        url: parseFloat(getComputedStyle(url).fontSize)
+      };
+    });
+    expect(joinRank.url).toBeGreaterThanOrEqual(14);
+    expect(joinRank.code).toBeGreaterThan(joinRank.url * 2);
+    expect(joinRank.pitch).toBeGreaterThan(joinRank.url);
+    const urlColor = await page.locator('.manual-join-url').evaluate((element) => getComputedStyle(element).color);
+    expect(urlColor).not.toMatch(/100,\s*181,\s*255/);
+    const pitchColor = await page.locator('.room-hero-copy h2').evaluate((element) => getComputedStyle(element).color);
+    expect(urlColor).not.toBe(pitchColor);
     await expectNoVerticalOverflow(page);
 
     const roomPanel = await page.locator('.room-panel').boundingBox();
-    const settingsPanel = await page.locator('.settings-panel').boundingBox();
+    const playersPanel = await page.locator('.players-panel').boundingBox();
     const qr = await page.locator('.qr').boundingBox();
-    const start = await page.getByRole('button', { name: 'Start from TV (fallback)' }).boundingBox();
-    if (!roomPanel || !settingsPanel || !qr || !start) {
+    if (!roomPanel || !playersPanel || !qr) {
       throw new Error('TV lobby panels must have layout boxes.');
     }
     expect(roomPanel.width).toBeGreaterThan(360);
-    expect(roomPanel.height).toBeGreaterThan(settingsPanel.height * 0.65);
     expect(qr.y + qr.height).toBeLessThanOrEqual(viewport.height);
-    expect(start.y + start.height).toBeLessThanOrEqual(viewport.height);
-    expect(start.width).toBeGreaterThanOrEqual(52);
-    expect(start.height).toBeGreaterThanOrEqual(52);
+    expect(qr.width).toBeGreaterThanOrEqual(200);
   }
 });
 
@@ -205,47 +292,63 @@ test('large-phone lobby presents player-ready hierarchy without clipping', async
     ]);
 
     await expect(ava.locator('.player-lobby-card')).toBeVisible();
+    await expect(ava.locator('.topbar')).toBeHidden();
+    await expect(tv.locator('.topbar')).toBeHidden();
     await expect(ava.locator('.mini-room-code')).toHaveText(roomCode);
+    await expect(ava.getByRole('button', { name: 'Edit name' })).toHaveText('Ava');
     await expectMinimumTouchTarget(ava.getByRole('button', { name: 'Edit name' }));
     await expectMinimumTouchTarget(ava.locator('.settings-preset').first());
-    await expectMinimumTouchTarget(ava.locator('.settings-advanced > summary'));
-    await ava.locator('.settings-advanced > summary').click();
-    await expectMinimumTouchTarget(ava.locator('.settings-advanced .compact-input').first());
-    await ava.locator('.settings-advanced > summary').click();
+    await expect(ava.locator('.settings-advanced')).toHaveCount(0);
+    await expect(ava.getByText('Room Settings')).toHaveCount(0);
     await expect(ava.getByRole('button', { name: 'Start Party' })).toBeDisabled();
     await expect(ava.getByRole('button', { name: 'Practice Drawing' })).toBeEnabled();
+    await expect(ava.getByText('Waiting for players')).toHaveCount(0);
+    await expect(ava.getByRole('button', { name: /Turn alerts (on|off)/ })).toHaveText('');
     const [bo] = await createPlayers(browser, contexts, appUrl, roomCode, ['Bo'], [
       { width: 430, height: 932, isMobile: true }
     ]);
-    await expect(ava.getByRole('button', { name: 'Practice Drawing' })).toBeDisabled();
+    await expect(ava.getByRole('button', { name: 'Practice Drawing' })).toHaveCount(0);
     await expect(ava.getByText(/1 more|one more/i)).toBeVisible();
+    await expect(bo.getByText(/1 more|one more/i)).toHaveCount(0);
+    await expect(bo.getByText('Watch the TV.')).toBeVisible();
     await expect(ava.getByRole('button', { name: 'Edit name' })).toBeVisible();
-    await expect(ava.locator('.players-panel')).toBeVisible();
+    await expect(ava.locator('.players-panel')).toHaveCount(0);
+    await expect(bo.locator('.players-panel')).toHaveCount(0);
     await expect(bo.locator('.player-lobby-card')).toBeVisible();
-    await expect(tv.getByRole('button', { name: 'Start from TV (fallback)' })).toBeDisabled();
+    await expect(tv.getByRole('button', { name: 'Start from TV (fallback)' })).toHaveCount(0);
     await expectNoHorizontalOverflow(ava);
 
     const [cy] = await createPlayers(browser, contexts, appUrl, roomCode, ['Cy'], [
       { width: 430, height: 932, isMobile: true }
     ]);
     await expect(ava.getByRole('button', { name: 'Start Party' })).toBeEnabled();
-    await expect(bo.getByText('Party is ready')).toBeVisible();
-    await expect(cy.getByText('Party is ready')).toBeVisible();
+    await expect(bo.getByText('Party is ready')).toHaveCount(0);
+    await expect(cy.getByText('Party is ready')).toHaveCount(0);
+    await expect(bo.getByText('Watch the TV.')).toBeVisible();
+    await expect(cy.getByText('Watch the TV.')).toBeVisible();
+    await expect(bo.locator('.player-room-chip')).toHaveCount(0);
+    await expect(cy.locator('.player-room-chip')).toHaveCount(0);
+    await expect(ava.getByText('The host phone can start the game.')).toHaveCount(0);
     await expect(tv.getByRole('button', { name: 'Start from TV (fallback)' })).toBeEnabled();
+    await expect(tv.getByRole('button', { name: 'Start from TV (fallback)' })).toHaveText('');
+    await expect(tv.locator('.settings-summary-panel')).toHaveCount(0);
+    await expect(tv.getByText('Start Party')).toHaveCount(0);
 
     await ava.getByRole('button', { name: 'Edit name' }).click();
     await ava.getByLabel('Your name').fill('Ava Renamed');
     await ava.getByRole('button', { name: 'Save name' }).click();
-    await expect(ava.getByText("Ava Renamed, you're the host")).toBeVisible();
+    await expect(ava.getByRole('button', { name: 'Edit name' })).toHaveText('Ava Renamed');
+    await expect(ava.getByText(/you're the host|you're in/i)).toHaveCount(0);
+    await expect(ava.locator('.ready-count')).toHaveCount(0);
     await expect(tv.locator('.player-name-text', { hasText: /^Ava Renamed$/ })).toHaveText('Ava Renamed');
 
     const lobbyBox = await ava.locator('.player-lobby-card').boundingBox();
-    const playersBox = await ava.locator('.players-panel').boundingBox();
-    if (!lobbyBox || !playersBox) {
+    const settingsBox = await ava.locator('.settings-panel').boundingBox();
+    if (!lobbyBox || !settingsBox) {
       throw new Error('Large-phone lobby panels must have layout boxes.');
     }
-    expect(lobbyBox.y + lobbyBox.height).toBeLessThan(playersBox.y);
-    expect(playersBox.width).toBeLessThanOrEqual(430);
+    expect(lobbyBox.y + lobbyBox.height).toBeLessThan(settingsBox.y);
+    expect(settingsBox.width).toBeLessThanOrEqual(430);
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }
@@ -267,15 +370,47 @@ test('phone drawing screen prioritizes canvas before controls on mobile', async 
     await startParty(ava);
 
     await expect(ava.locator('canvas.draw-canvas')).toBeVisible();
-    await expect(ava.getByRole('button', { name: 'Submit Drawing' })).toBeVisible();
-    await expect(ava.getByRole('button', { name: 'Submit Drawing' })).toBeDisabled();
-    await expect(ava.locator('#prompt-text')).toContainText(/^Draw:/);
+    await expect(ava.getByRole('button', { name: 'Submit Drawing' })).toHaveCount(0);
+    await expect(ava.getByText('Draw first')).toHaveCount(0);
+    await expect(ava.locator('#prompt-text')).not.toContainText(/^Draw:/);
+    await expect(ava.locator('#prompt-text')).not.toHaveText('Waiting for prompt...');
+    await expect(ava.locator('.turn-copy .eyebrow')).toHaveCount(0);
+    await expect(tv.getByText(/Round \d+ of \d+/)).toBeVisible();
+    await expect(ava.locator('.action-hint')).toHaveCount(0);
+    const typeRank = await ava.evaluate(() => {
+      const prompt = document.querySelector('#prompt-text');
+      const deadline = document.querySelector('#deadline-text');
+      if (!prompt || !deadline) {
+        throw new Error('Drawing prompt and deadline must be on screen.');
+      }
+      return {
+        prompt: parseFloat(getComputedStyle(prompt).fontSize),
+        deadline: parseFloat(getComputedStyle(deadline).fontSize)
+      };
+    });
+    expect(typeRank.prompt).toBeGreaterThanOrEqual(typeRank.deadline);
+    const promptWidth = await ava.evaluate(() => {
+      const prompt = document.querySelector('#prompt-text');
+      const header = document.querySelector('.turn-header');
+      if (!prompt || !header) {
+        throw new Error('Drawing prompt and header must be on screen.');
+      }
+      return {
+        prompt: prompt.getBoundingClientRect().width,
+        header: header.getBoundingClientRect().width
+      };
+    });
+    expect(promptWidth.prompt).toBeGreaterThan(promptWidth.header * 0.9);
     await expect(ava.locator('#deadline-text')).toHaveText(/\d+:\d{2}/);
-    await expect(ava.locator('.tools-summary')).toContainText('Tools');
+    await expect(ava.locator('.tools-summary')).toHaveAttribute(
+      'aria-label',
+      'Open drawing tools, black, 6px'
+    );
+    await expect(ava.locator('.drawing-tools-slot .tools-drawer')).toBeVisible();
+    await expect(ava.locator('.tools-summary')).not.toContainText('Tools');
     await expect(ava.locator('.draw-toolbar')).toBeHidden();
     await expect(bo.locator('canvas.draw-canvas')).toBeVisible();
     await expectMinimumTouchTarget(ava.locator('.tools-summary'));
-    await expectMinimumTouchTarget(ava.getByRole('button', { name: 'Submit Drawing' }));
 
     const toolsContrast = await ava.locator('.tools-summary').evaluate((summary) => {
       const drawer = summary.closest('.tools-drawer');
@@ -303,25 +438,34 @@ test('phone drawing screen prioritizes canvas before controls on mobile', async 
     });
     expect(toolsContrast).toBeGreaterThanOrEqual(4.5);
 
-    const canvasBox = await ava.locator('canvas.draw-canvas').boundingBox();
+    const stageBox = await ava.locator('.canvas-stage').boundingBox();
     const drawerBox = await ava.locator('.tools-drawer').boundingBox();
-    const submitBox = await ava.getByRole('button', { name: 'Submit Drawing' }).boundingBox();
-    if (!canvasBox || !drawerBox || !submitBox) {
+    if (!stageBox || !drawerBox) {
       throw new Error('Drawing canvas and tools drawer must have layout boxes.');
     }
-    expect(canvasBox.y).toBeLessThan(drawerBox.y);
-    expect(canvasBox.width).toBeGreaterThan(340);
-    expect(submitBox.y + submitBox.height).toBeLessThanOrEqual(844);
+    expect(drawerBox.y + drawerBox.height).toBeLessThanOrEqual(stageBox.y + 2);
+    expect(stageBox.width).toBeGreaterThan(340);
 
     await drawStroke(ava);
     await expect(ava.getByRole('button', { name: 'Submit Drawing' })).toBeEnabled();
-    await expect(ava.locator('.submit-help')).toHaveText('Ready when you are.');
+    await expect(ava.getByRole('button', { name: 'Submit Drawing' })).toHaveText('Submit Drawing');
+    await expectMinimumTouchTarget(ava.getByRole('button', { name: 'Submit Drawing' }));
+    const submitBox = await ava.getByRole('button', { name: 'Submit Drawing' }).boundingBox();
+    if (!submitBox) {
+      throw new Error('Submit Drawing must have a layout box after ink.');
+    }
+    expect(submitBox.y + submitBox.height).toBeLessThanOrEqual(844);
+    await expect(ava.locator('.submit-help')).toHaveCount(0);
     await ava.locator('.tools-summary').click();
     await expect(ava.locator('.draw-toolbar')).toBeVisible();
     await expectMinimumTouchTarget(ava.locator('.swatch').nth(1));
     await expectMinimumTouchTarget(ava.getByRole('button', { name: 'Clear drawing' }));
     await ava.locator('.swatch').nth(1).click();
     await expect(ava.locator('.swatch').nth(1)).toHaveClass(/is-selected/);
+    await expect(ava.locator('.tools-summary')).toHaveAttribute(
+      'aria-label',
+      'Open drawing tools, red, 6px'
+    );
     await expect(ava.getByRole('button', { name: /eraser/i })).toBeVisible();
     await ava.getByRole('button', { name: 'Clear drawing' }).click();
     await expect(ava.getByRole('button', { name: 'Tap again to clear drawing' })).toBeVisible();
@@ -354,7 +498,8 @@ test('iPad portrait and landscape drawing use expanded tools without overflow', 
       await expect(page.locator('canvas.draw-canvas')).toBeVisible();
       await expect(page.locator('.draw-toolbar')).toBeVisible();
       await expect(page.locator('.tools-drawer')).toHaveAttribute('open', '');
-      await expect(page.locator('#prompt-text')).toContainText(/^Draw:/);
+      await expect(page.locator('#prompt-text')).not.toContainText(/^Draw:/);
+      await expect(page.locator('#prompt-text')).not.toHaveText('Waiting for prompt...');
       await expectNoHorizontalOverflow(page);
     }
 
@@ -365,6 +510,10 @@ test('iPad portrait and landscape drawing use expanded tools without overflow', 
     }
     expect(portraitCanvas.width).toBeGreaterThan(480);
     expect(landscapeCanvas.width).toBeGreaterThan(620);
+    await expect(portrait.locator('.submit-help')).toHaveCount(0);
+    await expect(portrait.getByRole('button', { name: 'Submit Drawing' })).toHaveCount(0);
+    await drawStroke(portrait);
+    await drawStroke(landscape);
 
     const portraitSubmit = await portrait.getByRole('button', { name: 'Submit Drawing' }).boundingBox();
     const landscapeSubmit = await landscape.getByRole('button', { name: 'Submit Drawing' }).boundingBox();
@@ -411,7 +560,7 @@ test('portrait-phone and tablet landmarks keep their orientation on the TV', asy
     let sawPortrait = false;
     let sawTablet = false;
     for (let reveal = 0; reveal < players.length; reveal += 1) {
-      await expect(tv.getByText('What did they draw?')).toBeVisible();
+      await expectTvGuessingStage(tv);
       const artistIndex = await waitForArtistIndex(players);
       if (artistIndex === 0) {
         await expect.poll(() => canvasHasInkNear(tv, 'canvas.reveal-canvas', 0.3, 0.1)).toBe(true);
@@ -483,22 +632,122 @@ test('solo drawing keeps live ink stable, ignores extra touches, and submits den
     await expect(player.locator('.draw-status')).toHaveText('4 strokes');
     await player.getByRole('button', { name: 'Submit Drawing' }).click();
 
-    await expect(tv.getByText('The real prompt was')).toBeVisible();
-    await expect(player.locator('.player-result-companion')).toContainText('Look up at the TV for the reveal');
+    await expect(tv.locator('.reveal-prompt')).toBeVisible();
+    await expect(player.locator('.topbar')).toBeHidden();
+    await expect(player.locator('.player-result-companion h2')).toHaveText('Look up');
+    await expect(player.locator('.player-result-companion')).not.toContainText('Reveal time');
+    await expect(player.locator('.player-result-companion')).not.toContainText('Practice · scores off');
+    await expect(player.locator('.personal-score')).toHaveCount(0);
+    await expect(player.locator('.player-result-companion .reaction-bar')).toHaveCount(0);
+    await expect(player.locator('.result-phone-advance')).not.toContainText('Or wait');
+    await expect(player.locator('.result-phone-advance #deadline-text')).toHaveCount(0);
     const tvContinue = tv.getByRole('button', {
       name: 'Continue from TV (fallback)',
       exact: true
     });
     await expect(tvContinue).toBeEnabled({ timeout: 8000 });
     await tvContinue.click();
-    await expect(tv.locator('.scores-panel .panel-title')).toHaveText('Practice complete');
-    await expect(player.locator('.scores-panel .panel-title')).toHaveText('Practice complete');
+    await expect(tv.locator('.winner-callout h2')).toHaveText('Warm-up complete');
+    await expect(player.locator('.winner-callout h2')).toHaveText('Warm-up complete');
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }
 });
 
-test('phone vote selection stays confirmed while the table is still voting', async ({ baseURL, browser }) => {
+test('fake title submit stays above a simulated on-screen keyboard on iPhone SE', async ({
+  baseURL,
+  browser
+}) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+  const seViewport = { width: 375, height: 667, isMobile: true };
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const players = await createPlayers(
+      browser,
+      contexts,
+      appUrl,
+      roomCode,
+      ['Ava', 'Bo', 'Cy'],
+      [seViewport, seViewport, seViewport],
+      async (context) => {
+        await installControllableVisualViewport(context);
+      }
+    );
+    await startParty(players[0]);
+    for (const player of players) {
+      await drawStroke(player);
+      await player.getByRole('button', { name: 'Submit Drawing' }).click();
+    }
+
+    await expectTvGuessingStage(tv);
+    const [guesser] = await waitForGuessers(players);
+    const titleField = guesser.getByPlaceholder('Something that sounds legit…');
+    await expect(titleField).toBeFocused();
+    await titleField.fill('keyboard couch test');
+    await setVisualViewportHeight(guesser, 400);
+    await expect(guesser.getByRole('button', { name: 'Submit Fake Title' })).toBeEnabled();
+    await expectWithinViewportHeight(
+      guesser,
+      'button:has-text("Submit Fake Title")',
+      seViewport.height
+    );
+    await expectWithinViewportHeight(guesser, 'input[placeholder="Something that sounds legit…"]', seViewport.height);
+    await expect
+      .poll(async () =>
+        guesser.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--keyboard-inset'))
+      )
+      .toBe('267px');
+  } finally {
+    await Promise.all(contexts.map((context) => context.close()));
+  }
+});
+
+test('join keeps Join the Party above a simulated on-screen keyboard on iPhone SE', async ({
+  baseURL,
+  browser
+}) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+  const seViewport = { width: 375, height: 667, isMobile: true };
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const joinContext = await browser.newContext({
+      hasTouch: true,
+      isMobile: true,
+      viewport: seViewport
+    });
+    contexts.push(joinContext);
+    await installControllableVisualViewport(joinContext);
+    const joiner = await joinContext.newPage();
+    await joiner.goto(appUrl(`/join/${roomCode}`));
+    await joiner.getByPlaceholder('Your name').click();
+    await setVisualViewportHeight(joiner, 400);
+    await expectWithinViewportHeight(joiner, 'button:has-text("Join the Party")', seViewport.height);
+    await expectWithinViewportHeight(joiner, 'input[placeholder="Your name"]', seViewport.height);
+    await expect
+      .poll(async () =>
+        joiner.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--keyboard-inset'))
+      )
+      .toBe('267px');
+  } finally {
+    await Promise.all(contexts.map((context) => context.close()));
+  }
+});
+
+test('a locked phone vote looks up instead of keeping the letter grid', async ({ baseURL, browser }) => {
   const contexts: BrowserContext[] = [];
   const appUrl = makeAppUrl(baseURL);
 
@@ -518,7 +767,7 @@ test('phone vote selection stays confirmed while the table is still voting', asy
       ['Ava', 'Bo', 'Cy'],
       [
         { width: 375, height: 667, isMobile: true },
-        { width: 390, height: 844, isMobile: true },
+        { width: 768, height: 1024, isMobile: false },
         { width: 390, height: 844, isMobile: true }
       ]
     );
@@ -528,19 +777,92 @@ test('phone vote selection stays confirmed while the table is still voting', asy
       await player.getByRole('button', { name: 'Submit Drawing' }).click();
     }
 
-    await expect(tv.getByText('What did they draw?')).toBeVisible();
+    await expectTvGuessingStage(tv);
+    await expect(tv.getByText('Title it on your phone.')).toHaveCount(0);
     const guessers = await waitForPagesWithVisibleLocatorCount(players, 'input[placeholder="Something that sounds legit…"]', 2);
-    for (const [index, guesser] of guessers.entries()) {
-      await guesser.getByPlaceholder('Something that sounds legit…').fill(`fake vote ${index}`);
-      await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
+    await expect(guessers[0].locator('.action-hint')).toHaveCount(0);
+    await expect(guessers[0].locator('.field-label:not(.visually-hidden)')).toHaveCount(0);
+    const titleField = guessers[0].getByPlaceholder('Something that sounds legit…');
+    await expect(titleField).toBeFocused();
+    const titleFieldBox = await titleField.boundingBox();
+    if (!titleFieldBox) {
+      throw new Error('Fake title field must have a layout box.');
     }
+    expect(titleFieldBox.height).toBeGreaterThanOrEqual(64);
+    const titleFieldSize = await titleField.evaluate((element) =>
+      Number.parseFloat(getComputedStyle(element).fontSize)
+    );
+    expect(titleFieldSize).toBeGreaterThanOrEqual(22);
+    await expect(guessers[0].getByText('Fool the room')).toHaveCount(0);
+    await expect(guessers[0].locator('.topbar')).toBeHidden();
+    await expect(guessers[0].locator('#deadline-text')).toHaveCount(0);
+    const artistDuringGuess = players.find((player) => !guessers.includes(player));
+    if (!artistDuringGuess) {
+      throw new Error('Guessing artist must be on a phone.');
+    }
+    await expect(artistDuringGuess.getByText('Look up')).toBeVisible();
+    await expect(artistDuringGuess.locator('#deadline-text')).toHaveCount(0);
+    await expect(artistDuringGuess.locator('.reaction-bar')).toBeHidden();
+    await expect(artistDuringGuess.locator('.phone-canvas')).toHaveCount(0);
+    await expect(guessers[0].getByRole('button', { name: 'Submit Fake Title' })).toHaveCount(0);
+    await expect(guessers[0].getByText('Write a title')).toHaveCount(0);
+    for (const guesser of guessers) {
+      await expect(guesser.locator('.phone-canvas')).toHaveCount(0);
+      await expect(guesser.locator('.reaction-bar')).toBeHidden();
+    }
+    await guessers[0].getByPlaceholder('Something that sounds legit…').fill('fake vote 0');
+    await expect(guessers[0].getByRole('button', { name: 'Submit Fake Title' })).toBeEnabled();
+    await guessers[0].getByRole('button', { name: 'Submit Fake Title' }).click();
+    await expect(guessers[0].locator('.submission-state.is-accepted')).toHaveText('Watch the TV.');
+    await expect(guessers[0].locator('#deadline-text')).toHaveCount(0);
+    await expect(guessers[0].locator('.reaction-bar')).toBeVisible();
+    await guessers[1].getByPlaceholder('Something that sounds legit…').fill('fake vote 1');
+    await expect(guessers[1].getByRole('button', { name: 'Submit Fake Title' })).toBeEnabled();
+    await guessers[1].getByRole('button', { name: 'Submit Fake Title' }).click();
 
-    await expect(tv.getByText('Which title is real?')).toBeVisible();
+    await expectTvVotingStage(tv);
+    await expect(tv.getByText('Tap the letter on your phone.')).toHaveCount(0);
+    await expect(tv.getByText('On the phones')).toHaveCount(0);
+    await expect(tv.locator('.display-grid-voting .reveal-canvas')).toHaveCount(0);
+    const voteAnswerSize = await tv.locator('.display-grid-voting .vote-answer').first().evaluate((element) =>
+      Number.parseFloat(getComputedStyle(element).fontSize)
+    );
+    expect(voteAnswerSize).toBeGreaterThanOrEqual(22);
+    await expectNoVerticalOverflow(tv);
     const voters = await waitForPagesWithVisibleLocatorCount(players, 'button.vote-option:not([disabled])', 2);
     const voter = voters[0];
+    const voteArtist = players.find((player) => !voters.includes(player));
+    if (!voteArtist) {
+      throw new Error('Voting artist must be on a phone.');
+    }
+    await expect(voteArtist.getByText('Look up')).toBeVisible();
+    await expect(voteArtist.locator('#deadline-text')).toHaveCount(0);
+    await expect(voteArtist.locator('.reaction-bar')).toBeHidden();
+    await expect(voteArtist.locator('.phone-canvas')).toHaveCount(0);
+    await expect(voter.getByText('Which one is real?')).toHaveCount(0);
+    await expect(voter.locator('#deadline-text')).toHaveCount(0);
+    await expect(voter.getByRole('button', { name: /Your fake answer/ })).toBeDisabled();
+    await expect(voter.getByText('Yours', { exact: true })).toBeVisible();
+    await expectUniformVoteLetterHeights(voter);
+    await expect(voter.locator('.topbar')).toBeHidden();
+    await expect(voter.locator('.action-hint')).toHaveCount(0);
+    for (const pendingVoter of voters) {
+      await expect(pendingVoter.locator('.phone-canvas')).toHaveCount(0);
+      await expect(pendingVoter.locator('.vote-answer').first()).toBeHidden();
+      await expect(pendingVoter.locator('.option-label').first()).toBeVisible();
+    }
+    const voteLetterSize = await voter.locator('.option-label').first().evaluate((element) =>
+      Number.parseFloat(getComputedStyle(element).fontSize)
+    );
+    expect(voteLetterSize).toBeGreaterThanOrEqual(24);
+    for (const pendingVoter of voters) {
+      await expect(pendingVoter.locator('.reaction-bar')).toBeHidden();
+    }
     await voter.locator('button.vote-option:not([disabled])').first().click();
-    await expect(voter.locator('.vote-option.is-selected')).toBeVisible();
-    await expect(voter.locator('.vote-option.is-selected .vote-reason')).toHaveText('Your vote');
+    await expect(voter.locator('.submission-state.is-accepted')).toHaveText('Watch the TV.');
+    await expect(voter.locator('.player-vote-list')).toHaveCount(0);
+    await expect(voter.locator('#deadline-text')).toHaveCount(0);
+    await expect(voter.locator('.reaction-bar')).toBeVisible();
     await expectNoHorizontalOverflow(voter);
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
@@ -563,11 +885,17 @@ test('TV progress names submitted players and who is still waiting', async ({ ba
     const players = await createPlayers(browser, contexts, appUrl, roomCode, names);
     const nameForPage = new Map<Page, string>(players.map((player, index) => [player, names[index]]));
     await startParty(players[0]);
-    await expect(tv.getByText('Phones are drawing')).toBeVisible();
+    await expectTvDrawingStage(tv);
+    await expect(tv.getByText('Draw on your phone. Look up when the titles start.')).toHaveCount(0);
+    await expect(tv.locator('.hero-hint')).toHaveCount(0);
 
     await drawStroke(players[0]);
     await players[0].getByRole('button', { name: 'Submit Drawing' }).click();
-    await expectProgressSummary(tv, 'Drawings', '1/3', ['Ava', 'drawing in'], ['Bo', 'waiting'], ['Cy', 'waiting']);
+    await expect(players[0].locator('.submission-state.is-accepted')).toHaveText('Watch the TV.');
+    await expect(players[0].locator('#deadline-text')).toHaveCount(0);
+    await expect(players[0].locator('#prompt-text')).toHaveCount(0);
+    await expect(players[0].getByText('Look up')).toHaveCount(0);
+    await expectProgressSummary(tv, 'Drawings', '1/3', ['Ava', 'in'], ['Bo', 'waiting'], ['Cy', 'waiting']);
     await expectNoVerticalOverflow(tv);
 
     for (const player of players.slice(1)) {
@@ -575,7 +903,8 @@ test('TV progress names submitted players and who is still waiting', async ({ ba
       await player.getByRole('button', { name: 'Submit Drawing' }).click();
     }
 
-    await expect(tv.getByText('What did they draw?')).toBeVisible();
+    await expectTvGuessingStage(tv);
+    await expect(tv.getByText('Title it on your phone.')).toHaveCount(0);
     const guessers = await waitForPagesWithVisibleLocatorCount(players, 'input[placeholder="Something that sounds legit…"]', 2);
     const artist = players.find((player) => !guessers.includes(player));
     const firstGuesserName = nameForPage.get(guessers[0]) ?? '';
@@ -588,7 +917,7 @@ test('TV progress names submitted players and who is still waiting', async ({ ba
       tv,
       'Fake titles',
       '1/2',
-      [firstGuesserName, 'guess in'],
+      [firstGuesserName, 'in'],
       [secondGuesserName, 'waiting'],
       [artistName, 'artist']
     );
@@ -597,7 +926,9 @@ test('TV progress names submitted players and who is still waiting', async ({ ba
     await guessers[1].getByPlaceholder('Something that sounds legit…').fill('second fake');
     await guessers[1].getByRole('button', { name: 'Submit Fake Title' }).click();
 
-    await expect(tv.getByText('Which title is real?')).toBeVisible();
+    await expectTvVotingStage(tv);
+    await expect(tv.getByText('Tap the letter on your phone.')).toHaveCount(0);
+    await expect(tv.locator('.display-grid-voting .reveal-canvas')).toHaveCount(0);
     const voters = await waitForPagesWithVisibleLocatorCount(players, 'button.vote-option:not([disabled])', 2);
     const firstVoterName = nameForPage.get(voters[0]) ?? '';
     const secondVoterName = nameForPage.get(voters[1]) ?? '';
@@ -655,14 +986,14 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
     }
 
     for (let turn = 0; turn < players.length; turn += 1) {
-      await expect(tv.getByText('What did they draw?')).toBeVisible();
+      await expectTvGuessingStage(tv);
       const guessers = await waitForGuessers(players);
       for (const [index, guesser] of guessers.entries()) {
         await guesser.getByPlaceholder('Something that sounds legit…').fill(`fake finale ${turn} ${index}`);
         await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
       }
 
-      await expect(tv.getByText('Which title is real?')).toBeVisible();
+      await expectTvVotingStage(tv);
       const voters = await waitForPagesWithVisibleLocatorCount(
         players,
         'button.vote-option:not([disabled])',
@@ -672,7 +1003,12 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
         await voter.locator('button.vote-option:not([disabled])').first().click();
       }
 
-      await expect(tv.getByText('The real prompt was')).toBeVisible();
+      await expect(tv.locator('.reveal-prompt')).toBeVisible();
+      for (const player of players) {
+        await expect(player.locator('.player-result-companion h2')).toHaveText('Look up');
+        await expect(player.locator('.personal-score')).toHaveCount(0);
+        await expect(player.getByText('No points this reveal.')).toHaveCount(0);
+      }
       const tvContinue = tv.getByRole('button', {
         name: 'Continue from TV (fallback)',
         exact: true
@@ -681,31 +1017,38 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
       await tvContinue.click();
     }
 
-    await expect(tv.getByText('Final Podium')).toBeVisible();
+    await expect(tv.locator('.podium')).toBeVisible();
+    await expect(tv.getByText('Final Podium')).toHaveCount(0);
+    await expect(tv.getByText('Look up, then play again')).toHaveCount(0);
+    await expect(tv.getByText('Podium first…')).toHaveCount(0);
+    await expect(players[0].getByText('Podium first…')).toHaveCount(0);
     const tvReplay = tv.locator('#advance-button');
     const hostReplay = players[0].locator('.encore-panel .spotlight-button');
-    await expect(tvReplay).toBeVisible();
-    await expect(tvReplay).toBeDisabled();
-    await expect(tvReplay).toHaveText('Podium first…');
-    await expect(hostReplay).toBeVisible();
-    await expect(hostReplay).toBeDisabled();
-    await expect(hostReplay).toHaveText('Podium first…');
-    await expect(tv.locator('.encore-title')).toHaveText(/won by|take it back|tied|settle it/i);
+    const tvShare = tv.getByRole('button', { name: /^(Share|Download) Podium from TV \(fallback\)$/ });
+    await expect(tvShare).toHaveCount(0);
+    await expect(tvReplay).toHaveCount(0);
+    await expect(tv.locator('.encore-title')).toHaveCount(0);
+    await expect(tv.locator('.encore-panel')).toHaveCount(0);
+    await expect(hostReplay).toBeEnabled({ timeout: 5000 });
     const hostScoresBox = await players[0].locator('.scores-panel').boundingBox();
     const hostReplayBox = await hostReplay.boundingBox();
     if (!hostScoresBox || !hostReplayBox) throw new Error('Finale panels must have layout boxes.');
     expect(hostScoresBox.y).toBeLessThan(hostReplayBox.y);
     expect(hostReplayBox.y + hostReplayBox.height).toBeLessThanOrEqual(667);
-    await expect(hostReplay).toBeEnabled({ timeout: 5000 });
     await expect(hostReplay).toHaveText('Play Again');
     await expect(tvReplay).toBeEnabled();
-    await expect(tvReplay).toHaveText('Play Again from TV (fallback)');
+    await expect(tvReplay).toHaveText('');
+    await expect(tvReplay).toHaveClass(/tv-icon-fallback/);
     await expect(tvReplay).toHaveClass(/btn--ghost/);
+    await expect(players[0].locator('.encore-panel')).not.toContainText('Host controls');
+    await expect(players[0].locator('.encore-panel')).not.toContainText('connected phones');
     for (const player of players.slice(1)) {
-      await expect(player.locator('.advance-panel')).toContainText('Host decides.');
+      await expect(player.locator('.encore-panel')).toHaveCount(0);
+      await expect(player.getByText('Host decides')).toHaveCount(0);
+      await expect(player.locator('.scores-panel')).toBeVisible();
     }
-    const tvShare = tv.getByRole('button', { name: /^(Share|Download) Podium from TV \(fallback\)$/ });
     await expect(tvShare).toBeVisible();
+    await expect(tvShare).toHaveText(/^(Share|Download) Podium$/);
     await expect(tvShare).toHaveClass(/btn--ghost/);
     await expect(tv.locator('.podium-place')).toHaveCount(3);
     const titles = await tv.locator('.podium-title').allTextContents();
@@ -720,11 +1063,11 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
     expect(scoresPanel.y).toBeGreaterThanOrEqual(0);
 
     for (const [index, player] of players.entries()) {
+      await expect(player.locator('.topbar')).toBeHidden();
       await expect(player.locator('.scores-panel')).toBeVisible();
       await expect(player.locator('.winner-callout')).toBeVisible();
       await expect(player.locator('.podium-place')).toHaveCount(3);
-      await expect(player.getByRole('button', { name: /^(Share|Download) Podium$/ })).toBeVisible();
-      await expectMinimumTouchTarget(player.getByRole('button', { name: /Podium/ }));
+      await expect(player.getByRole('button', { name: /^(Share|Download) Podium$/ })).toHaveCount(0);
       await expectNoHorizontalOverflow(player);
       const playerScoresPanel = await player.locator('.scores-panel').boundingBox();
       if (!playerScoresPanel) {
@@ -736,7 +1079,7 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
     }
 
     await hostReplay.click();
-    await expect(tv.getByText('Phones are drawing')).toBeVisible();
+    await expectTvDrawingStage(tv);
     await expect(players[0].locator('canvas.draw-canvas')).toBeVisible();
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
@@ -759,11 +1102,25 @@ async function expectProgressSummary(
   count: string,
   ...rows: Array<[string, string]>
 ): Promise<void> {
-  const panel = page.locator('.progress-panel', { hasText: title });
+  const panel = page.locator(`.progress-panel[aria-label="${title}"]`);
   await expect(panel).toBeVisible();
-  await expect(panel.locator('.big-count')).toHaveText(count);
-  for (const [name, status] of rows) {
-    await expect(panel.locator('.submission-row', { hasText: name }).locator('.status-pill')).toHaveText(status);
+  await expect.poll(async () => panel.locator('.big-count').innerText()).toBe(count);
+  await expect(panel.locator('.submission-list')).toHaveCount(0);
+  const waiting = rows.filter(([, status]) => status === 'waiting').map(([name]) => name);
+  if (waiting.length === 0) {
+    await expect(panel.locator('p.muted')).toHaveCount(0);
+    return;
+  }
+  const line = panel.locator('p.muted');
+  await expect(line).toBeVisible();
+  await expect(line).not.toContainText('Waiting on');
+  const ariaLabel = await line.getAttribute('aria-label');
+  expect(ariaLabel).toMatch(/^Waiting on /);
+  for (const name of waiting) {
+    expect(ariaLabel).toContain(name);
+  }
+  for (const name of waiting) {
+    await expect(line).toContainText(name);
   }
 }
 

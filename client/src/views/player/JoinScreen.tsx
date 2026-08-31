@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { LogIn, RotateCcw } from 'lucide';
+import { LogIn } from 'lucide';
 import { useGame } from '../../app/GameProvider';
 import { Button } from '../../components/ui/Button';
 import { Field, TextInput } from '../../components/ui/Field';
@@ -59,26 +59,10 @@ export function JoinScreen(): React.JSX.Element {
     cancelJoin();
   };
 
-  if (pendingJoin) {
-    return (
-      <Shell title="Join Game">
-        <GlassPanel className="narrow waiting-panel join-card">
-          <p className="eyebrow">{pendingJoin.roomCode}</p>
-          <h2>Almost in</h2>
-          <p className="muted">
-            {status === 'Connected'
-              ? 'Connected. Waiting for the TV to seat you…'
-              : status === 'Disconnected' || status === 'Connection error'
-                ? 'Connection dropped — retrying automatically.'
-                : 'Connecting to the room…'}
-          </p>
-          <Button variant="secondary" wide icon={RotateCcw} onClick={changeRoom}>
-            Change room
-          </Button>
-        </GlassPanel>
-      </Shell>
-    );
-  }
+  const joining = Boolean(pendingJoin);
+  const joinRetrying =
+    joining && (status === 'Disconnected' || status === 'Connection error');
+  const displayCode = pendingJoin?.roomCode || confirmedRoomCode;
 
   const join = () => {
     const roomCode = (confirmedRoomCode || roomCodeDraft).trim().toUpperCase();
@@ -109,31 +93,21 @@ export function JoinScreen(): React.JSX.Element {
   return (
     <Shell title="Join Game">
       <GlassPanel className="narrow join-card player-join-card">
-        <p className="eyebrow">{confirmedRoomCode ? 'Room found' : 'Phone controller'}</p>
-        <h2>Jump into the party</h2>
-        <p className="muted join-note">
-          {confirmedRoomCode
-            ? 'Name yourself and tap Join. The TV is waiting.'
-            : 'Type the 4-letter code on the TV, then your name.'}
-        </p>
+        <p className="eyebrow">{displayCode || 'Type the code'}</p>
         <form
           ref={joinFormRef}
           className="join-form"
+          aria-busy={joining}
           onSubmit={(event) => {
             event.preventDefault();
-            if (!confirmedRoomCode && document.activeElement === formInput('roomCode')) {
+            if (!displayCode && document.activeElement === formInput('roomCode')) {
               focusName();
               return;
             }
             join();
           }}
         >
-          {confirmedRoomCode ? (
-            <div className="player-room-chip">
-              <span>Room</span>
-              <strong className="mini-room-code">{confirmedRoomCode}</strong>
-            </div>
-          ) : (
+          {displayCode ? null : (
             <Field label="Room code">
               <TextInput
                 id="join-room-code"
@@ -182,8 +156,9 @@ export function JoinScreen(): React.JSX.Element {
               maxLength={24}
               placeholder="Your name"
               autoComplete="name"
-              autoFocus={Boolean(confirmedRoomCode)}
+              autoFocus={Boolean(confirmedRoomCode) && !joining}
               enterKeyHint="go"
+              disabled={joining}
               aria-invalid={validationError?.field === 'name'}
               aria-describedby={
                 validationError?.field === 'name' ? 'join-player-name-error' : undefined
@@ -200,18 +175,24 @@ export function JoinScreen(): React.JSX.Element {
               </span>
             ) : null}
           </Field>
-          <Button wide icon={LogIn} type="submit">
-            Join the Party
+          {joinRetrying ? (
+            <p className="error" role="alert">
+              Connection dropped — retrying.
+            </p>
+          ) : joining ? (
+            <p className="visually-hidden" role="status">
+              Joining…
+            </p>
+          ) : null}
+          <Button wide icon={LogIn} type="submit" disabled={joining} aria-busy={joining}>
+            {joining ? (joinRetrying ? 'Retrying…' : 'Joining…') : 'Join the Party'}
           </Button>
-          {confirmedRoomCode ? (
-            <Button type="button" variant="secondary" wide icon={RotateCcw} onClick={changeRoom}>
+          {displayCode && !joining ? (
+            <Button type="button" variant="ghost" className="join-change-room" onClick={changeRoom}>
               Change room
             </Button>
           ) : null}
         </form>
-        <p className="muted join-note fine-print">
-          Join before kickoff to draw this round. After start you’ll watch until the next one.
-        </p>
       </GlassPanel>
     </Shell>
   );

@@ -17,6 +17,86 @@ export function makeAppUrl(baseURL: string | undefined): (path: string) => strin
   return (path: string) => new URL(path, baseURL).toString();
 }
 
+/** Controllable visualViewport for phone keyboard inset integration tests. */
+export async function installControllableVisualViewport(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => {
+    type ViewportListener = () => void;
+    const resizeListeners = new Set<ViewportListener>();
+    const scrollListeners = new Set<ViewportListener>();
+    let visualHeight = window.innerHeight;
+    let offsetTop = 0;
+
+    const visual = {
+      get height() {
+        return visualHeight;
+      },
+      get offsetTop() {
+        return offsetTop;
+      },
+      addEventListener(type: string, listener: ViewportListener) {
+        if (type === 'resize') {
+          resizeListeners.add(listener);
+        }
+        if (type === 'scroll') {
+          scrollListeners.add(listener);
+        }
+      },
+      removeEventListener(type: string, listener: ViewportListener) {
+        if (type === 'resize') {
+          resizeListeners.delete(listener);
+        }
+        if (type === 'scroll') {
+          scrollListeners.delete(listener);
+        }
+      }
+    };
+
+    Object.defineProperty(window, 'visualViewport', {
+      configurable: true,
+      get: () => visual
+    });
+
+    (
+      window as Window & { __setVisualViewport: (height: number, top?: number) => void }
+    ).__setVisualViewport = (height: number, top = 0) => {
+      visualHeight = height;
+      offsetTop = top;
+      resizeListeners.forEach((listener) => listener());
+      scrollListeners.forEach((listener) => listener());
+      window.dispatchEvent(new Event('resize'));
+    };
+  });
+}
+
+export async function setVisualViewportHeight(
+  page: Page,
+  height: number,
+  offsetTop = 0
+): Promise<void> {
+  await page.evaluate(
+    ({ height, offsetTop }) => {
+      (
+        window as Window & { __setVisualViewport: (height: number, top?: number) => void }
+      ).__setVisualViewport(height, offsetTop);
+    },
+    { height, offsetTop }
+  );
+}
+
+export async function expectWithinViewportHeight(
+  page: Page,
+  selector: string,
+  viewportHeight: number
+): Promise<void> {
+  const box = await page.locator(selector).first().boundingBox();
+  if (!box) {
+    throw new Error(`${selector} must have a layout box.`);
+  }
+  const bottom = box.y + box.height;
+  expect(bottom).toBeLessThanOrEqual(viewportHeight + 2);
+  expect(box.y).toBeGreaterThanOrEqual(-2);
+}
+
 export async function createPlayers(
   browser: Browser,
   contexts: BrowserContext[],
@@ -39,7 +119,8 @@ export async function createPlayers(
 
     const page = await context.newPage();
     await page.goto(appUrl(`/join/${roomCode}`));
-    await expect(page.locator('.player-room-chip')).toContainText(roomCode);
+    await expect(page.locator('.player-join-card .eyebrow')).toHaveText(roomCode);
+    await expect(page.locator('.player-room-chip')).toHaveCount(0);
     await expect(page.locator('input.code-input')).toHaveCount(0);
     await page.getByPlaceholder('Your name').fill(name);
     await page.getByRole('button', { name: 'Join the Party' }).click();
@@ -47,6 +128,36 @@ export async function createPlayers(
     pages.push(page);
   }
   return pages;
+}
+
+export async function expectUniformVoteLetterHeights(page: Page): Promise<void> {
+  const heights = await page.locator('button.vote-option').evaluateAll((elements) =>
+    elements.map((element) => Math.round(element.getBoundingClientRect().height))
+  );
+  expect(heights.length).toBeGreaterThan(1);
+  expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(2);
+}
+
+export async function expectTvDrawingStage(page: Page): Promise<void> {
+  await expect(page.locator('.display-grid-drawing')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.display-grid-drawing .big-count')).toBeVisible();
+  await expect(page.getByText('Phones are drawing')).toHaveCount(0);
+  await expect(page.getByText('Practice drawing')).toHaveCount(0);
+  const waitingCopy = await page.locator('.display-grid-drawing .progress-panel p.muted').allTextContents();
+  expect(waitingCopy.join(' ')).not.toMatch(/Waiting on/);
+}
+
+export async function expectTvGuessingStage(page: Page): Promise<void> {
+  await expect(page.locator('.display-grid-guessing')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.display-grid-guessing .reveal-canvas')).toBeVisible();
+  await expect(page.locator('.display-grid-guessing .eyebrow')).toHaveCount(0);
+  await expect(page.getByText('What did they draw?')).toHaveCount(0);
+}
+
+export async function expectTvVotingStage(page: Page): Promise<void> {
+  await expect(page.locator('.display-grid-voting')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.display-grid-voting .vote-answer').first()).toBeVisible();
+  await expect(page.locator('.display-grid-voting h2')).toHaveCount(0);
 }
 
 export async function drawStroke(page: Page): Promise<void> {
@@ -182,7 +293,7 @@ export async function waitForArtistIndex(players: Page[]): Promise<number> {
       const visibleStates = await Promise.all(
         players.map((page) =>
           page
-            .getByText(/You.?re the artist/i)
+            .locator('.guessing-turn .prompt.small')
             .first()
             .isVisible()
             .catch(() => false)
@@ -205,7 +316,7 @@ export async function completeCurrentReveal(
   options: { continueAfter?: boolean; maxLengthAnswers?: boolean } = {}
 ): Promise<void> {
   const { continueAfter = true, maxLengthAnswers = false } = options;
-  await expect(tv.getByText('What did they draw?')).toBeVisible();
+  await expectTvGuessingStage(tv);
   const guessers = await waitForGuessers(players);
   for (const [index, guesser] of guessers.entries()) {
     const prefix = `${uniqueLabel}-${index}-`;
@@ -214,7 +325,7 @@ export async function completeCurrentReveal(
     await guesser.getByRole('button', { name: /Submit Fake Title|Try Again/ }).click();
   }
 
-  await expect(tv.getByText('Which title is real?')).toBeVisible();
+  await expectTvVotingStage(tv);
   const voters = await waitForPagesWithVisibleLocatorCount(
     players,
     'button.vote-option:not([disabled])',
@@ -257,14 +368,13 @@ export async function startPractice(host: Page): Promise<void> {
 /** Host phone owns writable lobby settings (TV is read-only). */
 export async function hostSaveRounds(host: Page, rounds: string): Promise<void> {
   await expect(host.locator('.settings-panel')).toBeVisible();
-  const advanced = host.locator('.settings-advanced');
-  if ((await advanced.count()) > 0) {
-    const isOpen = await advanced.evaluate((element) => (element as HTMLDetailsElement).open);
-    if (!isOpen) await advanced.locator('summary').click();
+  const preset = rounds === '1' ? /Quick:/ : rounds === '2' ? /Standard:/ : null;
+  if (!preset) {
+    throw new Error(`hostSaveRounds supports 1 (Quick) or 2 (Standard) rounds, got ${rounds}`);
   }
-  await host.getByLabel('Rounds').fill(rounds);
-  await host.getByRole('button', { name: 'Apply custom settings' }).click();
-  await expect(host.getByLabel('Rounds')).toHaveValue(rounds);
+  const button = host.getByRole('button', { name: preset });
+  await button.click();
+  await expect(button).toHaveAttribute('aria-pressed', 'true');
 }
 
 export async function installSubmissionHarness(context: BrowserContext): Promise<void> {

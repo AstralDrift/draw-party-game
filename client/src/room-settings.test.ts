@@ -57,7 +57,7 @@ describe('room settings presets', () => {
     expect(settingsPaceLabel({ ...settings, voteSeconds: 21 })).toBe('Custom');
   });
 
-  it('keeps an unsaved timer draft through an immediate prompt-pack acknowledgement', () => {
+  it('keeps pacing when the prompt pack changes', () => {
     const container = document.createElement('div');
     const root = createRoot(container);
     const saved: RoomSettings[] = [];
@@ -77,55 +77,17 @@ describe('room settings presets', () => {
 
     try {
       render(initial);
-      const drawingInput = Array.from(container.querySelectorAll('label'))
-        .find((label) => label.textContent?.includes('Drawing seconds'))
-        ?.querySelector('input');
-      const resultsInput = Array.from(container.querySelectorAll('label'))
-        .find((label) => label.textContent?.includes('Results seconds'))
-        ?.querySelector('input');
       const packSelect = container.querySelector('select');
-      const applyButton = Array.from(container.querySelectorAll('button')).find((button) =>
-        button.textContent?.includes('Apply custom settings')
-      );
-      const inputValueSetter = Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        'value'
-      )?.set;
-      if (!drawingInput || !resultsInput || !packSelect || !applyButton || !inputValueSetter) {
-        throw new Error('Expected room settings controls');
+      if (!packSelect) {
+        throw new Error('Expected prompt pack select');
       }
-      expect(resultsInput.min).toBe('10');
+      expect(container.querySelector('.settings-advanced')).toBeNull();
 
-      act(() => {
-        inputValueSetter.call(drawingInput, '90');
-        drawingInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
-      });
       act(() => {
         packSelect.value = 'party-chaos';
         packSelect.dispatchEvent(new Event('change', { bubbles: true }));
       });
       expect(saved.at(-1)).toEqual({ ...initial, promptPackId: 'party-chaos' });
-
-      render({ ...initial, promptPackId: 'party-chaos' });
-      expect(drawingInput.value).toBe('90');
-
-      act(() => {
-        inputValueSetter.call(resultsInput, '6');
-        resultsInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
-      });
-
-      act(() => applyButton.click());
-      const applied = {
-        ...initial,
-        drawSeconds: 90,
-        promptPackId: 'party-chaos'
-      } satisfies RoomSettings;
-      expect(saved.at(-1)).toEqual(applied);
-      expect(resultsInput.value).toBe('10');
-
-      render(applied);
-      render({ ...initial, promptPackId: 'party-chaos' });
-      expect(drawingInput.value).toBe('75');
     } finally {
       act(() => root.unmount());
     }

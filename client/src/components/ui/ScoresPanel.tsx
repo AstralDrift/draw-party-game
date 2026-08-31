@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { competitionRank, finalWinnerText, ordinalRank, podiumTitles } from '../../polish';
 import type { ClientRole } from '../../app/GameProvider';
 import type { ScoreEntry } from '../../protocol';
@@ -12,6 +13,8 @@ interface ScoresPanelProps {
   role: ClientRole;
   practice?: boolean;
   onShareFailed?: () => void;
+  actions?: ReactNode;
+  shareReady?: boolean;
 }
 
 export function ScoresPanel({
@@ -19,7 +22,9 @@ export function ScoresPanel({
   podium,
   role,
   practice = false,
-  onShareFailed
+  onShareFailed,
+  actions,
+  shareReady = false
 }: ScoresPanelProps): React.JSX.Element {
   const showPodium = podium && !practice;
   const topScores = showPodium
@@ -34,6 +39,7 @@ export function ScoresPanel({
   const titles = new Map(podiumTitles(scores).map((entry) => [entry.playerId, entry.title]));
   const shareLabel = podiumShareLabel();
   const displayShareFallback = role === 'display';
+  const showShare = showPodium && displayShareFallback && shareReady;
 
   return (
     <GlassPanel className="scores-panel" id="scores-panel">
@@ -45,12 +51,10 @@ export function ScoresPanel({
         </div>
       ) : podium ? (
         <div className="winner-callout">
-          {role === 'player' ? <p className="eyebrow">Champion</p> : null}
           <h2>{finalWinnerText(scores)}</h2>
           {role === 'player' && winner ? <span className="pill">{winner.score} pts</span> : null}
         </div>
       ) : null}
-      <div className="panel-title">{practice ? 'Practice complete' : podium ? 'Final Podium' : 'Scores'}</div>
       {showPodium ? (
         <div className={`podium${topScores.length > 3 ? ' is-crowded' : ''}`}>
           {topScores.map((score) => {
@@ -86,21 +90,26 @@ export function ScoresPanel({
           })}
         </div>
       ) : null}
-      {showPodium ? (
-        <Button
-          variant={displayShareFallback ? 'ghost' : 'secondary'}
-          wide={!displayShareFallback}
-          className={`${displayShareFallback ? 'tv-action-fallback' : 'tool-button'} share-card-button`}
-          onClick={() => {
-            void exportShareCard(scores).then((result) => {
-              if (result === 'failed') {
-                onShareFailed?.();
-              }
-            });
-          }}
-        >
-          {displayShareFallback ? `${shareLabel} from TV (fallback)` : shareLabel}
-        </Button>
+      {actions || showShare ? (
+        <div className="tv-finale-actions">
+          {actions}
+          {showShare ? (
+            <Button
+              variant="ghost"
+              className="tv-action-fallback share-card-button"
+              aria-label={`${shareLabel} from TV (fallback)`}
+              onClick={() => {
+                void exportShareCard(scores).then((result) => {
+                  if (result === 'failed') {
+                    onShareFailed?.();
+                  }
+                });
+              }}
+            >
+              {shareLabel}
+            </Button>
+          ) : null}
+        </div>
       ) : null}
     </GlassPanel>
   );

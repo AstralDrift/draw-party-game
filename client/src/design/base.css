@@ -117,9 +117,9 @@ button:disabled {
   max-width: 680px;
   margin: 0 auto;
   padding:
-    calc(18px + var(--safe-top))
+    calc(10px + var(--safe-top))
     max(16px, var(--safe-right))
-    calc(26px + var(--safe-bottom))
+    calc(16px + var(--safe-bottom) + var(--keyboard-inset))
     max(16px, var(--safe-left));
   overflow-x: hidden;
   overflow-y: auto;
@@ -228,11 +228,7 @@ button:disabled {
   align-items: stretch;
 }
 
-.display-grid-drawing,
-.display-grid-guessing,
-.display-grid-voting,
-.display-grid-results,
-.display-grid-finalScores {
+.display-grid-results {
   grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr);
 }
 

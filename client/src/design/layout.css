@@ -28,8 +28,7 @@
 .display-grid-lobby .lobby-side {
   min-height: 0;
   overflow: hidden;
-  /* Players flexes; settings sizes to content so the roster never collapses. */
-  grid-template-rows: minmax(160px, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .display-grid-lobby .players-panel {
@@ -41,10 +40,36 @@
   padding: clamp(16px, 1.6vw, 24px);
 }
 
+.display-grid-lobby .players-panel-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+.display-grid-lobby .players-panel-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: start;
+  gap: var(--space-2);
+}
+
+.display-grid-lobby .players-panel-head .sound-toggle,
+.display-grid-lobby .players-panel-head .tv-start-fallback {
+  flex: 0 0 auto;
+  width: var(--touch);
+  min-width: var(--touch);
+  min-height: var(--touch);
+  margin: 0;
+  padding: 0;
+}
+
 .display-grid-lobby .players-panel .panel-title,
 .display-grid-lobby .players-panel .players-count {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   margin: 0;
+  min-width: 0;
 }
 
 .display-grid-lobby .players-panel .players-count {
@@ -104,41 +129,10 @@
   min-height: var(--touch);
 }
 
-.display-grid-lobby .settings-panel .sound-toggle {
-  grid-column: 2;
-  margin: 0;
-  min-height: var(--touch);
-}
-
-.display-grid-lobby .settings-summary {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2) var(--space-3);
-  min-width: 0;
-}
-
-.display-grid-lobby .settings-summary-panel .tv-start-fallback {
-  grid-column: 1 / -1;
-  min-height: var(--touch);
-}
-
-.display-grid-lobby .settings-summary > div {
-  display: grid;
-  align-content: start;
-  gap: 2px;
-  min-width: 0;
-}
-
-.display-grid-lobby .settings-summary strong {
-  align-self: center;
-  font-size: 0.95rem;
-  line-height: 1.2;
-  overflow-wrap: anywhere;
-}
-
+.display-grid-drawing,
+.display-grid-guessing,
 .display-grid-voting {
-  grid-template-columns: minmax(0, 0.95fr) minmax(0, 0.62fr) minmax(0, 0.43fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .display-grid-results {
@@ -149,7 +143,7 @@
 }
 
 .display-grid-finalScores {
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+  grid-template-columns: minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -190,9 +184,9 @@
 }
 
 .qr-stage {
-  --qr-size: min(220px, 22vh, 18vw);
-  /* ~180px QR after 8px stage padding (see e2e/tv-layout.ts). */
-  width: max(196px, var(--qr-size));
+  --qr-size: min(240px, 28vh, 20vw);
+  /* ~204px QR after 8px stage padding (see e2e/tv-layout.ts). */
+  width: max(220px, var(--qr-size));
   max-width: 100%;
   margin: 0 auto;
   flex: 0 1 auto;
@@ -202,7 +196,7 @@
 
 @supports (height: 1svh) {
   .qr-stage {
-    --qr-size: min(220px, 22svh, 18vw);
+    --qr-size: min(240px, 28svh, 20vw);
   }
 }
 
@@ -232,6 +226,13 @@
   font-size: var(--display-panel-title);
 }
 
+.display .hero-hint {
+  margin-top: var(--space-3);
+  font-size: clamp(1.05rem, 1.8vw, 1.5rem);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
 .display .player-name,
 .display .player-score,
 .display .settings-summary strong,
@@ -255,7 +256,6 @@
   font-size: var(--display-meta);
 }
 
-.display .room-hero-sub,
 .display .panel-subtitle,
 .display .empty-state {
   font-size: max(1rem, var(--display-meta));
@@ -567,9 +567,20 @@
   object-fit: contain;
 }
 
-.display.phase-guessing .reveal-canvas,
-.display.phase-voting .reveal-canvas {
-  max-height: min(38svh, 360px);
+.display.phase-guessing .reveal-canvas {
+  width: auto;
+  max-width: 100%;
+  height: min(82svh, calc(100dvh - 88px));
+  max-height: none;
+  justify-self: center;
+}
+
+.display.phase-guessing .reveal-panel .turn-header,
+.display.phase-voting .vote-list .turn-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
 }
 
 .display .room-panel {
@@ -599,6 +610,10 @@
   opacity: 1;
   transform: none;
   pointer-events: auto;
+}
+
+.results-panel .reveal-stage:not(.is-visible) {
+  display: none;
 }
 
 .results-panel[data-reveal-stage="tally"] .reveal-stage-tally.is-visible .breakdown-row {
@@ -676,6 +691,134 @@
   max-height: min(39svh, 390px);
 }
 
+.display-results[data-reveal-stage="hold"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "summary";
+}
+
+.display-results[data-reveal-stage="hold"] > .result-summary {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.display-results[data-reveal-stage="hold"] > .result-sidebar {
+  display: none;
+}
+
+.display-results[data-reveal-stage="hold"] .result-canvas {
+  width: auto;
+  max-width: 100%;
+  height: min(82svh, calc(100dvh - 72px));
+  max-height: none;
+  justify-self: center;
+}
+
+.display-results .reveal-stage-drawing:not(.is-visible) {
+  display: none;
+}
+
+.display-results[data-reveal-stage="tally"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "sidebar";
+}
+
+.display-results[data-reveal-stage="tally"] > .result-summary {
+  display: none;
+}
+
+.display-results[data-reveal-stage="tally"] > .result-sidebar {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.display-results[data-reveal-stage="correct"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "summary";
+}
+
+.display-results[data-reveal-stage="correct"] > .result-summary {
+  grid-column: 1;
+  grid-row: 1;
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+}
+
+.display-results[data-reveal-stage="correct"] > .result-sidebar {
+  display: none;
+}
+
+.display-results[data-reveal-stage="correct"] .reveal-prompt {
+  font-size: clamp(2.6rem, 6.5vw, 7.5rem);
+  line-height: 1.05;
+  text-wrap: balance;
+}
+
+.display-results[data-reveal-stage="deltas"],
+.display-results[data-reveal-stage="complete"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "sidebar";
+}
+
+.display-results[data-reveal-stage="deltas"] > .result-summary,
+.display-results[data-reveal-stage="complete"] > .result-summary {
+  display: none;
+}
+
+.display-results[data-reveal-stage="deltas"] > .result-sidebar,
+.display-results[data-reveal-stage="complete"] > .result-sidebar {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.display-results[data-reveal-stage="deltas"] .score-deltas,
+.display-results[data-reveal-stage="complete"] .score-deltas {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  align-self: stretch;
+  min-height: 0;
+  justify-items: stretch;
+  align-content: start;
+  overflow: hidden;
+}
+
+.display-results[data-reveal-stage="deltas"] .score-events,
+.display-results[data-reveal-stage="complete"] .score-events {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.display-results[data-reveal-stage="deltas"] .current-totals,
+.display-results[data-reveal-stage="complete"] .current-totals {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+}
+
+.display-results[data-reveal-stage="deltas"] .round-outcome,
+.display-results[data-reveal-stage="complete"] .round-outcome {
+  margin: 0;
+  font-size: clamp(1.85rem, 3.8vw, 3.5rem);
+  line-height: 1.12;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.display-results[data-reveal-stage="deltas"] .causal-score-event,
+.display-results[data-reveal-stage="complete"] .causal-score-event {
+  font-size: clamp(1.35rem, 2.4vw, 2.75rem);
+  line-height: 1.2;
+  padding: 10px 14px;
+}
+
+.display-results[data-reveal-stage="deltas"] .score-total,
+.display-results[data-reveal-stage="complete"] .score-total {
+  font-size: clamp(1.15rem, 1.8vw, 1.85rem);
+  justify-self: stretch;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .display.phase-results .advance-panel {
   display: grid;
   align-content: start;
@@ -692,6 +835,8 @@
 
 .result-advance {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: var(--space-2);
   min-width: 0;
   padding-top: var(--space-2);
@@ -700,6 +845,18 @@
 
 .result-advance > * {
   margin-block: 0;
+}
+
+/* After tally, hide the lettered titles so the prompt and scores own their beats. */
+.results-panel[data-reveal-stage="correct"] .breakdown,
+.results-panel[data-reveal-stage="deltas"] .breakdown,
+.results-panel[data-reveal-stage="complete"] .breakdown {
+  display: none;
+}
+
+.results-panel[data-reveal-stage="deltas"] .result-sidebar,
+.results-panel[data-reveal-stage="complete"] .result-sidebar {
+  grid-template-rows: minmax(0, 1fr) auto;
 }
 
 .player-results,
@@ -744,32 +901,104 @@
   opacity: 1;
 }
 
-.reveal-hold-line {
-  margin: 0;
-  font-size: clamp(1.35rem, 3.2vw, 2.4rem);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--text-primary);
-}
-
 .display .reveal-prompt {
-  font-size: clamp(1.8rem, 4.5vw, 3.4rem);
-  line-height: 1.1;
+  font-size: clamp(2rem, 4.2vw, 3.8rem);
+  line-height: 1.08;
 }
 
-.display .round-outcome {
-  font-size: clamp(1.15rem, 2.4vw, 1.8rem);
-  font-weight: 700;
+.display.phase-voting .vote-list {
+  gap: 6px;
+  padding: 16px 20px;
 }
 
-.display .reveal-coach {
-  margin-top: var(--space-3);
-  font-size: 1.05rem;
+.display.phase-voting .reveal-panel.vote-list {
+  gap: 6px;
 }
 
-.room-hero-sub {
-  margin: var(--space-2) 0 0;
-  max-width: 28ch;
+.display.phase-voting .vote-list .turn-header h2 {
+  min-width: 0;
+}
+
+.display.phase-voting .reveal-panel h2 {
+  font-size: clamp(1.35rem, 2.2vw, 2.5rem);
+}
+
+.display.phase-voting .vote-list .vote-option {
+  padding: 6px 12px;
+  min-height: 0;
+  gap: 0;
+}
+
+.display.phase-voting .vote-list .vote-answer {
+  font-size: clamp(1.375rem, 1.9vw, 3.25rem);
+  line-height: 1.15;
+}
+
+.display.phase-voting .vote-list .vote-option-content {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.display.phase-voting .vote-list .option-label {
+  width: clamp(36px, 2.2vw, 52px);
+  height: clamp(36px, 2.2vw, 52px);
+  font-size: clamp(1rem, 1.4vw, 1.45rem);
+}
+
+.display-grid-drawing .progress-panel-compact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.display-grid-drawing .progress-panel-compact .progress-hero {
+  margin: 0;
+}
+
+.display-grid-drawing .progress-panel-compact .big-count {
+  font-size: clamp(5rem, 10vw, 12rem);
+  line-height: 0.9;
+}
+
+.display-grid-drawing .progress-panel-compact .muted {
+  margin: 0;
+  font-size: clamp(1.25rem, 2.2vw, 2rem);
+}
+
+.display-grid-guessing .progress-panel-compact,
+.display-grid-voting .progress-panel-compact {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+.display-grid-guessing .progress-panel-compact .progress-hero,
+.display-grid-voting .progress-panel-compact .progress-hero {
+  margin: 0;
+}
+
+.display-grid-guessing .progress-panel-compact .big-count,
+.display-grid-voting .progress-panel-compact .big-count {
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+}
+
+.display-grid-voting .progress-panel-compact .big-count {
+  font-size: clamp(1.25rem, 2vw, 1.8rem);
+}
+
+.display-grid-guessing .progress-panel-compact .muted,
+.display-grid-voting .progress-panel-compact .muted {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .spotlight-button {
@@ -810,10 +1039,21 @@
   text-align: center;
 }
 
+.tv-finale-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
 .encore-title {
   margin: 0;
   font-size: clamp(1.6rem, 3vw, 2.4rem);
   letter-spacing: -0.03em;
+}
+
+.player .encore-title {
+  font-size: clamp(1.45rem, 6.5vw, 2rem);
 }
 
 .display .reaction-burst {
@@ -853,6 +1093,15 @@
   color: var(--text-secondary);
   box-shadow: none;
   font-size: var(--display-meta);
+}
+
+.display .tv-icon-fallback {
+  justify-self: end;
+  width: var(--touch);
+  min-width: var(--touch);
+  min-height: var(--touch);
+  padding: 0;
+  margin: 0;
 }
 
 .display .tv-action-fallback:not(:disabled):hover {
@@ -903,8 +1152,142 @@
   margin-bottom: 10px;
 }
 
+/* Living-room phones: the secret outranks the clock. */
+.player.phase-drawing .prompt,
+.player.phase-drawing #prompt-text {
+  font-size: clamp(1.5rem, 5.2vw, 2.2rem);
+  line-height: 1.12;
+}
+
+.player.phase-drawing .prompt.small,
+.player.phase-guessing .prompt.small,
+.player.phase-voting .prompt.small {
+  font-size: clamp(1.35rem, 4.4vw, 1.75rem);
+  line-height: 1.15;
+}
+
+.player.phase-drawing .deadline,
+.player.phase-drawing #deadline-text,
+.player.phase-guessing .deadline,
+.player.phase-guessing #deadline-text,
+.player.phase-voting .deadline,
+.player.phase-voting #deadline-text {
+  font-size: clamp(1.125rem, 2.8vw, 1.45rem);
+}
+
+.player.phase-guessing .guessing-turn:has(.player-action-form) {
+  align-content: stretch;
+  grid-template-rows: auto minmax(12rem, 1fr) auto;
+}
+
+.player.phase-guessing .player-action-form {
+  align-content: center;
+  min-height: 0;
+}
+
+.player.phase-guessing .player-action-form .field-input {
+  font-size: clamp(1.5rem, 6.2vw, 2.15rem);
+  min-height: 72px;
+}
+
+.player.phase-voting .option-label {
+  width: clamp(52px, 16vw, 76px);
+  height: clamp(52px, 16vw, 76px);
+  font-size: clamp(1.5rem, 6vw, 2.25rem);
+}
+
+.player.phase-voting .player-vote-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(4.75rem, 1fr));
+  gap: 8px;
+}
+
+.player.phase-voting .player-vote-list .vote-option {
+  justify-items: center;
+  align-content: start;
+  text-align: center;
+  min-height: 0;
+  padding: 4px 2px 2px;
+  gap: 2px;
+  grid-template-rows: auto 1.15em;
+}
+
+.player.phase-voting .player-vote-list .vote-option.is-own {
+  opacity: 0.9;
+}
+
+.player.phase-voting .player-vote-list .vote-reason {
+  min-height: 1.15em;
+  font-size: 0.8rem;
+  line-height: 1.15;
+  color: var(--text-primary);
+}
+
+.player.phase-voting .player-vote-list .option-label {
+  align-self: center;
+}
+
+.player.phase-voting .player-vote-list .vote-answer {
+  display: none;
+}
+
+/* TV holds the drawing. The title field is the controller job. */
+
+.player.phase-guessing .guessing-turn:has(.player-action-form) .reaction-bar {
+  display: none;
+}
+
+.player.phase-guessing .guessing-turn:has(.is-accepted) .reaction-bar {
+  display: flex;
+}
+
+.player.phase-guessing .guessing-turn:has(.prompt.small):not(.spectator-turn) .reaction-bar,
+.player.phase-voting .voting-turn:has(.prompt.small):not(.spectator-turn) .reaction-bar {
+  display: none;
+}
+
+.player.phase-voting .voting-turn:has(.player-vote-list) .reaction-bar {
+  display: none;
+}
+
+.player.phase-voting .voting-turn:has(.is-accepted) .reaction-bar {
+  display: flex;
+}
+
+/* Party chrome: the QR, drawing, titles, and look-up outrank the app bar.
+   Reconnect and errors stay in the status strip. */
+.player .phase {
+  display: none;
+}
+
+.player .topbar,
+.app-shell.display.phase-lobby .topbar,
+.app-shell.display.phase-drawing .topbar,
+.app-shell.display.phase-guessing .topbar,
+.app-shell.display.phase-voting .topbar,
+.app-shell.display.phase-results .topbar,
+.app-shell.display.phase-final-scores .topbar {
+  display: none;
+}
+
+.player .host-extend-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 .drawing-turn .drawing-pad {
   min-width: 0;
+}
+
+.drawing-tools-slot:empty {
+  display: none;
 }
 
 .player.phase-drawing .swatch {
@@ -914,7 +1297,7 @@
 }
 
 .drawing-turn .canvas-stage {
-  /* Reserve chrome for prompt/hint/submit/tools so short phones keep tools in-viewport. */
+  /* Reserve chrome for prompt/submit/tools so short phones keep tools in-viewport. */
   width: min(
     100%,
     calc(min(70svh, calc(100svh - 162px - var(--safe-top) - var(--safe-bottom))) * 4 / 3)
@@ -923,9 +1306,10 @@
   margin: 0 auto;
 }
 
-/* A phone drawing turn is a focused task: ink owns the viewport and controls float above it. */
+/* A phone drawing turn is a focused task: the pad is ink; tools sit in the clock row. */
 @media (max-width: 699px) {
   .app-shell.player.phase-drawing {
+    position: relative;
     display: grid;
     grid-template-rows: minmax(0, 1fr);
     height: 100dvh;
@@ -938,8 +1322,31 @@
     overflow: hidden;
   }
 
-  .player.phase-drawing .shell-chrome {
-    display: none;
+  .app-shell.player.phase-guessing,
+  .app-shell.player.phase-voting {
+    position: relative;
+  }
+
+  /* Keep the job full-bleed, but overlay reconnect/errors so a dropped phone
+     is still obvious in a loud room. */
+  .player.phase-drawing .shell-chrome,
+  .player.phase-guessing .shell-chrome,
+  .player.phase-voting .shell-chrome {
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+    display: block;
+    pointer-events: none;
+  }
+
+  .player.phase-drawing .shell-chrome .error,
+  .player.phase-drawing .shell-chrome .connection-banner,
+  .player.phase-guessing .shell-chrome .error,
+  .player.phase-guessing .shell-chrome .connection-banner,
+  .player.phase-voting .shell-chrome .error,
+  .player.phase-voting .shell-chrome .connection-banner {
+    pointer-events: auto;
+    margin: 8px;
   }
 
   .player.phase-drawing .player-turn-panel {
@@ -964,15 +1371,63 @@
     padding: 8px 10px;
     font-size: 0.88rem;
     line-height: 1.3;
+    pointer-events: none;
+  }
+
+  .player.phase-guessing .player-action-form {
+    position: relative;
+  }
+
+  .player.phase-guessing .player-action-form > .error,
+  .player.phase-voting .voting-turn > .error {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    left: 10px;
+    z-index: 6;
+    margin: 0;
+    padding: 8px 10px;
+    font-size: 0.88rem;
+    line-height: 1.3;
+    pointer-events: none;
   }
 
   .player.phase-drawing .turn-header {
-    min-height: 48px;
-    padding: 0 10px;
+    position: relative;
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    min-height: 0;
+    padding: 2px 8px 0;
+    gap: 2px;
   }
 
-  .player.phase-drawing .action-hint {
+  .player.phase-drawing .turn-copy {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .player.phase-drawing .turn-timing-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    width: 100%;
+    align-self: stretch;
+  }
+
+  .player.phase-drawing .eyebrow {
     display: none;
+  }
+
+  .player.phase-drawing .turn-timing-controls .tool-button,
+  .player.phase-guessing .turn-timing-controls .tool-button,
+  .player.phase-voting .turn-timing-controls .tool-button {
+    position: relative;
+    width: var(--touch-target, var(--touch));
+    min-width: var(--touch-target, var(--touch));
+    padding-inline: 0;
   }
 
   .drawing-turn .drawing-pad-host,
@@ -984,17 +1439,20 @@
   .drawing-turn .drawing-pad {
     position: relative;
     display: grid;
-    grid-template-rows: minmax(0, 1fr);
-    gap: 0;
+    container-type: size;
   }
 
-  .drawing-turn .canvas-stage {
+  .drawing-turn .canvas-stage,
+  .drawing-turn .submit-slot-host {
     position: relative;
-    width: min(100%, calc(75svh * 3 / 4));
-    height: auto;
-    max-height: none;
+    grid-area: 1 / 1;
+    width: min(100%, calc(100cqh * 3 / 4));
+    height: min(100%, calc(100cqw * 4 / 3));
+    max-width: 100%;
+    max-height: 100%;
     aspect-ratio: 3 / 4;
     align-self: start;
+    justify-self: center;
   }
 
   .drawing-turn .draw-canvas {
@@ -1009,10 +1467,9 @@
   }
 
   .drawing-turn .submit-slot-host {
-    position: absolute;
-    inset: 0;
     display: block;
     pointer-events: none;
+    min-height: 0;
   }
 
   .drawing-turn .submit-dock {
@@ -1030,28 +1487,68 @@
     display: none;
   }
 
+  .drawing-tools-slot {
+    position: relative;
+    z-index: 3;
+    margin-right: auto;
+    min-width: 0;
+  }
+
+  .drawing-tools-slot:empty {
+    display: none;
+  }
+
   .drawing-turn .tools-drawer {
     position: absolute;
     top: 8px;
     right: 8px;
-    z-index: 1;
-    max-width: calc(100% - 16px);
-    padding: 4px 10px;
+    z-index: 2;
+    max-width: min(100%, 280px);
+    padding: 0 8px;
     pointer-events: auto;
     background: var(--color-paper);
   }
 
-  .drawing-turn .tools-drawer[open] {
-    left: 8px;
+  .drawing-tools-slot .tools-drawer {
+    position: static;
+    top: auto;
+    right: auto;
+    max-width: 100%;
+    padding: 0;
+  }
+
+  .drawing-tools-slot .tools-drawer[open] .draw-toolbar {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 4px);
+    z-index: 7;
+    min-width: min(calc(100vw - 16px), 360px);
+    padding: 8px;
+    border-radius: var(--radius-md);
+    background: var(--color-paper);
   }
 
   .drawing-turn .tools-summary {
     display: flex;
     align-items: center;
+    justify-content: center;
+    gap: 6px;
     min-width: var(--touch-target);
     min-height: var(--touch-target);
-    padding: 0;
+    padding: 0 8px;
     color: var(--color-ink);
+  }
+
+  .drawing-turn .draw-status:not(.is-alert) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
   }
 
   .drawing-turn .draw-toolbar {
@@ -1071,7 +1568,8 @@
 }
 
 @media (max-width: 699px) and (orientation: landscape) {
-  .drawing-turn .canvas-stage {
+  .drawing-turn .canvas-stage,
+  .drawing-turn .submit-slot-host {
     width: min(100%, calc(70svh * 4 / 3));
     aspect-ratio: 4 / 3;
   }
@@ -1214,19 +1712,6 @@
 
   .player.phase-final-scores .share-card-button {
     margin-top: var(--space-1);
-  }
-
-  .player.phase-drawing .prompt {
-    font-size: 1.08rem;
-  }
-
-  .player.phase-drawing .deadline {
-    font-size: 1.65rem;
-  }
-
-  /* Reclaim vertical chrome so tools stay in the SE viewport. */
-  .player.phase-drawing .action-hint {
-    display: none;
   }
 
   .player.phase-drawing .player-turn-panel {
@@ -1386,23 +1871,34 @@
     text-overflow: ellipsis;
   }
 
+  .display-results[data-reveal-stage="deltas"] .causal-score-event,
+  .display-results[data-reveal-stage="complete"] .causal-score-event,
+  .display-results[data-reveal-stage="deltas"] .score-event,
+  .display-results[data-reveal-stage="complete"] .score-event {
+    padding: 8px 12px;
+    font-size: clamp(1.2rem, 2.2vw, 1.65rem);
+    line-height: 1.2;
+  }
+
+  .display-results[data-reveal-stage="deltas"] .score-delta,
+  .display-results[data-reveal-stage="deltas"] .score-total,
+  .display-results[data-reveal-stage="complete"] .score-delta,
+  .display-results[data-reveal-stage="complete"] .score-total {
+    min-height: 28px;
+    font-size: clamp(1.15rem, 1.8vw, 1.4rem);
+  }
+
   .display-results .current-totals {
     gap: 2px;
   }
 
   .display-results .result-advance {
-    grid-template-columns: auto minmax(126px, 0.32fr);
+    grid-template-columns: minmax(0, 1fr) var(--touch);
     grid-template-areas:
-      "label action"
-      "time action"
-      "note note";
+      "time action";
     align-items: center;
     gap: 2px var(--space-2);
     padding-top: var(--space-1);
-  }
-
-  .display-results .result-advance > .eyebrow {
-    grid-area: label;
   }
 
   .display-results .result-advance > .deadline,
@@ -1414,12 +1910,6 @@
   .display-results .result-advance > .btn {
     grid-area: action;
   }
-
-  .display-results .result-advance > .muted {
-    grid-area: note;
-    font-size: 0.62rem;
-    line-height: 1.1;
-  }
 }
 
 /* On short TVs, let each punchline breathe: choices first, scoring second.
@@ -1429,20 +1919,13 @@
   .results-panel[data-reveal-stage="tally"] .score-deltas,
   .results-panel[data-reveal-stage="tally"] .result-controls,
   .results-panel[data-reveal-stage="correct"] .score-deltas,
-  .results-panel[data-reveal-stage="correct"] .result-controls,
-  .results-panel[data-reveal-stage="deltas"] .breakdown,
-  .results-panel[data-reveal-stage="complete"] .breakdown {
+  .results-panel[data-reveal-stage="correct"] .result-controls {
     display: none;
   }
 
   .results-panel[data-reveal-stage="tally"] .result-sidebar,
   .results-panel[data-reveal-stage="correct"] .result-sidebar {
     grid-template-rows: minmax(0, 1fr);
-  }
-
-  .results-panel[data-reveal-stage="deltas"] .result-sidebar,
-  .results-panel[data-reveal-stage="complete"] .result-sidebar {
-    grid-template-rows: minmax(0, 1fr) auto;
   }
 
   .results-panel[data-reveal-stage="tally"] .breakdown-row,
@@ -1490,19 +1973,45 @@
   .results-panel[data-reveal-stage="deltas"] .score-event,
   .results-panel[data-reveal-stage="complete"] .causal-score-event,
   .results-panel[data-reveal-stage="complete"] .score-event {
-    padding: 4px 7px;
-    font-size: var(--display-meta);
+    padding: 8px 12px;
+    font-size: clamp(1.2rem, 2.2vw, 1.65rem);
+  }
+
+  .results-panel[data-reveal-stage="deltas"] .round-outcome,
+  .results-panel[data-reveal-stage="complete"] .round-outcome {
+    font-size: clamp(1.2rem, 2.4vw, 1.6rem);
+    line-height: 1.1;
+  }
+
+  .results-panel[data-reveal-stage="deltas"] .score-deltas,
+  .results-panel[data-reveal-stage="complete"] .score-deltas {
+    gap: var(--space-2);
   }
 
   .results-panel[data-reveal-stage="deltas"] .score-total,
   .results-panel[data-reveal-stage="complete"] .score-total {
-    min-height: 22px;
-    font-size: var(--display-meta);
+    min-height: 28px;
+    font-size: clamp(1.15rem, 1.8vw, 1.4rem);
+    justify-self: stretch;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .results-panel[data-reveal-stage="deltas"] .score-events,
+  .results-panel[data-reveal-stage="complete"] .score-events {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .results-panel[data-reveal-stage="deltas"] .current-totals,
+  .results-panel[data-reveal-stage="complete"] .current-totals {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
   }
 }
 
 /* Eight-player lobbies need every player identity on the shared screen. Compact
-   only the short-TV roster, while keeping explicit Ready/Offline and Host text. */
+   only the short-TV roster, while keeping Host text. */
 @media (max-width: 1600px) and (max-height: 840px) {
   .display-grid-lobby .players-panel:has(.player-row:nth-child(7)) {
     gap: var(--space-2);
@@ -1617,6 +2126,71 @@
   }
 }
 
+@media (min-width: 3200px) {
+  :root {
+    --display-meta: max(18px, 0.47vw);
+  }
+
+  .display-results .causal-score-event,
+  .display-results .score-event,
+  .display-results .score-delta,
+  .display-results .score-total,
+  .display.phase-results .causal-score-event,
+  .display.phase-results .score-total {
+    font-size: max(18px, var(--display-meta));
+  }
+
+  .display-grid-drawing .progress-panel-compact .big-count {
+    font-size: max(10rem, 8vw);
+  }
+
+  .display-grid-drawing .progress-panel-compact .muted,
+  .display .spectator-watchers {
+    font-size: max(1.75rem, 1.6vw);
+  }
+
+  .display.phase-voting .vote-list .vote-answer {
+    font-size: max(2.75rem, 2vw);
+  }
+
+  .display.phase-guessing .reveal-canvas {
+    height: min(84svh, calc(100dvh - 120px));
+  }
+
+  .display-results[data-reveal-stage="hold"] .result-canvas {
+    height: min(86svh, calc(100dvh - 96px));
+  }
+
+  .display-results[data-reveal-stage="correct"] .reveal-prompt {
+    font-size: max(6rem, 4.5vw);
+  }
+
+  .display-results[data-reveal-stage="deltas"] .round-outcome,
+  .display-results[data-reveal-stage="complete"] .round-outcome {
+    font-size: max(3.25rem, 2.4vw);
+  }
+
+  .display-results[data-reveal-stage="deltas"] .causal-score-event,
+  .display-results[data-reveal-stage="complete"] .causal-score-event {
+    font-size: max(2.75rem, 2vw);
+  }
+
+  .display-results[data-reveal-stage="deltas"] .score-total,
+  .display-results[data-reveal-stage="complete"] .score-total {
+    font-size: max(2rem, 1.5vw);
+  }
+
+  .display .reveal-prompt {
+    font-size: max(4.5rem, 3.2vw);
+  }
+
+  .display.phase-voting .vote-list .option-label {
+    width: max(72px, 3.2vw);
+    height: max(72px, 3.2vw);
+    font-size: max(1.75rem, 1.8vw);
+  }
+}
+
 @media (min-width: 3200px) and (min-height: 1800px) {
   .qr-stage {
     --qr-size: min(420px, 22vh, 12vw);
@@ -1634,13 +2208,6 @@
 
   .room-hero-copy h2 {
     font-size: clamp(2.1rem, 3.4vh, 3rem);
-  }
-
-  .display-results .causal-score-event,
-  .display-results .score-event,
-  .display-results .score-delta,
-  .display-results .score-total {
-    font-size: var(--display-meta);
   }
 }
 

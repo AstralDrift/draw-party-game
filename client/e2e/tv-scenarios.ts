@@ -1,5 +1,5 @@
 import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { createPlayers, drawStroke, makeAppUrl, startParty } from './helpers';
+import { createPlayers, drawStroke, expectTvGuessingStage, makeAppUrl, startParty } from './helpers';
 import { TV_REVIEW_VIEWPORTS, TV_VIEWPORTS, type TvViewport } from './tv-layout';
 
 export type TvDisplaySession = {
@@ -103,7 +103,7 @@ export async function runDrawingGuessingScenario(opts: {
         await player.getByRole('button', { name: 'Submit Drawing' }).click();
       }
 
-      await expect(tv.getByText('What did they draw?')).toBeVisible({ timeout: 20_000 });
+      await expectTvGuessingStage(tv);
       await opts.assertGuessing({ page: tv, viewport, shotName: `${viewport.name}-guessing.png` });
     } finally {
       await Promise.all(contexts.map((context) => context.close()));

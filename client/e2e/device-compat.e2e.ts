@@ -5,7 +5,7 @@ import {
   expectNoVerticalOverflow,
   TV_VIEWPORTS
 } from './tv-layout';
-import { startPractice } from './helpers';
+import { expectTvGuessingStage, startPractice } from './helpers';
 
 type Viewport = {
   width: number;
@@ -161,7 +161,8 @@ test('TV remote focus stays visible for liquid glass living-room navigation', as
         innerHeight: window.innerHeight
       };
     });
-    expect(focus.text).toContain('Start Party');
+    expect(focus.text).toBe('');
+    expect(await startButton.getAttribute('aria-label')).toBe('Start from TV (fallback)');
     expect(focus.outline).not.toBe('none');
     expect(focus.top).toBeGreaterThanOrEqual(0);
     expect(focus.bottom).toBeLessThanOrEqual(focus.innerHeight + 4);
@@ -209,7 +210,7 @@ test('TV guessing phase fits 720p without page scroll', async ({ baseURL, browse
       await player.getByRole('button', { name: 'Submit Drawing' }).click();
     }
 
-    await expect(tv.getByText('What did they draw?')).toBeVisible();
+    await expectTvGuessingStage(tv);
     await expectNoHorizontalOverflow(tv);
     await expectNoVerticalOverflow(tv);
     const revealBottom = await tv.evaluate(() => {
@@ -232,6 +233,8 @@ test('phone, Fire tablet, and iPad drawing layouts keep canvas and submit reacha
     const contexts: BrowserContext[] = [];
     try {
       const { player } = await startSoloDrawing(browser, contexts, appUrl, target);
+      await expect(player.getByRole('button', { name: 'Submit Drawing' })).toHaveCount(0);
+      await drawStroke(player);
       const metrics = await playerMetrics(player);
 
       expect(metrics.scrollWidth).toBeLessThanOrEqual(target.viewport.width + 1);
@@ -245,6 +248,10 @@ test('phone, Fire tablet, and iPad drawing layouts keep canvas and submit reacha
       } else {
         expect(Math.abs(metrics.canvas.top - metrics.submit.top)).toBeLessThanOrEqual(4);
       }
+      expect(
+        metrics.promptFontSize,
+        `${target.name}: prompt must outrank the clock`
+      ).toBeGreaterThanOrEqual(metrics.deadlineFontSize);
       expect(metrics.submit.bottom).toBeLessThanOrEqual(target.viewport.height + 4);
       expect(metrics.tools.bottom).toBeLessThanOrEqual(target.viewport.height + 4);
       expect(metrics.interactiveTargets.length).toBeGreaterThan(0);
@@ -306,7 +313,9 @@ async function startSoloDrawing(
 async function playerMetrics(page: Page): Promise<{
   backingRatio: number;
   canvas: DOMRect;
+  deadlineFontSize: number;
   interactiveTargets: Array<{ height: number; label: string; width: number }>;
+  promptFontSize: number;
   scrollWidth: number;
   submit: DOMRect;
   tools: DOMRect;
@@ -320,13 +329,19 @@ async function playerMetrics(page: Page): Promise<{
       return element.getBoundingClientRect().toJSON();
     };
     const canvas = document.querySelector('canvas.draw-canvas') as HTMLCanvasElement | null;
+    const prompt = document.querySelector('#prompt-text');
+    const deadline = document.querySelector('#deadline-text');
     if (!canvas) {
       throw new Error('Missing drawing canvas');
+    }
+    if (!prompt || !deadline) {
+      throw new Error('Missing drawing prompt or deadline');
     }
     const canvasRect = canvas.getBoundingClientRect().toJSON();
     return {
       backingRatio: canvas.width / canvasRect.width,
       canvas: canvasRect,
+      deadlineFontSize: parseFloat(getComputedStyle(deadline).fontSize),
       interactiveTargets: Array.from(document.querySelectorAll<HTMLElement>('.drawing-turn button, .drawing-turn summary'))
         .map((element) => ({ element, target: element.getBoundingClientRect() }))
         .filter(({ target }) => target.width > 0 && target.height > 0)
@@ -335,6 +350,7 @@ async function playerMetrics(page: Page): Promise<{
           label: `${element.tagName.toLowerCase()}.${element.className}`,
           width: target.width
         })),
+      promptFontSize: parseFloat(getComputedStyle(prompt).fontSize),
       scrollWidth: document.documentElement.scrollWidth,
       submit: rect('.submit-dock'),
       tools: rect('.tools-drawer')

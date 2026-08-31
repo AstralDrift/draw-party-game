@@ -1,4 +1,4 @@
-import { Eraser, Trash2, Undo2, createElement as createIconElement, type IconNode } from 'lucide';
+import { Eraser, Palette, Trash2, Undo2, createElement as createIconElement, type IconNode } from 'lucide';
 import { CANVAS_HEIGHT, CANVAS_WIDTH, type DrawingDoc, type Point, type Stroke } from './protocol';
 
 const COLORS = ['#111111', '#ff595e', '#ffca3a', '#34d399', '#1982c4', '#6a4c93', '#f957a8', '#ffffff'];
@@ -29,6 +29,7 @@ const MAX_POINTS_PER_STROKE = 180;
 const POINT_DISTANCE_THRESHOLD = 4;
 const CLEAR_ARM_MS = 3000;
 const PORTRAIT_DRAWING_QUERY = '(max-width: 699px) and (orientation: portrait)';
+const COMPACT_TOOLS_QUERY = '(max-width: 699px)';
 const PORTRAIT_FRAME_SCALE = CANVAS_HEIGHT / CANVAS_WIDTH;
 const PORTRAIT_FRAME_WIDTH = CANVAS_HEIGHT * PORTRAIT_FRAME_SCALE;
 const PORTRAIT_FRAME_LEFT = (CANVAS_WIDTH - PORTRAIT_FRAME_WIDTH) / 2;
@@ -142,6 +143,7 @@ export class DrawingPad {
   private readonly canvas: HTMLCanvasElement;
   private readonly status: HTMLElement;
   private readonly toolsSummary: HTMLElement;
+  private readonly toolsSwatch: HTMLElement;
   private readonly drawing: DrawingDoc = createEmptyDrawing();
   private color = COLORS[0];
   private size = SIZES[1];
@@ -153,17 +155,25 @@ export class DrawingPad {
   private readonly sizeButtons = new Map<number, HTMLButtonElement>();
   private readonly undoButton: HTMLButtonElement;
   private readonly clearButton: HTMLButtonElement;
+  private readonly toolsDrawer: HTMLDetailsElement;
+  private readonly toolsSlot: HTMLElement | undefined;
   private readonly portraitDrawingMedia: MediaQueryList;
+  private readonly compactToolsMedia: MediaQueryList;
   private locked = false;
   private clearArmed = false;
   private clearArmTimer: number | null = null;
   private readonly handlePortraitDrawingChange = (): void => {
     this.redraw();
   };
+  private readonly handleCompactToolsChange = (): void => {
+    this.placeTools();
+  };
 
-  constructor(onChange: () => void, submitSlot?: HTMLElement) {
+  constructor(onChange: () => void, submitSlot?: HTMLElement, toolsSlot?: HTMLElement) {
     this.onChange = onChange;
+    this.toolsSlot = toolsSlot;
     this.portraitDrawingMedia = window.matchMedia(PORTRAIT_DRAWING_QUERY);
+    this.compactToolsMedia = window.matchMedia(COMPACT_TOOLS_QUERY);
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'draw-canvas';
     this.canvas.width = CANVAS_WIDTH;
@@ -175,7 +185,18 @@ export class DrawingPad {
     this.status.setAttribute('aria-live', 'polite');
     this.toolsSummary = document.createElement('summary');
     this.toolsSummary.className = 'tools-summary';
-    this.toolsSummary.setAttribute('aria-label', 'Open drawing tools');
+    this.toolsSwatch = document.createElement('span');
+    this.toolsSwatch.className = 'tools-summary-swatch';
+    this.toolsSwatch.setAttribute('aria-hidden', 'true');
+    this.toolsSummary.append(
+      createIconElement(Palette, {
+        class: 'tools-summary-icon',
+        'aria-hidden': 'true',
+        width: 22,
+        height: 22
+      }),
+      this.toolsSwatch
+    );
 
     const toolbar = document.createElement('div');
     toolbar.className = 'draw-toolbar';
@@ -271,12 +292,10 @@ export class DrawingPad {
     actionTools.appendChild(this.clearButton);
     toolbar.append(colorTools, sizeTools, actionTools);
 
-    const toolsDrawer = document.createElement('details');
-    toolsDrawer.className = 'tools-drawer';
-    if (window.matchMedia('(min-width: 700px)').matches) {
-      toolsDrawer.open = true;
-    }
-    toolsDrawer.append(this.toolsSummary, toolbar);
+    this.toolsDrawer = document.createElement('details');
+    this.toolsDrawer.className = 'tools-drawer';
+    this.toolsDrawer.open = !this.compactToolsMedia.matches;
+    this.toolsDrawer.append(this.toolsSummary, toolbar);
 
     const canvasStage = document.createElement('div');
     canvasStage.className = 'canvas-stage';
@@ -288,11 +307,21 @@ export class DrawingPad {
     if (submitSlot) {
       this.root.appendChild(submitSlot);
     }
-    this.root.append(toolsDrawer);
+    this.placeTools();
     this.portraitDrawingMedia.addEventListener('change', this.handlePortraitDrawingChange);
+    this.compactToolsMedia.addEventListener('change', this.handleCompactToolsChange);
     this.bindPointerEvents();
     this.redraw();
     this.updateStatus();
+  }
+
+  private placeTools(): void {
+    this.toolsDrawer.open = !this.compactToolsMedia.matches;
+    if (this.compactToolsMedia.matches && this.toolsSlot) {
+      this.toolsSlot.appendChild(this.toolsDrawer);
+      return;
+    }
+    this.root.appendChild(this.toolsDrawer);
   }
 
   getDrawing(): DrawingDoc {
@@ -357,6 +386,8 @@ export class DrawingPad {
 
   destroy(): void {
     this.portraitDrawingMedia.removeEventListener('change', this.handlePortraitDrawingChange);
+    this.compactToolsMedia.removeEventListener('change', this.handleCompactToolsChange);
+    this.toolsDrawer.remove();
     if (this.clearArmTimer !== null) {
       window.clearTimeout(this.clearArmTimer);
       this.clearArmTimer = null;
@@ -447,11 +478,16 @@ export class DrawingPad {
   private updateStatus(): void {
     const colorLabel = COLOR_LABELS[this.color] ?? this.color;
     const summaryColorLabel = SUMMARY_COLOR_LABELS[this.color] ?? colorLabel;
-    this.toolsSummary.textContent = `Tools · ${summaryColorLabel} · ${this.size}px`;
+    this.toolsSummary.setAttribute(
+      'aria-label',
+      `Open drawing tools, ${summaryColorLabel}, ${this.size}px`
+    );
+    this.toolsSwatch.style.background = this.color;
     this.status.textContent = this.locked
       ? 'Drawing locked while sending.'
       : this.limitMessage ||
         `${this.drawing.strokes.length} ${this.drawing.strokes.length === 1 ? 'stroke' : 'strokes'}`;
+    this.status.classList.toggle('is-alert', this.locked || Boolean(this.limitMessage));
     this.undoButton.disabled = this.locked || !this.hasInk();
     this.clearButton.disabled = this.locked || !this.hasInk();
     if (!this.hasInk() && this.clearArmed) {

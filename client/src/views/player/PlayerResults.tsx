@@ -6,17 +6,14 @@ import {
   shouldResetPendingServerAction,
   type ReplayAction
 } from '../../controller';
-import { stageVisible, useRevealStage } from '../../hooks/useRevealStage';
+import { useRevealStage } from '../../hooks/useRevealStage';
 import { useServerTimedGate } from '../../hooks/useServerTimedGate';
 import { isSelfHost } from '../../host';
-import { rematchPrompt } from '../../polish';
 import { Button } from '../../components/ui/Button';
-import { Deadline } from '../../components/ui/Deadline';
 import {
   groupScoreEvents,
   scoreEventText
 } from '../../components/ui/ResultsPanel';
-import { ReactionBar } from '../../components/ui/ReactionBar';
 import { ScoresPanel } from '../../components/ui/ScoresPanel';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { Shell } from '../../components/ui/Shell';
@@ -25,7 +22,7 @@ export function PlayerResults(): React.JSX.Element {
   const { snapshot, clientId, status, errorMessage, clearError, send } = useGame();
   const [advancePending, setAdvancePending] = useState(false);
   const result = snapshot?.roundResult;
-  const { stage, complete } = useRevealStage(
+  const { complete } = useRevealStage(
     result,
     snapshot?.turnToken ?? 0,
     snapshot?.deadlineMs,
@@ -40,7 +37,9 @@ export function PlayerResults(): React.JSX.Element {
   const personalEvents = groupScoreEvents(
     result?.scoreEvents?.filter((event) => event.playerId === clientId) ?? []
   );
-  const scoresVisible = Boolean(result) && stageVisible(stage, 'deltas');
+  const scored =
+    personalEvents.length > 0 || Boolean(personalDelta && personalDelta.delta > 0);
+  const showPersonalScore = Boolean(result) && complete && !spectator && !practice && scored;
   const scoreAfter = personalDelta?.scoreAfter ?? self?.score;
 
   useEffect(() => {
@@ -52,15 +51,11 @@ export function PlayerResults(): React.JSX.Element {
   return (
     <Shell title="Results">
       <GlassPanel className="player-result-companion">
-        <p className="eyebrow">{practice ? 'Practice · scores off' : 'Reveal time'}</p>
-        <h2>Look up at the TV for the reveal</h2>
-        <p className="muted">Your phone is the controller. The punchline is on the big screen.</p>
+        <h2>Look up</h2>
 
-        {scoresVisible && !spectator ? (
+        {showPersonalScore ? (
           <div className="personal-score" role="status" aria-live="polite">
-            {practice ? (
-              <p className="success-box">Practice complete. Scores stay off.</p>
-            ) : personalEvents.length > 0 ? (
+            {personalEvents.length > 0 ? (
               <div className="score-events">
                 {personalEvents.map((event) => (
                   <div key={`${event.kind}:${event.playerId}`} className="score-event causal-score-event">
@@ -72,28 +67,22 @@ export function PlayerResults(): React.JSX.Element {
                   <span className="pill score-total">{scoreAfter} total</span>
                 )}
               </div>
-            ) : personalDelta && personalDelta.delta > 0 ? (
+            ) : (
               <p className="success-box">
-                +{personalDelta.delta}
+                +{personalDelta?.delta}
                 {scoreAfter === undefined ? '' : ` · ${scoreAfter} total`}
               </p>
-            ) : (
-              <p className="muted">No points this reveal.</p>
             )}
           </div>
         ) : null}
-
-        <ReactionBar />
       </GlassPanel>
 
-      {isHost ? (
+      {isHost && complete ? (
         <GlassPanel className="advance-panel result-phone-advance" tone="soft">
-          <p className="eyebrow">Next up in</p>
-          <Deadline />
           <Button
             className="spotlight-button"
             wide
-            disabled={!complete || advancePending}
+            disabled={advancePending}
             onClick={() => {
               clearError();
               if (send({ type: 'startGame' })) setAdvancePending(true);
@@ -101,19 +90,14 @@ export function PlayerResults(): React.JSX.Element {
           >
             {advancePending ? 'Continuing…' : 'Continue'}
           </Button>
-          <p className="muted">Or wait — the game moves on when the timer hits zero.</p>
         </GlassPanel>
-      ) : (
-        <GlassPanel className="advance-panel" tone="soft">
-          <p className="muted">Host decides—keep this tab open.</p>
-        </GlassPanel>
-      )}
+      ) : null}
     </Shell>
   );
 }
 
 export function PlayerFinal(): React.JSX.Element {
-  const { snapshot, clientId, status, errorMessage, clearError, send, setErrorMessage } = useGame();
+  const { snapshot, clientId, status, errorMessage, clearError, send } = useGame();
   const [advancePending, setAdvancePending] = useState<ReplayAction | null>(null);
   const scores = snapshot?.finalScores ?? [];
   const isHost = isSelfHost(snapshot?.players ?? [], clientId ?? '');
@@ -147,20 +131,17 @@ export function PlayerFinal(): React.JSX.Element {
         podium
         role="player"
         practice={practice}
-        onShareFailed={() => setErrorMessage('Could not export the podium card.')}
       />
 
-      {isHost ? (
+      {isHost && replay?.action && replayReady ? (
         <GlassPanel className="advance-panel encore-panel" tone="soft">
-          <p className="eyebrow">{practice ? 'Practice · scores off' : 'Host controls'}</p>
-          <h2 className="encore-title">{rematchPrompt(scores)}</h2>
           <Button
             className="spotlight-button"
             wide
             icon={RotateCcw}
-            disabled={!replay?.action || !replayReady || Boolean(advancePending)}
+            disabled={Boolean(advancePending)}
             onClick={() => {
-              const action = replay?.action;
+              const action = replay.action;
               if (!action) return;
               clearError();
               const sent =
@@ -170,21 +151,15 @@ export function PlayerFinal(): React.JSX.Element {
               if (sent) setAdvancePending(action);
             }}
           >
-            {advancePending
-              ? 'Starting…'
-              : !replayReady && replay?.action
-                ? 'Podium first…'
-                : replay?.label}
+            {advancePending ? 'Starting…' : replay.label}
           </Button>
-          <p className="muted">
-            {replayReady ? replay?.guidance : 'Give the podium its moment. Replay unlocks shortly.'}
-          </p>
         </GlassPanel>
-      ) : (
-        <GlassPanel className="advance-panel" tone="soft">
-          <p className="muted">Host decides. {replay?.guidance}</p>
+      ) : null}
+      {isHost && !replay?.action && replay?.guidance ? (
+        <GlassPanel className="advance-panel encore-panel" tone="soft">
+          <p className="muted">{replay.guidance}</p>
         </GlassPanel>
-      )}
+      ) : null}
     </Shell>
   );
 }

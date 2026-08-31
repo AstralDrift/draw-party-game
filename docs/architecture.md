@@ -35,12 +35,12 @@ stateDiagram-v2
   FinalScores --> Drawing: Party / Practice replay
 ```
 
-1. **Lobby** — display creates room + QR/code; phones join; display adjusts timers/rounds/prompt pack. Party requires three connected phones; one phone can explicitly start unscored Practice.
+1. **Lobby** — display creates room + QR/code; phones join; the host phone picks a pace and prompt pack. Party requires three connected phones; one phone can explicitly start unscored Practice.
 2. **Drawing** — each connected non-spectator draws an assigned prompt and submits once they have ink.
 3. **Guessing** — one drawing at a time; non-artist players submit titles; reactions allowed. The server accepts every sanitized title without revealing whether it matches the truth or another player's title.
 4. **Voting** — non-artists pick the real prompt; artist watches; reactions allowed. A normalized truth match is omitted from the fake list and becomes that player's locked correct vote. Normalized duplicate fakes share one option, and every coauthor is blocked from voting for it. If no fake remains, the server skips the trivial truth-only ballot: truth matchers keep their locked correct votes, non-submitters receive no vote, and a turn with no guesses awards nothing.
 5. **Results** — server publishes `RoundResult`; client stages reveal; engine auto-advances after `resultsSeconds` unless display Continues early.
-6. **FinalScores** — podium after configured rounds; display can restart or export a share card after a server-enforced three-second celebration window. Practice always finishes after one drawing round and must be explicitly replayed as Practice.
+6. **FinalScores** — podium after configured rounds; host phone restarts after a server-enforced three-second celebration window; display can export a share card as a TV remote fallback after that window. Practice always finishes after one drawing round and must be explicitly replayed as Practice.
 
 During Drawing, Guessing, or Voting, the display or host phone may extend the current server deadline by 30 seconds once. Extension is rejected after expiry and resets only when the engine begins the next timed turn.
 

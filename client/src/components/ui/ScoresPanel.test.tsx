@@ -59,7 +59,7 @@ describe('ScoresPanel', () => {
     expect(markup).not.toContain('share-card-button');
   });
 
-  it('keeps controller sharing direct while labeling the TV export as a fallback', () => {
+  it('keeps the podium cheer on phones and labels the TV export as a fallback', () => {
     const scoreEntries = scores([
       ['Ava', 400],
       ['Bo', 200]
@@ -67,15 +67,27 @@ describe('ScoresPanel', () => {
     const playerMarkup = renderToStaticMarkup(
       <ScoresPanel scores={scoreEntries} podium role="player" />
     );
-    const displayMarkup = renderToStaticMarkup(
+    const cheeringMarkup = renderToStaticMarkup(
       <ScoresPanel scores={scoreEntries} podium role="display" />
     );
+    const displayMarkup = renderToStaticMarkup(
+      <ScoresPanel scores={scoreEntries} podium role="display" shareReady />
+    );
 
-    expect(playerMarkup).toContain('Download Podium');
-    expect(playerMarkup).not.toContain('from TV (fallback)');
-    expect(displayMarkup).toContain('Download Podium from TV (fallback)');
+    expect(playerMarkup).not.toContain('Download Podium');
+    expect(playerMarkup).not.toContain('share-card-button');
+    expect(playerMarkup).not.toContain('Final Podium');
+    expect(playerMarkup).not.toContain('class="eyebrow"');
+    expect(cheeringMarkup).not.toContain('Download Podium');
+    expect(cheeringMarkup).not.toContain('share-card-button');
+    expect(displayMarkup).not.toContain('Final Podium');
+    expect(displayMarkup).toContain('aria-label="Download Podium from TV (fallback)"');
+    expect(displayMarkup).toContain('>Download Podium</button>');
+    expect(displayMarkup).not.toContain('>Download Podium from TV (fallback)<');
     expect(displayMarkup).toContain('tv-action-fallback');
     expect(displayMarkup).toContain('btn--ghost');
+    expect(displayMarkup).not.toContain('encore-title');
+    expect(displayMarkup).not.toContain('take it back');
   });
 });
 

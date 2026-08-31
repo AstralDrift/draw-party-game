@@ -410,6 +410,10 @@ describe('drawing utilities', () => {
     restored.strokes[0]!.points[0]!.x = 999;
     expect(pad.getDrawing().strokes[0]?.points[0]?.x).not.toBe(999);
     expect(pad.root.querySelector('.draw-status')?.textContent).toBe('1 stroke');
+    expect(pad.root.querySelector('.tools-summary')?.getAttribute('aria-label')).toBe(
+      'Open drawing tools, black, 6px'
+    );
+    expect(pad.root.querySelector('.tools-summary')?.textContent).not.toContain('Tools');
 
     const undo = pad.root.querySelector<HTMLButtonElement>('button[aria-label="Undo last stroke"]');
     undo?.click();
@@ -425,6 +429,49 @@ describe('drawing utilities', () => {
 
     pad.destroy();
     expect(mediaLists[0]?.removeEventListener).toHaveBeenCalledWith('change', expect.any(Function));
+    expect(mediaLists[1]?.removeEventListener).toHaveBeenCalledWith('change', expect.any(Function));
+  });
+
+  it('moves compact phone tools into a provided slot instead of covering the pad', () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation((query: string) =>
+      ({
+        matches: query === '(max-width: 699px)',
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(() => true)
+      }) as unknown as MediaQueryList
+    );
+
+    const context = {
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      transform: vi.fn(),
+      beginPath: vi.fn(),
+      arc: vi.fn(),
+      fill: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 1,
+      lineCap: 'butt',
+      lineJoin: 'miter'
+    } as unknown as CanvasRenderingContext2D;
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context);
+
+    const slot = document.createElement('div');
+    const pad = new DrawingPad(vi.fn(), undefined, slot);
+    expect(slot.querySelector('.tools-drawer')).not.toBeNull();
+    expect(pad.root.querySelector('.tools-drawer')).toBeNull();
+    pad.destroy();
+    expect(slot.querySelector('.tools-drawer')).toBeNull();
   });
 
   it('caps dense stroke points while preserving endpoints and edge lengths', () => {

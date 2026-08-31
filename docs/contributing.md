@@ -52,6 +52,8 @@ Match blast radius for narrow PRs:
 | WebSocket / reconnect / health / static | `cargo test` (incl. `main.rs` tests) |
 | Client logic / protocol | `npm --prefix client test -- --run` + typecheck |
 | UI / layout / touch | Relevant Playwright e2e (include mobile phone contexts) |
+| Couch loop UX (join → rematch on phones + TV) | `npm run e2e:couch-loop` before a living-room playtest |
+| Living-room playtest (real phones + TV on LAN) | `npm run playtest:local` — binds `0.0.0.0:3000`; open the printed LAN URL on the TV so QR join works on phones |
 | TV / display layout | `npm run e2e:tv` (geometry) + `npm run e2e:tvbro` (WebView-shaped pixel baselines). Optional: `npm run review:tv` / `review:tvbro` galleries; local APK truth via `npm run review:tvbro:device` |
 | Protocol constants/messages | Both Rust and TS sides + tests above |
 | Docs only | Link walk + constant accuracy vs code |

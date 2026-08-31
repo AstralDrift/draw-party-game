@@ -1,14 +1,33 @@
 import { useGame } from '../../app/GameProvider';
-import { optionLabel } from '../../option-label';
-import { Deadline } from '../../components/ui/Deadline';
-import { DrawingCanvas } from '../../components/ui/DrawingPadHost';
 import { GlassPanel } from '../../components/ui/GlassPanel';
-import { ProgressPanel } from '../../components/ui/ProgressPanel';
 import { ReactionBar, ReactionBursts } from '../../components/ui/ReactionBar';
 import { Shell } from '../../components/ui/Shell';
-import { SpectatorBanner } from '../../components/ui/SpectatorBanner';
 import { PlayerFinal, PlayerResults } from './PlayerResults';
 import { PlayerLobby } from './PlayerLobby';
+
+function SpectatorLookUp({
+  className,
+  reactions
+}: {
+  className: string;
+  reactions: boolean;
+}): React.JSX.Element {
+  return (
+    <Shell title="Watch">
+      <GlassPanel className={`play-panel player-turn-panel ${className}`}>
+        <div className="turn-header compact">
+          <div className="turn-copy">
+            <div className="prompt small" aria-label="Spectating. Look up. You play next round.">
+              Look up
+            </div>
+          </div>
+        </div>
+        {reactions ? <ReactionBar /> : null}
+      </GlassPanel>
+      {reactions ? <ReactionBursts /> : null}
+    </Shell>
+  );
+}
 
 export function SpectatorDrawing(): React.JSX.Element {
   const { snapshot } = useGame();
@@ -21,27 +40,10 @@ export function SpectatorDrawing(): React.JSX.Element {
   }
 
   return (
-    <Shell title="Watch">
-      <GlassPanel className="play-panel player-turn-panel drawing-turn spectator-turn">
-        <SpectatorBanner />
-        <div className="turn-header">
-          <div className="turn-copy">
-            <p className="eyebrow">
-              Round {snapshot.currentRound} of {snapshot.totalRounds}
-            </p>
-            <div className="prompt small">Phones are drawing</div>
-          </div>
-          <Deadline />
-        </div>
-        <p className="action-hint">Sit tight and watch the TV.</p>
-        <ProgressPanel
-          title="Drawings"
-          snapshot={snapshot}
-          submittedIds={snapshot.drawingSubmittedIds}
-          phase="drawing"
-        />
-      </GlassPanel>
-    </Shell>
+    <SpectatorLookUp
+      className="drawing-turn spectator-turn"
+      reactions={false}
+    />
   );
 }
 
@@ -56,24 +58,10 @@ export function SpectatorGuessing(): React.JSX.Element {
   }
 
   return (
-    <Shell title="Watch">
-      <GlassPanel className="play-panel player-turn-panel guessing-turn spectator-turn">
-        <SpectatorBanner />
-        <div className="turn-header compact">
-          <div className="turn-copy">
-            <p className="eyebrow">
-              {snapshot.currentArtistName ? `By ${snapshot.currentArtistName}` : 'Reveal'}
-            </p>
-            <div className="prompt small">Players are guessing</div>
-          </div>
-          <Deadline />
-        </div>
-        <p className="action-hint">Watch the guesses roll in.</p>
-        <DrawingCanvas drawing={snapshot.currentDrawing} className="reveal-canvas phone-canvas" />
-        <ReactionBar />
-      </GlassPanel>
-      <ReactionBursts />
-    </Shell>
+    <SpectatorLookUp
+      className="guessing-turn spectator-turn"
+      reactions
+    />
   );
 }
 
@@ -88,40 +76,10 @@ export function SpectatorVoting(): React.JSX.Element {
   }
 
   return (
-    <Shell title="Watch">
-      <GlassPanel className="play-panel player-turn-panel voting-turn spectator-turn">
-        <SpectatorBanner />
-        <div className="turn-header compact">
-          <div className="turn-copy">
-            <p className="eyebrow">
-              {snapshot.currentArtistName ? `By ${snapshot.currentArtistName}` : 'Reveal'}
-            </p>
-            <div className="prompt small">Players are voting</div>
-          </div>
-          <Deadline />
-        </div>
-        <p className="action-hint">Watch the vote on the TV.</p>
-        <DrawingCanvas drawing={snapshot.currentDrawing} className="reveal-canvas phone-canvas" />
-        <div className="vote-list compact player-vote-list">
-          {snapshot.votingOptions.map((option, index) => (
-            <div
-              key={option.id}
-              className="vote-option disabled"
-              aria-label={`Option ${optionLabel(index)}: ${option.text}`}
-            >
-              <span className="vote-option-content">
-                <span className="option-label" aria-hidden="true">
-                  {optionLabel(index)}
-                </span>
-                <span className="vote-answer">{option.text}</span>
-              </span>
-            </div>
-          ))}
-        </div>
-        <ReactionBar />
-      </GlassPanel>
-      <ReactionBursts />
-    </Shell>
+    <SpectatorLookUp
+      className="voting-turn spectator-turn"
+      reactions
+    />
   );
 }
 

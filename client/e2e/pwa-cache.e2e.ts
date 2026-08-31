@@ -41,12 +41,12 @@ test('keeps app routes on the browser shell and API routes on JSON', async ({ pa
   });
 
   await page.goto('/join');
-  await expect(page.getByText('Join Game')).toBeVisible();
+  await expect(page.getByText('Type the code')).toBeVisible();
   await expect(page.locator('input.code-input')).toHaveValue('');
 
   await page.goto('/join/ABCD');
-  await expect(page.getByText('Join Game')).toBeVisible();
-  await expect(page.locator('.player-room-chip')).toContainText('ABCD');
+  await expect(page.locator('.player-join-card .eyebrow')).toHaveText('ABCD');
+  await expect(page.locator('.player-room-chip')).toHaveCount(0);
   await expect(page.locator('input.code-input')).toHaveCount(0);
   await page.getByRole('button', { name: 'Join the Party' }).click();
   await expect(page.getByRole('alert')).toHaveText(/enter your name/i);

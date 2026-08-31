@@ -53,19 +53,15 @@ describe('party polish copy', () => {
   });
 
   it('guides hosts toward a fuller party while keeping solo startable', () => {
-    expect(displayLobbyStartNote(0, 1)).toBe('Scan the QR (or type the code). Need 1+ phones.');
-    expect(displayLobbyStartNote(1, 3)).toBe('Need 2 more phones before kickoff.');
-    expect(displayLobbyStartNote(1, 1)).toBe(
-      '1 ready — playable now, best with 3+ for votes and fakes.'
-    );
-    expect(displayLobbyStartNote(2, 1)).toBe(
-      '2 ready — playable now, best with 3+ for votes and fakes.'
-    );
-    expect(displayLobbyStartNote(3, 1)).toBe('3 ready — start from the host phone.');
+    expect(displayLobbyStartNote(0, 1)).toBe('Need 1+ phones.');
+    expect(displayLobbyStartNote(1, 3)).toBe('Need 2 more.');
+    expect(displayLobbyStartNote(1, 1)).toBe('1 ready — better with 3+.');
+    expect(displayLobbyStartNote(2, 1)).toBe('2 ready — better with 3+.');
+    expect(displayLobbyStartNote(3, 1)).toBe('3 ready.');
     expect(playerLobbyReadyNote(0, 1)).toBe('Need 1 more player.');
     expect(playerLobbyReadyNote(1, 1)).toBe('Invite 2 more for better voting.');
     expect(playerLobbyReadyNote(2, 1)).toBe('Invite 1 more for better voting.');
-    expect(playerLobbyReadyNote(3, 1)).toBe('The host phone can start the game.');
+    expect(playerLobbyReadyNote(3, 1)).toBe('');
   });
 
   it('assigns podium titles and phase action hints', () => {

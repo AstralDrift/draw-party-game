@@ -74,7 +74,7 @@ export type LobbyLayoutMetrics = {
   qr: Box;
   roomCode: Box;
   roomPanel: Box;
-  start: Box;
+  start: Box | null;
 };
 
 export async function readLobbyLayout(page: Page): Promise<LobbyLayoutMetrics> {
@@ -108,7 +108,7 @@ export async function readLobbyLayout(page: Page): Promise<LobbyLayoutMetrics> {
       qr: rect('.qr'),
       roomCode: rect('.room-code'),
       roomPanel: rect('.room-panel'),
-      start: rect('.start-button')
+      start: optionalRect('.start-button')
     };
   });
 }
@@ -120,18 +120,25 @@ export async function assertDisplayLobbyLayout(
 ): Promise<LobbyLayoutMetrics> {
   await expect(page.locator('.room-code')).toHaveText(/[A-Z]{4}/);
   await expect(page.locator('.qr')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Start from TV (fallback)' })).toBeVisible();
+  await expect(page.locator('.topbar')).toBeHidden();
   await expect(page.getByText('Everybody draws. Everybody guesses.')).toBeVisible();
   await expectNoHorizontalOverflow(page);
   await expectNoVerticalOverflow(page);
 
   const metrics = await readLobbyLayout(page);
   expect(metrics.qr.bottom).toBeLessThanOrEqual(viewport.height + 4);
-  expect(metrics.start.bottom).toBeLessThanOrEqual(viewport.height + 4);
-  expect(metrics.start.width).toBeGreaterThanOrEqual(52);
-  expect(metrics.start.height).toBeGreaterThanOrEqual(52);
   expect(metrics.roomCode.height).toBeLessThan(viewport.height * 0.18);
-  expect(metrics.qr.width).toBeGreaterThanOrEqual(viewport.width >= 1800 ? 250 : 180);
+  expect(metrics.qr.width).toBeGreaterThanOrEqual(viewport.width >= 1800 ? 250 : 200);
+
+  if (metrics.start) {
+    await expect(page.getByRole('button', { name: 'Start from TV (fallback)' })).toBeVisible();
+    expect(metrics.start.bottom).toBeLessThanOrEqual(viewport.height + 4);
+    expect(metrics.start.width).toBeGreaterThanOrEqual(52);
+    expect(metrics.start.height).toBeGreaterThanOrEqual(52);
+    expect(boxesOverlap(metrics.start, metrics.qr)).toBe(false);
+  } else {
+    await expect(page.getByRole('button', { name: 'Start from TV (fallback)' })).toHaveCount(0);
+  }
 
   // Hero must stay inside the room panel (no top-edge clip).
   expect(metrics.hero.top).toBeGreaterThanOrEqual(metrics.roomPanel.top + 4);
@@ -143,7 +150,6 @@ export async function assertDisplayLobbyLayout(
   // Manual joining stays legible without squeezing the hero or colliding with the QR.
   expect(boxesOverlap(metrics.manualJoin, metrics.qr)).toBe(false);
   expect(metrics.manualJoin.bottom).toBeLessThanOrEqual(metrics.roomPanel.bottom + 2);
-  expect(boxesOverlap(metrics.start, metrics.qr)).toBe(false);
 
   // Players meta must stack cleanly — never paint on the same box.
   if (metrics.emptyState) {
@@ -178,17 +184,19 @@ export async function assertDisplayLobbyLayout(
         meta: sizes('.player-meta, .player-status, .player-score'),
         settings: sizes('.settings-summary strong'),
         tertiary: sizes(
-          '.display .connection, .display .eyebrow, .display .room-code-label, .display .room-hero-sub, .display .panel-subtitle, .display .field-label, .display .start-note, .display .empty-state, .display .host-badge'
+          '.display .connection, .display .eyebrow, .display .panel-subtitle, .display .field-label, .display .start-note, .display .empty-state, .display .host-badge'
         )
       };
     });
     expect(typeSizes.names.length).toBeGreaterThan(0);
-    expect(typeSizes.meta.length).toBeGreaterThan(0);
-    expect(typeSizes.settings.length).toBeGreaterThan(0);
     expect(typeSizes.tertiary.length).toBeGreaterThan(0);
     expect(typeSizes.names.every((size) => size >= 24)).toBe(true);
-    expect(typeSizes.meta.every((size) => size >= 18)).toBe(true);
-    expect(typeSizes.settings.every((size) => size >= 24)).toBe(true);
+    if (typeSizes.meta.length > 0) {
+      expect(typeSizes.meta.every((size) => size >= 18)).toBe(true);
+    }
+    if (typeSizes.settings.length > 0) {
+      expect(typeSizes.settings.every((size) => size >= 24)).toBe(true);
+    }
     expect(typeSizes.tertiary.every((size) => size >= 18), JSON.stringify(typeSizes.tertiary)).toBe(true);
   }
 

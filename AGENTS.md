@@ -58,7 +58,7 @@ Draw Party is an open-source Drawful-style party game for a TV/display browser a
 3. Guessing: each drawing is revealed in turn; non-artist players submit fake answers. Phones may send ephemeral reactions.
 4. Voting: non-artist players choose the real prompt while the artist watches. Reactions remain available.
 5. Results: the client stages the reveal (hold → tally → correct → deltas → complete); the engine auto-advances after `resultsSeconds` unless the display Continues early. Scoring includes nobody-found and perfect-truth bonuses.
-6. Final Scores: after the configured round count, the display shows the podium (with titles) and can start again or export a share card.
+6. Final Scores: after the configured round count, the display shows the podium (with titles). The host phone starts again after the celebration window; the display can export a share card as a remote fallback.
 
 Scoring values and reconnect rules: [docs/architecture.md](docs/architecture.md).
 
@@ -82,7 +82,7 @@ Narrow change tips (see contributing for the full matrix):
 - Engine / scoring: `cargo test --manifest-path server/Cargo.toml` (+ `server/src/engine/tests.rs`)
 - WebSocket / reconnect / health / static: `cargo test` including `main.rs` tests
 - Client logic / protocol: `npm --prefix client test -- --run` + typecheck
-- UI / layout / touch: relevant Playwright e2e (include mobile phone contexts)
+- UI / layout / touch: relevant Playwright e2e (include mobile phone contexts); couch-loop UX: `npm run e2e:couch-loop`; living-room playtest: `npm run playtest:local`
 - TV / display layout: `npm run e2e:tv` + `npm run e2e:tvbro` (+ `npm run review:tv` / `review:tvbro` gallery; optional `npm run review:tvbro:device` for real TV Bro)
 - Release verification: `/api/health` commit check, then `E2E_BASE_URL=<url> npm run e2e` when practical
 

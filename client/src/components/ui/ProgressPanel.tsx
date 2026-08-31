@@ -1,6 +1,5 @@
 import type { GamePhase, RoomSnapshot } from '../../protocol';
 import { playingPlayers } from '../../spectator';
-import { GlassPanel } from './GlassPanel';
 
 type SubmissionPhase = Extract<GamePhase, 'drawing' | 'guessing' | 'voting'>;
 
@@ -9,61 +8,19 @@ interface ProgressPanelProps {
   snapshot: RoomSnapshot;
   submittedIds: string[];
   phase: SubmissionPhase;
+  compact?: boolean;
 }
 
-function submissionStatusLabel(
-  state: 'offline' | 'artist' | 'submitted' | 'waiting',
-  phase: SubmissionPhase
-): string {
-  if (state === 'offline') {
-    return 'offline';
-  }
-  if (state === 'artist') {
-    return 'artist';
-  }
-  if (state === 'waiting') {
-    return 'waiting';
-  }
-  switch (phase) {
-    case 'drawing':
-      return 'drawing in';
-    case 'guessing':
-      return 'guess in';
-    case 'voting':
-      return 'voted';
-    default: {
-      const _exhaustive: never = phase;
-      return _exhaustive;
-    }
-  }
-}
-
-function progressWaitingText(phase: SubmissionPhase, waitingNames: string[]): string {
-  if (waitingNames.length === 0) {
-    switch (phase) {
-      case 'guessing':
-        return 'All the fakes are in.';
-      case 'voting':
-        return 'Every vote is locked.';
-      case 'drawing':
-        return 'Everyone is in.';
-      default: {
-        const _exhaustive: never = phase;
-        return _exhaustive;
-      }
-    }
-  }
-  if (phase === 'guessing') {
-    return `Still cooking: ${waitingNames.join(', ')}.`;
-  }
-  return `Waiting on ${waitingNames.join(', ')}.`;
+function progressWaitingNames(waitingNames: string[]): string {
+  return waitingNames.join(', ');
 }
 
 export function ProgressPanel({
   title,
   snapshot,
   submittedIds,
-  phase
+  phase,
+  compact = false
 }: ProgressPanelProps): React.JSX.Element {
   const players = playingPlayers(snapshot.players);
   const connectedPlayers = players.filter((player) => player.connected);
@@ -77,39 +34,20 @@ export function ProgressPanel({
     .filter((player) => !submittedIds.includes(player.id))
     .map((player) => player.name);
 
+  const waitingLine = progressWaitingNames(waitingNames);
+
   return (
-    <GlassPanel className="progress-panel" tone="soft">
-      <div className="panel-title">{title}</div>
+    <div className={`progress-panel${compact ? ' progress-panel-compact' : ''}`} aria-label={title}>
       <div className="progress-hero">
         <div className="big-count">
           {activeSubmittedIds.length}/{eligiblePlayers.length}
         </div>
       </div>
-        <p className="muted">{progressWaitingText(phase, waitingNames)}</p>
-      <div className="player-list submission-list">
-        {players.map((player) => {
-          const artist = phase !== 'drawing' && player.id === snapshot.currentArtistId;
-          const submitted = submittedIds.includes(player.id);
-          const state = !player.connected
-            ? 'offline'
-            : artist
-              ? 'artist'
-              : submitted
-                ? 'submitted'
-                : 'waiting';
-          return (
-            <div
-              key={player.id}
-              className={`player-row submission-row ${player.connected ? 'online' : 'offline'} is-${state}`}
-            >
-              <span className="player-name">{player.name}</span>
-              <span className={`pill status-pill status-${state}`}>
-                {submissionStatusLabel(state, phase)}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </GlassPanel>
+      {waitingLine ? (
+        <p className="muted" aria-label={`Waiting on ${waitingLine}`}>
+          {waitingLine}
+        </p>
+      ) : null}
+    </div>
   );
 }

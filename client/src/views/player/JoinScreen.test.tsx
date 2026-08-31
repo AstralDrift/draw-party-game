@@ -36,6 +36,8 @@ interface JoinGameMockOverrides {
   initialRoomCode?: string;
   playerName?: string;
   roomCodeDraft?: string;
+  pendingJoin?: { roomCode: string; name: string } | null;
+  status?: string;
 }
 
 function renderJoinScreen(overrides: JoinGameMockOverrides = {}) {
@@ -123,8 +125,18 @@ describe('JoinScreen keyboard flow', () => {
     try {
       const name = requiredElement<HTMLInputElement>(screen.container, 'input[name="name"]');
       expect(screen.container.querySelector('input[name="roomCode"]')).toBeNull();
+      expect(screen.container.querySelector('.player-room-chip')).toBeNull();
+      expect(screen.container.querySelector('.eyebrow')?.textContent).toBe('ABCD');
       expect(document.activeElement).toBe(name);
       expect(name.labels?.[0]?.textContent).toContain('Name');
+      const changeRoom = requiredElement<HTMLButtonElement>(
+        screen.container,
+        'button.join-change-room'
+      );
+      expect(changeRoom.textContent).toContain('Change room');
+      expect(changeRoom.className).toContain('btn--ghost');
+      expect(changeRoom.className).not.toContain('btn--wide');
+      expect(changeRoom.className).not.toContain('btn--secondary');
     } finally {
       screen.unmount();
     }
@@ -197,6 +209,29 @@ describe('JoinScreen keyboard flow', () => {
         'Enter the four-letter room code from the TV.'
       );
       expect(document.activeElement).toBe(roomCode);
+    } finally {
+      screen.unmount();
+    }
+  });
+
+  it('keeps the join form while seating instead of a second headline', () => {
+    const screen = renderJoinScreen({
+      initialRoomCode: 'ABCD',
+      pendingJoin: { roomCode: 'ABCD', name: 'Ada' },
+      status: 'Connecting'
+    });
+
+    try {
+      expect(screen.container.querySelector('h2')).toBeNull();
+      expect(screen.container.textContent).not.toContain('Almost in');
+      expect(screen.container.textContent).not.toContain('Seating you');
+      expect(screen.container.querySelector('.eyebrow')?.textContent).toBe('ABCD');
+      const name = requiredElement<HTMLInputElement>(screen.container, 'input[name="name"]');
+      expect(name.disabled).toBe(true);
+      const submit = requiredElement<HTMLButtonElement>(screen.container, 'button[type="submit"]');
+      expect(submit.disabled).toBe(true);
+      expect(submit.textContent).toContain('Joining');
+      expect(screen.container.querySelector('button.join-change-room')).toBeNull();
     } finally {
       screen.unmount();
     }

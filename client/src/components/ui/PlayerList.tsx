@@ -27,9 +27,8 @@ export function PlayerList({ players, showScores = false }: PlayerListProps): Re
   if (players.length === 0) {
     return (
       <div className="player-list player-list--empty">
-        <div className="empty-state">
-          <span className="empty-icon-wrap"><LucideIcon icon={UsersRound} className="empty-icon" /></span>
-          <span>Waiting for phones to join.</span>
+        <div className="empty-state" aria-label="Waiting for phones to join.">
+          <span className="empty-icon-wrap" aria-hidden="true"><LucideIcon icon={UsersRound} className="empty-icon" /></span>
         </div>
       </div>
     );
@@ -38,17 +37,18 @@ export function PlayerList({ players, showScores = false }: PlayerListProps): Re
   return (
     <div className="player-list">
       {players.map((player) => {
-        const status = player.connected ? (player.spectator ? 'Watching' : 'Ready') : 'Offline';
-        const statusClass = player.connected
-          ? player.spectator
-            ? 'is-watching'
-            : 'is-ready'
-          : 'is-offline';
+        const status = !player.connected ? 'Offline' : null;
+        const statusClass = !player.connected ? 'is-offline' : '';
         return (
           <div
             key={player.id}
             data-player-slot={playerAccentSlot(player.id)}
             className={`player-row ${player.connected ? 'online' : 'offline'}${player.spectator ? ' is-spectator' : ''}${player.isHost ? ' is-host' : ''}`}
+            aria-label={
+              player.spectator
+                ? `${player.name}${player.isHost ? ', host' : ''}, spectating`
+                : undefined
+            }
           >
             <span className="player-identity">
               <span className="player-doodle" aria-hidden="true">
@@ -64,10 +64,12 @@ export function PlayerList({ players, showScores = false }: PlayerListProps): Re
                 ) : null}
               </span>
             </span>
-            <span className="player-meta">
-              {showScores ? <span className="player-score">{player.score} pts</span> : null}
-              <span className={`pill player-status ${statusClass}`}>{status}</span>
-            </span>
+            {showScores || status ? (
+              <span className="player-meta">
+                {showScores ? <span className="player-score">{player.score} pts</span> : null}
+                {status ? <span className={`pill player-status ${statusClass}`}>{status}</span> : null}
+              </span>
+            ) : null}
           </div>
         );
       })}

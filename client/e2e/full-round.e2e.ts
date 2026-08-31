@@ -3,6 +3,7 @@ import {
   completeDrawingRound,
   createPlayers,
   drawStroke,
+  expectTvDrawingStage,
   hostSaveRounds,
   makeAppUrl,
   startParty
@@ -54,28 +55,32 @@ test('four phones complete two rounds, reach the podium, and rematch in the same
     for (let round = 1; round <= 2; round += 1) {
       await expect(tv.getByText(`Round ${round} of 2`)).toBeVisible();
       for (const player of players) {
-        await expect(player.locator('#prompt-text')).toContainText(/^Draw:/);
-        seenPrompts.add((await player.locator('#prompt-text').innerText()).replace(/^Draw:\s*/, ''));
+        await expect(player.locator('#prompt-text')).not.toContainText(/^Draw:/);
+        await expect(player.locator('#prompt-text')).not.toHaveText('Waiting for prompt...');
+        seenPrompts.add((await player.locator('#prompt-text').innerText()).trim());
         await drawStroke(player);
         await player.getByRole('button', { name: 'Submit Drawing' }).click();
       }
       await completeDrawingRound(tv, players, `round-${round}`);
     }
 
-    await expect(tv.getByText('Final Podium')).toBeVisible();
+    await expect(tv.locator('.podium')).toBeVisible();
     await expect(players[0].getByRole('button', { name: 'Play Again' })).toBeVisible({ timeout: 5000 });
     for (const player of players.slice(1)) {
-      await expect(player.locator('.advance-panel')).toContainText('Host decides.');
+      await expect(player.locator('.encore-panel')).toHaveCount(0);
+      await expect(player.getByText('Host decides')).toHaveCount(0);
+      await expect(player.locator('.scores-panel')).toBeVisible();
     }
 
     await players[0].getByRole('button', { name: 'Play Again' }).click();
-    await expect(tv.getByText('Phones are drawing')).toBeVisible();
+    await expectTvDrawingStage(tv);
     await expect(tv.getByText('Round 1 of 2')).toBeVisible();
     await expect(players[0].locator('canvas.draw-canvas')).toBeVisible();
     for (const player of players) {
       await expect(player).toHaveURL(new RegExp(`/join/${roomCode}$`));
-      await expect(player.locator('#prompt-text')).toContainText(/^Draw:/);
-      const replayPrompt = (await player.locator('#prompt-text').innerText()).replace(/^Draw:\s*/, '');
+      await expect(player.locator('#prompt-text')).not.toContainText(/^Draw:/);
+      await expect(player.locator('#prompt-text')).not.toHaveText('Waiting for prompt...');
+      const replayPrompt = (await player.locator('#prompt-text').innerText()).trim();
       expect(seenPrompts.has(replayPrompt)).toBe(false);
     }
 

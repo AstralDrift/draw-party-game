@@ -8,7 +8,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   wide?: boolean;
   icon?: IconNode;
-  children: ReactNode;
+  children?: ReactNode;
 }
 
 export function Button({

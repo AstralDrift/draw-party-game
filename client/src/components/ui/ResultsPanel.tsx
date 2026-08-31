@@ -31,18 +31,12 @@ function stageClass(stage: RevealStage, target: RevealStage): string {
   return `reveal-stage reveal-stage-${target}${visible}`;
 }
 
-/** Hold beat is exclusive — hide once tally/correct starts so TV results stay readable. */
-function holdStageClass(stage: RevealStage): string {
-  const visible = stage === 'hold' ? ' is-visible' : '';
-  return `reveal-stage reveal-stage-hold${visible}`;
-}
-
 function drawingStageClass(stage: RevealStage): string {
-  const visible = stageVisible(stage, 'hold') || stage === 'complete' ? ' is-visible' : '';
+  const visible = stage === 'hold' ? ' is-visible' : '';
   return `reveal-stage reveal-stage-drawing${visible}`;
 }
 
-function revealAnnouncement(stage: RevealStage, result: RoundResult): string {
+function revealAnnouncement(stage: RevealStage, result: RoundResult, practice: boolean): string {
   switch (stage) {
     case 'hold':
       return 'Votes locked in.';
@@ -51,7 +45,9 @@ function revealAnnouncement(stage: RevealStage, result: RoundResult): string {
     case 'correct':
       return `The real prompt was ${result.correctAnswer}.`;
     case 'deltas':
-      return 'Scores updated.';
+      return practice
+        ? 'Practice round. Scores stay off.'
+        : `${roundOutcomeText(result)}. Scores updated.`;
     case 'complete':
       return 'Reveal complete.';
   }
@@ -128,43 +124,28 @@ export function ResultsPanel({
     >
       {showConfetti ? <Confetti variant="result" /> : null}
       <p className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
-        {revealAnnouncement(stage, result)}
+        {revealAnnouncement(stage, result, practice)}
       </p>
 
-      <div className="result-summary">
-        <p className="eyebrow">
-          {practice ? 'Practice · scores off' : `Drawing by ${result.artistName}`}
-        </p>
-        <div className={holdStageClass(stage)} aria-hidden={stage !== 'hold'}>
-          <p className="reveal-hold-line">Votes locked in…</p>
-        </div>
-        <div
-          className={`round-outcome ${stageClass(stage, 'correct')}`}
-          aria-hidden={!truthVisible}
-        >
-          {practice ? 'Warm-up complete' : roundOutcomeText(result)}
-        </div>
-        <h2 className={stageClass(stage, 'correct')} aria-hidden={!truthVisible}>
-          The real prompt was
-        </h2>
-        <div
-          className={`prompt reveal-prompt ${stageClass(stage, 'correct')}`}
-          aria-hidden={!truthVisible}
-        >
-          {result.correctAnswer}
-        </div>
+      <div className="result-summary" aria-hidden={stage !== 'hold' && stage !== 'correct'}>
         {includeDrawing ? (
           <DrawingCanvas
             drawing={drawing}
             className={`reveal-canvas result-canvas ${drawingStageClass(stage)}`}
           />
         ) : null}
+        <div
+          className={`prompt reveal-prompt ${stageClass(stage, 'correct')}`}
+          aria-hidden={stage !== 'correct'}
+        >
+          {result.correctAnswer}
+        </div>
       </div>
 
       <div className="result-sidebar">
         <div
           className={`breakdown ${stageClass(stage, 'tally')}`}
-          aria-hidden={!stageVisible(stage, 'tally')}
+          aria-hidden={stage !== 'tally'}
         >
           {result.breakdown.map((item, index) => {
             const label = optionLabel(index);
@@ -183,28 +164,16 @@ export function ResultsPanel({
                   {label}
                 </span>
                 <div className="breakdown-copy">
-                  <div className="breakdown-kind">
-                    {truthVisible
-                      ? item.isCorrect
+                  {truthVisible ? (
+                    <div className="breakdown-kind">
+                      {item.isCorrect
                         ? 'Correct answer'
                         : item.authorName
                           ? `Fake by ${item.authorName}`
-                          : 'Fake answer'
-                      : `Option ${label}`}
-                  </div>
-                  <div className="breakdown-answer">{item.optionText}</div>
-                  {item.voterNames.length > 0 ? (
-                    <div className="chip-row">
-                      <span className="chip-label">Voted by</span>
-                      {item.voterNames.map((name, voterIndex) => (
-                        <span key={`${name}:${voterIndex}`} className="pill vote-chip">
-                          {name}
-                        </span>
-                      ))}
+                          : 'Fake answer'}
                     </div>
-                  ) : (
-                    <div className="muted">No votes</div>
-                  )}
+                  ) : null}
+                  <div className="breakdown-answer">{item.optionText}</div>
                 </div>
               </div>
             );
@@ -212,39 +181,44 @@ export function ResultsPanel({
         </div>
 
         <div
-          className={`${stageClass(stage, 'deltas')} score-deltas${activeDeltas.length === 0 ? ' muted' : ''}`}
+          className={`${stageClass(stage, 'deltas')} score-deltas`}
           aria-hidden={!scoresVisible}
         >
           {practice ? (
             <div className="score-event causal-score-event">Practice round — scores stay off.</div>
-          ) : groupedEvents.length > 0 ? (
-            <div className="score-events">
-              {groupedEvents.map((event) => (
-                <div key={`${event.kind}:${event.playerId}`} className="score-event causal-score-event">
-                  <span>{scoreEventText(event)}</span>
-                  <span className="pill score-delta">+{event.points}</span>
-                </div>
-              ))}
-            </div>
-          ) : activeDeltas.length === 0 ? (
-            'No points this reveal.'
           ) : (
-            activeDeltas.map((delta) => (
-              <span key={delta.playerId} className="pill score-delta">
-                {delta.name} +{delta.delta}
-                {delta.scoreAfter === undefined ? '' : ` · ${delta.scoreAfter} total`}
-              </span>
-            ))
+            <>
+              <p className="round-outcome">{roundOutcomeText(result)}</p>
+              {groupedEvents.length > 0 ? (
+                <div className="score-events">
+                  {groupedEvents.map((event) => (
+                    <div key={`${event.kind}:${event.playerId}`} className="score-event causal-score-event">
+                      <span>{scoreEventText(event)}</span>
+                      <span className="pill score-delta">+{event.points}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : activeDeltas.length === 0 ? (
+                'No points this reveal.'
+              ) : (
+                activeDeltas.map((delta) => (
+                  <span key={delta.playerId} className="pill score-delta">
+                    {delta.name} +{delta.delta}
+                    {delta.scoreAfter === undefined ? '' : ` · ${delta.scoreAfter} total`}
+                  </span>
+                ))
+              )}
+              {groupedEvents.length > 0 && activeDeltas.length > 0 ? (
+                <div className="current-totals" aria-label="Current totals">
+                  {activeDeltas.map((delta) => (
+                    <span key={delta.playerId} className="pill score-total">
+                      {delta.name} {delta.scoreAfter === undefined ? `+${delta.delta}` : `${delta.scoreAfter} total`}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </>
           )}
-          {!practice && groupedEvents.length > 0 && activeDeltas.length > 0 ? (
-            <div className="current-totals" aria-label="Current totals">
-              {activeDeltas.map((delta) => (
-                <span key={delta.playerId} className="pill score-total">
-                  {delta.name} {delta.scoreAfter === undefined ? `+${delta.delta}` : `${delta.scoreAfter} total`}
-                </span>
-              ))}
-            </div>
-          ) : null}
         </div>
 
         {controls ? <div className="result-controls">{controls}</div> : null}

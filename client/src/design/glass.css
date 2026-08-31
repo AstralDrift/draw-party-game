@@ -341,7 +341,7 @@ body {
 
 .room-panel {
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: 1fr auto auto;
+  grid-template-rows: 1fr auto;
   align-content: center;
   justify-items: stretch;
   column-gap: clamp(var(--space-6), 3vw, var(--space-12));
@@ -370,7 +370,8 @@ body {
   font-size: clamp(2rem, 3.1vw, 4.25rem);
   font-weight: 680;
   letter-spacing: -0.055em;
-  line-height: 0.98;
+  line-height: 1.06;
+  padding-bottom: 0.06em;
   text-wrap: balance;
 }
 
@@ -448,12 +449,6 @@ body {
   text-align: center;
 }
 
-.settings-summary-panel .tv-start-fallback {
-  grid-column: 1 / -1;
-  width: 100%;
-  margin-top: var(--space-2);
-}
-
 .start-note.ready {
   color: var(--color-success);
 }
@@ -467,8 +462,7 @@ body {
 }
 
 .panel-subtitle,
-.muted,
-.join-note {
+.muted {
   color: var(--color-text-secondary);
 }
 
@@ -695,7 +689,6 @@ body {
   box-shadow: 0 18px 44px var(--action-soft), inset 0 0 0 1px var(--white-medium);
 }
 
-.round-outcome,
 .pill,
 .score-delta,
 .status-pill,
@@ -816,13 +809,13 @@ input:focus-visible,
   }
 
   .display-grid-lobby .qr-stage {
-    width: max(200px, var(--qr-size));
+    width: max(224px, var(--qr-size));
     padding: var(--space-2);
   }
 
   .display-grid-lobby .qr {
-    width: min(196px, 27svh, 18vw);
-    height: min(196px, 27svh, 18vw);
+    width: min(220px, 30svh, 20vw);
+    height: min(220px, 30svh, 20vw);
   }
 
   .display-grid-lobby .start-button {
@@ -934,7 +927,7 @@ input:focus-visible,
   }
 
   .app-shell.player {
-    padding: calc(var(--space-4) + var(--safe-top)) max(var(--space-3), var(--safe-right)) calc(var(--space-5) + var(--safe-bottom)) max(var(--space-3), var(--safe-left));
+    padding: calc(var(--space-2) + var(--safe-top)) max(var(--space-3), var(--safe-right)) calc(var(--space-4) + var(--safe-bottom)) max(var(--space-3), var(--safe-left));
   }
 
   .topbar {
