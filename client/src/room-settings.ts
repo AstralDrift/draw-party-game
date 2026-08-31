@@ -67,3 +67,12 @@ export function activeSettingsPreset(settings: RoomSettings): SettingsPresetId |
   );
   return preset?.id ?? null;
 }
+
+export function settingsPaceLabel(settings: RoomSettings): string {
+  const presetId = activeSettingsPreset(settings);
+  if (!presetId) {
+    return 'Custom';
+  }
+  const preset = SETTINGS_PRESETS.find((candidate) => candidate.id === presetId);
+  return preset?.label ?? 'Custom';
+}

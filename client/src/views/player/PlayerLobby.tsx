@@ -142,26 +142,9 @@ export function PlayerLobby(): React.JSX.Element {
                   Practice Drawing
                 </Button>
               ) : null}
-              <p className="muted">
-                {canStartParty
-                  ? practiceSupported
-                    ? 'Party mode is ready. Practice is a score-free drawing warm-up.'
-                    : 'Party mode is ready.'
-                  : canPractice
-                    ? `Party mode needs ${partyMinimum} players. Solo practice is ready now.`
-                    : practiceSupported
-                      ? `Party mode needs ${partyMinimum} players. Practice is for one connected phone.`
-                      : `Party mode needs ${partyMinimum} players.`}
-              </p>
             </>
-          ) : (
-            <p className="muted">
-              {spectating
-                ? 'You’re watching for now. You’ll draw next round.'
-                : practiceSupported
-                  ? 'Watch the TV. The host phone starts Party or Practice.'
-                  : 'Watch the TV. The host phone starts Party.'}
-            </p>
+          ) : spectating ? null : (
+            <p className="muted">Watch the TV.</p>
           )}
           <Button
             variant="ghost"
@@ -173,7 +156,6 @@ export function PlayerLobby(): React.JSX.Element {
           >
             {soundOn ? 'Turn alerts: On' : 'Turn alerts: Off'}
           </Button>
-          <p className="muted fine-print">Best effort while this tab is open</p>
         </GlassPanel>
         {isHost ? (
           <RoomSettingsPanel

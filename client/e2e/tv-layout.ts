@@ -140,9 +140,10 @@ export async function assertDisplayLobbyLayout(
     expect(metrics.heroLineCount).toBeLessThanOrEqual(2);
   }
 
-  // Manual joining stays legible without squeezing the hero or colliding with the QR/CTA.
+  // Manual joining stays legible without squeezing the hero or colliding with the QR.
   expect(boxesOverlap(metrics.manualJoin, metrics.qr)).toBe(false);
-  expect(metrics.manualJoin.bottom).toBeLessThanOrEqual(metrics.start.top + 2);
+  expect(metrics.manualJoin.bottom).toBeLessThanOrEqual(metrics.roomPanel.bottom + 2);
+  expect(boxesOverlap(metrics.start, metrics.qr)).toBe(false);
 
   // Players meta must stack cleanly — never paint on the same box.
   if (metrics.emptyState) {

@@ -210,7 +210,7 @@ export function JoinScreen(): React.JSX.Element {
           ) : null}
         </form>
         <p className="muted join-note fine-print">
-          Before start = full player. Mid-game = spectator until the next round.
+          Join before kickoff to draw this round. After start you’ll watch until the next one.
         </p>
       </GlassPanel>
     </Shell>

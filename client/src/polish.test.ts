@@ -61,7 +61,7 @@ describe('party polish copy', () => {
     expect(displayLobbyStartNote(2, 1)).toBe(
       '2 ready — playable now, best with 3+ for votes and fakes.'
     );
-    expect(displayLobbyStartNote(3, 1)).toBe('3 ready — hit Start when the couch is full.');
+    expect(displayLobbyStartNote(3, 1)).toBe('3 ready — start from the host phone.');
     expect(playerLobbyReadyNote(0, 1)).toBe('Need 1 more player.');
     expect(playerLobbyReadyNote(1, 1)).toBe('Invite 2 more for better voting.');
     expect(playerLobbyReadyNote(2, 1)).toBe('Invite 1 more for better voting.');
