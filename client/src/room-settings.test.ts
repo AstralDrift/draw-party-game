@@ -9,7 +9,8 @@ import type { RoomSettings } from './protocol';
 import {
   SETTINGS_PRESETS,
   activeSettingsPreset,
-  roomSettingsForPreset
+  roomSettingsForPreset,
+  settingsPaceLabel
 } from './room-settings';
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', {
@@ -51,7 +52,9 @@ describe('room settings presets', () => {
     const settings = roomSettingsForPreset('standard', 'party-chaos');
     expect(settings.promptPackId).toBe('party-chaos');
     expect(activeSettingsPreset(settings)).toBe('standard');
+    expect(settingsPaceLabel(settings)).toBe('Standard');
     expect(activeSettingsPreset({ ...settings, voteSeconds: 21 })).toBeNull();
+    expect(settingsPaceLabel({ ...settings, voteSeconds: 21 })).toBe('Custom');
   });
 
   it('keeps an unsaved timer draft through an immediate prompt-pack acknowledgement', () => {

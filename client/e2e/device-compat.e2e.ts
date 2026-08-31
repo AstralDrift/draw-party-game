@@ -161,7 +161,7 @@ test('TV remote focus stays visible for liquid glass living-room navigation', as
         innerHeight: window.innerHeight
       };
     });
-    expect(focus.text).toContain('Start from TV');
+    expect(focus.text).toContain('Start Party');
     expect(focus.outline).not.toBe('none');
     expect(focus.top).toBeGreaterThanOrEqual(0);
     expect(focus.bottom).toBeLessThanOrEqual(focus.innerHeight + 4);

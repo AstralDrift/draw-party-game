@@ -341,7 +341,7 @@ body {
 
 .room-panel {
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: 1fr auto auto auto;
+  grid-template-rows: 1fr auto auto;
   align-content: center;
   justify-items: stretch;
   column-gap: clamp(var(--space-6), 3vw, var(--space-12));
@@ -439,25 +439,19 @@ body {
   text-align: center;
 }
 
-.start-button,
-.start-note {
+.room-panel .start-note {
   grid-column: 1 / -1;
-  justify-self: center;
-}
-
-.start-button {
   grid-row: 3;
-  width: min(100%, 640px);
-  max-width: none;
-  margin-top: var(--space-2);
-}
-
-.start-note {
-  grid-row: 4;
+  justify-self: center;
   color: var(--color-text-secondary);
-  font-size: 0.75rem;
   font-weight: 600;
   text-align: center;
+}
+
+.settings-summary-panel .tv-start-fallback {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin-top: var(--space-2);
 }
 
 .start-note.ready {
@@ -923,8 +917,7 @@ input:focus-visible,
     justify-self: center;
   }
 
-  .start-button,
-  .start-note {
+  .room-panel .start-note {
     grid-row: auto;
   }
 }

@@ -1,9 +1,10 @@
 import { Play, Volume2, VolumeX } from 'lucide';
 import { useGame } from '../../app/GameProvider';
-import { PARTY_MIN_PLAYERS, supportsPracticeMode } from '../../controller';
+import { PARTY_MIN_PLAYERS } from '../../controller';
 import { displayLobbyStartNote } from '../../polish';
+import { PROMPT_PACK_OPTIONS } from '../../protocol';
 import { activePlayers, playerCountLabel } from '../../spectator';
-import { roomHost } from '../../host';
+import { settingsPaceLabel } from '../../room-settings';
 import { Button } from '../../components/ui/Button';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { PlayerList } from '../../components/ui/PlayerList';
@@ -20,11 +21,9 @@ export function DisplayLobby(): React.JSX.Element {
   const connectedPlayers = activePlayers(snapshot.players);
   const partyMinimum = Math.max(PARTY_MIN_PLAYERS, snapshot.minPlayers);
   const canStartParty = connectedPlayers.length >= partyMinimum;
-  const practiceSupported = supportsPracticeMode(snapshot);
-  const canPractice = practiceSupported && connectedPlayers.length === 1;
-  const host = roomHost(snapshot.players);
   const settings = snapshot.settings;
-  const packLabel = settings.promptPackId === 'party-chaos' ? 'Party Chaos' : 'Party Safe';
+  const packLabel =
+    PROMPT_PACK_OPTIONS.find((pack) => pack.id === settings.promptPackId)?.label ?? 'Party Safe';
 
   return (
     <div className="display-grid display-grid-lobby">
@@ -49,20 +48,8 @@ export function DisplayLobby(): React.JSX.Element {
           Can’t scan? Open <strong className="manual-join-url">{manualJoinUrl}</strong> and enter{' '}
           <strong className="manual-join-code">{snapshot.roomCode}</strong>.
         </p>
-        <Button
-          className="start-button tv-start-fallback"
-          icon={Play}
-          variant="ghost"
-          wide
-          disabled={!canStartParty}
-          onClick={() => send({ type: 'startGame' })}
-        >
-          Start from TV (fallback)
-        </Button>
         <p className={canStartParty ? 'start-note ready' : 'start-note'}>
-          {canStartParty
-            ? `${displayLobbyStartNote(connectedPlayers.length, partyMinimum)} ${host ? `${host.name} starts Party from the host phone.` : 'Start from the host phone.'}`
-            : `${displayLobbyStartNote(connectedPlayers.length, partyMinimum)} ${canPractice ? 'The host phone can start Solo Practice now.' : practiceSupported ? 'Practice is available with one connected phone.' : 'Start Party from the host phone when the room is ready.'}`}
+          {displayLobbyStartNote(connectedPlayers.length, partyMinimum)}
         </p>
       </GlassPanel>
 
@@ -73,34 +60,29 @@ export function DisplayLobby(): React.JSX.Element {
           <PlayerList players={snapshot.players} />
         </GlassPanel>
         <GlassPanel className="settings-panel settings-summary-panel" tone="soft">
-          <div className="panel-title">Room Settings</div>
-          <p className="muted panel-subtitle">Live values — change them on the host phone.</p>
+          <div className="panel-title">This party</div>
+          <p className="muted panel-subtitle">Pace and pack — change them on the host phone.</p>
           <div className="settings-summary">
             <div>
-              <span className="field-label">Rounds</span>
-              <strong>{settings.rounds}</strong>
-            </div>
-            <div>
-              <span className="field-label">Drawing</span>
-              <strong>{settings.drawSeconds}s</strong>
-            </div>
-            <div>
-              <span className="field-label">Guessing</span>
-              <strong>{settings.guessSeconds}s</strong>
-            </div>
-            <div>
-              <span className="field-label">Voting</span>
-              <strong>{settings.voteSeconds}s</strong>
-            </div>
-            <div>
-              <span className="field-label">Results</span>
-              <strong>{settings.resultsSeconds}s</strong>
+              <span className="field-label">Pace</span>
+              <strong>{settingsPaceLabel(settings)}</strong>
             </div>
             <div>
               <span className="field-label">Pack</span>
               <strong>{packLabel}</strong>
             </div>
           </div>
+          <Button
+            className="start-button tv-start-fallback"
+            icon={Play}
+            variant="ghost"
+            wide
+            aria-label="Start from TV (fallback)"
+            disabled={!canStartParty}
+            onClick={() => send({ type: 'startGame' })}
+          >
+            Start Party
+          </Button>
         </GlassPanel>
         <Button
           variant="secondary"

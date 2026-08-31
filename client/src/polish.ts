@@ -19,7 +19,7 @@ export function displayLobbyStartNote(connectedCount: number, minPlayers: number
   if (connectedCount < RECOMMENDED_PARTY_SIZE) {
     return `${connectedCount} ready — playable now, best with 3+ for votes and fakes.`;
   }
-  return `${connectedCount} ready — hit Start when the couch is full.`;
+  return `${connectedCount} ready — start from the host phone.`;
 }
 
 export function playerLobbyReadyNote(connectedCount: number, minPlayers: number): string {
