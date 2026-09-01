@@ -8,6 +8,9 @@ export type PlayerViewport = {
 
 export type SubmissionMessageType = 'submitDrawing' | 'submitGuess' | 'submitVote' | 'setName' | 'startGame';
 
+/** Reveal staging can run ~5–8s; allow headroom under loaded e2e workers. */
+export const REVEAL_COMPLETE_TIMEOUT_MS = 18_000;
+
 type SubmissionHarnessMode = 'defer' | 'drop';
 
 export function makeAppUrl(baseURL: string | undefined): (path: string) => string {
@@ -366,20 +369,22 @@ export async function completeCurrentReveal(
 
   await expect(tv.locator('.results-panel.display-results')).toBeVisible();
   await expect(tv.locator('.results-panel.display-results')).toHaveAttribute('data-reveal-stage', 'complete', {
-    timeout: 12_000
+    timeout: REVEAL_COMPLETE_TIMEOUT_MS
   });
   if (continueAfter) {
     if (advanceVia === 'host') {
       const host = players[0];
       await expect(host.locator('.result-phone-advance')).toBeVisible();
-      await expect(host.getByRole('button', { name: 'Continue' })).toBeEnabled({ timeout: 12_000 });
+      await expect(host.getByRole('button', { name: 'Continue' })).toBeEnabled({
+        timeout: REVEAL_COMPLETE_TIMEOUT_MS
+      });
       await host.getByRole('button', { name: 'Continue' }).click();
     } else {
       const tvContinue = tv.getByRole('button', {
         name: 'Continue from TV (fallback)',
         exact: true
       });
-      await expect(tvContinue).toBeEnabled({ timeout: 12_000 });
+      await expect(tvContinue).toBeEnabled({ timeout: REVEAL_COMPLETE_TIMEOUT_MS });
       await tvContinue.click();
     }
   }

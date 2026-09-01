@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, Play, RotateCcw } from 'lucide';
 import { useGame } from '../../app/GameProvider';
 import {
   finalReplayPlan,
+  shouldClearPendingAdvanceAfterReconnect,
   shouldResetPendingServerAction,
   type ReplayAction
 } from '../../controller';
@@ -18,6 +19,7 @@ import { ScoresPanel } from '../../components/ui/ScoresPanel';
 export function DisplayResults(): React.JSX.Element {
   const { snapshot, status, errorMessage, clearError, send } = useGame();
   const [advancePending, setAdvancePending] = useState(false);
+  const priorStatusRef = useRef(status);
   const result = snapshot?.roundResult;
   const { stage, complete } = useRevealStage(
     result,
@@ -27,7 +29,13 @@ export function DisplayResults(): React.JSX.Element {
   );
 
   useEffect(() => {
+    const priorStatus = priorStatusRef.current;
+    priorStatusRef.current = status;
     if (shouldResetPendingServerAction(advancePending, status, errorMessage)) {
+      setAdvancePending(false);
+      return;
+    }
+    if (shouldClearPendingAdvanceAfterReconnect(advancePending, priorStatus, status, errorMessage)) {
       setAdvancePending(false);
     }
   }, [advancePending, errorMessage, status]);
@@ -81,6 +89,7 @@ export function DisplayResults(): React.JSX.Element {
 export function DisplayFinal(): React.JSX.Element {
   const { snapshot, status, errorMessage, clearError, send, setErrorMessage } = useGame();
   const [advancePending, setAdvancePending] = useState<ReplayAction | null>(null);
+  const priorStatusRef = useRef(status);
   const replay = snapshot ? finalReplayPlan(snapshot) : null;
   const replayReady = useServerTimedGate(
     snapshot?.phase === 'finalScores'
@@ -91,12 +100,26 @@ export function DisplayFinal(): React.JSX.Element {
   );
 
   useEffect(() => {
+    const priorStatus = priorStatusRef.current;
+    priorStatusRef.current = status;
     if (
       shouldResetPendingServerAction(
         Boolean(advancePending),
         status,
         errorMessage,
         replay?.action === advancePending
+      )
+    ) {
+      setAdvancePending(null);
+      return;
+    }
+    if (
+      advancePending &&
+      shouldClearPendingAdvanceAfterReconnect(
+        true,
+        priorStatus,
+        status,
+        errorMessage
       )
     ) {
       setAdvancePending(null);
