@@ -172,10 +172,14 @@
 .room-panel .room-hero-copy {
   flex: 0 0 auto;
   min-width: 0;
+  overflow: visible;
 }
 
 .room-panel .room-hero-copy h2 {
   text-wrap: balance;
+  line-height: 1.15;
+  padding-bottom: max(0.18em, 6px);
+  overflow: visible;
 }
 
 .room-code {

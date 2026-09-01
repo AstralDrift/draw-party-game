@@ -261,6 +261,28 @@ test('TV lobby gives room code and QR the showcase hierarchy', async ({ baseURL,
     expect(urlColor).not.toMatch(/100,\s*181,\s*255/);
     const pitchColor = await page.locator('.room-hero-copy h2').evaluate((element) => getComputedStyle(element).color);
     expect(urlColor).not.toBe(pitchColor);
+    const pitchLayout = await page.locator('.room-hero-copy h2').evaluate((heading) => {
+      const box = heading.getBoundingClientRect();
+      const lineRects = Array.from(heading.getClientRects());
+      const textNode = heading.firstChild;
+      if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
+        throw new Error('Lobby pitch must be plain text.');
+      }
+      const text = textNode.textContent ?? '';
+      const gIndex = text.lastIndexOf('g');
+      const range = document.createRange();
+      range.setStart(textNode, gIndex);
+      range.setEnd(textNode, gIndex + 1);
+      const gRect = range.getBoundingClientRect();
+      return {
+        lineCount: lineRects.length,
+        overflowPx: heading.scrollHeight - heading.clientHeight,
+        descenderGap: box.bottom - gRect.bottom
+      };
+    });
+    expect(pitchLayout.lineCount).toBeLessThanOrEqual(3);
+    expect(pitchLayout.overflowPx).toBeLessThanOrEqual(1);
+    expect(pitchLayout.descenderGap).toBeGreaterThanOrEqual(1);
     await expectNoVerticalOverflow(page);
 
     const roomPanel = await page.locator('.room-panel').boundingBox();

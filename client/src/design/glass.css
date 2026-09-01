@@ -366,12 +366,12 @@ body {
 
 .room-panel h2 {
   margin: 0;
-  max-width: 15ch;
+  max-width: 22ch;
   font-size: clamp(2rem, 3.1vw, 4.25rem);
   font-weight: 680;
   letter-spacing: -0.055em;
-  line-height: 1.06;
-  padding-bottom: 0.06em;
+  line-height: 1.15;
+  padding-bottom: max(0.18em, 6px);
   text-wrap: balance;
 }
 
