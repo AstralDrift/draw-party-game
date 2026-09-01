@@ -17,6 +17,14 @@ export function makeAppUrl(baseURL: string | undefined): (path: string) => strin
   return (path: string) => new URL(path, baseURL).toString();
 }
 
+export function parseDeadlineLabel(label: string): number {
+  const match = /^(\d+):(\d{2})$/.exec(label.trim());
+  if (!match) {
+    throw new Error(`Unexpected deadline label: ${label}`);
+  }
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
 /** Controllable visualViewport for phone keyboard inset integration tests. */
 export async function installControllableVisualViewport(context: BrowserContext): Promise<void> {
   await context.addInitScript(() => {

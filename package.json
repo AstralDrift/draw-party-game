@@ -15,6 +15,7 @@
     "review:tv": "npm --prefix client run review:tv --",
     "review:tvbro": "npm --prefix client run review:tvbro --",
     "playtest:local": "bash scripts/playtest-local/run.sh",
+    "playtest:live": "bash scripts/playtest-live/run.sh",
     "review:tvbro:device": "bash scripts/tvbro-device/run.sh",
     "server:dev": "cargo run --manifest-path server/Cargo.toml",
     "server:test": "cargo test --manifest-path server/Cargo.toml",

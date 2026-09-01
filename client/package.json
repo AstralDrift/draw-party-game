@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -p tsconfig.json && vite build",
     "e2e": "playwright test -c e2e/playwright.config.ts",
-    "e2e:couch-loop": "playwright test -c e2e/playwright.config.ts --grep \"four phones complete two rounds|simulated on-screen keyboard|a locked phone vote|party reveal shows personal score|Fire tablet and iPad keep fake title and vote|phone, Fire tablet, and iPad drawing|phone drawing screen prioritizes canvas|TV progress names submitted|overlay keeps|drawing interrupted by reconnect stays retryable|mixed motion preferences keep Continue|reduced-motion eight-player results|one-round finale renders podium|TV lobby gives room code|manual join keyboard|QR join confirms|late join mid-drawing\"",
+    "e2e:couch-loop": "playwright test -c e2e/playwright.config.ts --grep \"four phones complete two rounds|simulated on-screen keyboard|a locked phone vote|party reveal shows personal score|party host can add 30 seconds|Fire tablet and iPad keep fake title and vote|phone, Fire tablet, and iPad drawing|phone drawing screen prioritizes canvas|TV progress names submitted|overlay keeps|drawing interrupted by reconnect stays retryable|mixed motion preferences keep Continue|reduced-motion eight-player results|one-round finale renders podium|TV lobby gives room code|manual join keyboard|QR join confirms|late join mid-drawing\"",
     "e2e:install": "playwright install chromium",
     "e2e:tv": "playwright test -c e2e/playwright.config.ts --grep \"TV layout gate\"",
     "e2e:tvbro": "playwright test -c e2e/playwright.config.ts --grep \"TV Bro pixel preview\"",

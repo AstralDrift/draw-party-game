@@ -82,7 +82,7 @@ Narrow change tips (see contributing for the full matrix):
 - Engine / scoring: `cargo test --manifest-path server/Cargo.toml` (+ `server/src/engine/tests.rs`)
 - WebSocket / reconnect / health / static: `cargo test` including `main.rs` tests
 - Client logic / protocol: `npm --prefix client test -- --run` + typecheck
-- UI / layout / touch: relevant Playwright e2e (include mobile phone contexts); couch-loop UX: `npm run e2e:couch-loop`; living-room playtest: `npm run playtest:local`
+- UI / layout / touch: relevant Playwright e2e (include mobile phone contexts); couch-loop UX: `npm run e2e:couch-loop`; living-room playtest: `npm run playtest:local`; live deploy smoke: `npm run playtest:live`
 - TV / display layout: `npm run e2e:tv` + `npm run e2e:tvbro` (+ `npm run review:tv` / `review:tvbro` gallery; optional `npm run review:tvbro:device` for real TV Bro)
 - Release verification: `/api/health` commit check, then `E2E_BASE_URL=<url> npm run e2e` when practical
 

@@ -14,6 +14,7 @@ import {
   hostSaveRounds,
   installControllableVisualViewport,
   makeAppUrl,
+  parseDeadlineLabel,
   setVisualViewportHeight,
   startParty,
   startPractice,
@@ -736,6 +737,55 @@ test('party reveal shows personal score on phones after the TV punchline', async
     });
     await expect(scorer.locator('.personal-score')).toBeVisible();
     await expect(scorer.locator('.personal-score')).toContainText('+');
+  } finally {
+    await Promise.all(contexts.map((context) => context.close()));
+  }
+});
+
+test('party host can add 30 seconds during drawing', async ({ baseURL, browser }) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const players = await createPlayers(
+      browser,
+      contexts,
+      appUrl,
+      roomCode,
+      ['Ava', 'Bo', 'Cy'],
+      [
+        { width: 390, height: 844, isMobile: true },
+        { width: 390, height: 844, isMobile: true },
+        { width: 390, height: 844, isMobile: true }
+      ]
+    );
+    const host = players[0];
+    await startParty(host);
+    await expectTvDrawingStage(tv);
+    for (const player of players) {
+      await expect(player.locator('canvas.draw-canvas')).toBeVisible();
+    }
+
+    await expect(host.getByRole('button', { name: '+30 seconds' })).toBeVisible();
+    await expect(players[1].getByRole('button', { name: '+30 seconds' })).toHaveCount(0);
+    await expect(players[2].getByRole('button', { name: '+30 seconds' })).toHaveCount(0);
+
+    const deadlineBefore = await host.locator('#deadline-text span').first().innerText();
+    const deadlineBeforeSeconds = parseDeadlineLabel(deadlineBefore);
+    await host.getByRole('button', { name: '+30 seconds' }).click();
+    await expect(host.getByRole('button', { name: 'Adding 30 seconds' })).toBeVisible();
+    await expect.poll(async () => host.getByRole('button', { name: '+30 seconds' }).count()).toBe(0);
+    await expect
+      .poll(async () =>
+        parseDeadlineLabel(await host.locator('#deadline-text span').first().innerText())
+      )
+      .toBeGreaterThanOrEqual(deadlineBeforeSeconds + 25);
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }
