@@ -313,9 +313,9 @@ export async function completeCurrentReveal(
   tv: Page,
   players: Page[],
   uniqueLabel: string,
-  options: { continueAfter?: boolean; maxLengthAnswers?: boolean } = {}
+  options: { continueAfter?: boolean; maxLengthAnswers?: boolean; advanceVia?: 'host' | 'tv' } = {}
 ): Promise<void> {
-  const { continueAfter = true, maxLengthAnswers = false } = options;
+  const { continueAfter = true, maxLengthAnswers = false, advanceVia = 'tv' } = options;
   await expectTvGuessingStage(tv);
   const guessers = await waitForGuessers(players);
   for (const [index, guesser] of guessers.entries()) {
@@ -340,18 +340,32 @@ export async function completeCurrentReveal(
     timeout: 12_000
   });
   if (continueAfter) {
-    const tvContinue = tv.getByRole('button', {
-      name: 'Continue from TV (fallback)',
-      exact: true
-    });
-    await expect(tvContinue).toBeEnabled({ timeout: 12_000 });
-    await tvContinue.click();
+    if (advanceVia === 'host') {
+      const host = players[0];
+      await expect(host.locator('.result-phone-advance')).toBeVisible();
+      await expect(host.getByRole('button', { name: 'Continue' })).toBeEnabled({ timeout: 12_000 });
+      await host.getByRole('button', { name: 'Continue' }).click();
+    } else {
+      const tvContinue = tv.getByRole('button', {
+        name: 'Continue from TV (fallback)',
+        exact: true
+      });
+      await expect(tvContinue).toBeEnabled({ timeout: 12_000 });
+      await tvContinue.click();
+    }
   }
 }
 
-export async function completeDrawingRound(tv: Page, players: Page[], roundLabel: string): Promise<void> {
+export async function completeDrawingRound(
+  tv: Page,
+  players: Page[],
+  roundLabel: string,
+  options: { hostContinueFirstReveal?: boolean } = {}
+): Promise<void> {
   for (let reveal = 0; reveal < players.length; reveal += 1) {
-    await completeCurrentReveal(tv, players, `${roundLabel}-${reveal}`);
+    await completeCurrentReveal(tv, players, `${roundLabel}-${reveal}`, {
+      advanceVia: options.hostContinueFirstReveal && reveal === 0 ? 'host' : 'tv'
+    });
   }
 }
 

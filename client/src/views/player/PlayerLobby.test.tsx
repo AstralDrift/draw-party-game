@@ -64,6 +64,7 @@ describe('PlayerLobby', () => {
     expect(markup).toContain('player-ready-meter');
     expect(markup).toContain('Need 1 more player.');
     expect(markup).toContain('Start Party');
+    expect(markup).toContain('aria-label="Turn alerts off"');
   });
 
   it('leaves non-host phones on Watch the TV', () => {

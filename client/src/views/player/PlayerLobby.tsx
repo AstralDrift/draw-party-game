@@ -72,7 +72,7 @@ export function PlayerLobby(): React.JSX.Element {
                 variant="ghost"
                 icon={soundOn ? BellRing : BellOff}
                 className={`sound-toggle ${soundOn ? 'is-selected' : ''}`}
-                aria-label={soundOn ? 'Turn alerts on' : 'Turn alerts off'}
+                aria-label={soundOn ? 'Turn alerts off' : 'Turn alerts on'}
                 aria-pressed={soundOn}
                 onClick={toggleSound}
               />

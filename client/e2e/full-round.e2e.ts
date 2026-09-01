@@ -61,7 +61,9 @@ test('four phones complete two rounds, reach the podium, and rematch in the same
         await drawStroke(player);
         await player.getByRole('button', { name: 'Submit Drawing' }).click();
       }
-      await completeDrawingRound(tv, players, `round-${round}`);
+      await completeDrawingRound(tv, players, `round-${round}`, {
+        hostContinueFirstReveal: round === 1
+      });
     }
 
     await expect(tv.locator('.podium')).toBeVisible();
