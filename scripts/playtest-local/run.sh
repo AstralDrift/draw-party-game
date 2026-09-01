@@ -39,6 +39,14 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
   echo "If phones cannot connect, allow draw-party-server through macOS Firewall (System Settings → Network → Firewall)."
 fi
 echo ""
+echo "Loud-room manual checklist (TV + 3+ real phones):"
+echo "  Join   · TV shows QR + code first; phones join without typing the URL"
+echo "  Draw   · Canvas + Submit reachable; host +30 extends the TV clock if someone stalls"
+echo "  Fake   · Title field above keyboard; after submit phone says Watch the TV; host +30 adds TV time"
+echo "  Vote   · Letter grid only; after pick phone clears to Look up; host +30 adds TV time"
+echo "  Reveal · TV punchline readable; phones show personal score; host Continue advances"
+echo "  Rematch· Host phone Play Again resets scores for round 2"
+echo ""
 
 exec env DRAW_PARTY_BIND=0.0.0.0:3000 DRAW_PARTY_STATIC_DIR=client/dist \
   cargo run --manifest-path server/Cargo.toml
