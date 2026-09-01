@@ -791,6 +791,60 @@ test('party host can add 30 seconds during drawing', async ({ baseURL, browser }
   }
 });
 
+test('party host keeps +30 seconds after locking a fake title', async ({ baseURL, browser }) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const players = await createPlayers(
+      browser,
+      contexts,
+      appUrl,
+      roomCode,
+      ['Ava', 'Bo', 'Cy', 'Dee'],
+      [
+        { width: 390, height: 844, isMobile: true },
+        { width: 390, height: 844, isMobile: true },
+        { width: 390, height: 844, isMobile: true },
+        { width: 390, height: 844, isMobile: true }
+      ]
+    );
+    const host = players[0];
+    await startParty(host);
+    for (const player of players) {
+      await drawStroke(player);
+      await player.getByRole('button', { name: 'Submit Drawing' }).click();
+    }
+
+    let hostChecked = false;
+    for (let reveal = 0; reveal < players.length; reveal += 1) {
+      await expectTvGuessingStage(tv);
+      const guessers = await waitForGuessers(players);
+      if (!guessers.includes(host)) {
+        await completeCurrentReveal(tv, players, `host-guess-extend-skip-${reveal}`);
+        continue;
+      }
+
+      await host.getByPlaceholder('Something that sounds legit…').fill('host slow room');
+      await host.getByRole('button', { name: 'Submit Fake Title' }).click();
+      await expect(host.locator('.submission-state.is-accepted')).toHaveText('Watch the TV.');
+      await expect(host.getByRole('button', { name: '+30 seconds' })).toBeVisible();
+      hostChecked = true;
+      break;
+    }
+
+    expect(hostChecked, 'Host must act as a guesser in a four-phone party').toBe(true);
+  } finally {
+    await Promise.all(contexts.map((context) => context.close()));
+  }
+});
+
 test('fake title submit stays above a simulated on-screen keyboard on iPhone SE', async ({
   baseURL,
   browser
