@@ -835,6 +835,16 @@ test('party host keeps +30 seconds after locking a fake title', async ({ baseURL
       await host.getByRole('button', { name: 'Submit Fake Title' }).click();
       await expect(host.locator('.submission-state.is-accepted')).toHaveText('Watch the TV.');
       await expect(host.getByRole('button', { name: '+30 seconds' })).toBeVisible();
+      await expect(tv.locator('#deadline-text')).toBeVisible();
+      const tvDeadlineBefore = parseDeadlineLabel(
+        await tv.locator('#deadline-text span').first().innerText()
+      );
+      await host.getByRole('button', { name: '+30 seconds' }).click();
+      await expect
+        .poll(async () =>
+          parseDeadlineLabel(await tv.locator('#deadline-text span').first().innerText())
+        )
+        .toBeGreaterThanOrEqual(tvDeadlineBefore + 25);
       hostChecked = true;
       break;
     }
@@ -911,6 +921,16 @@ test('party host keeps +30 seconds after locking a vote', async ({ baseURL, brow
       await host.locator('button.vote-option:not([disabled])').first().click();
       await expect(host.locator('.submission-state.is-accepted')).toHaveText('Watch the TV.');
       await expect(host.getByRole('button', { name: '+30 seconds' })).toBeVisible();
+      await expect(tv.locator('#deadline-text')).toBeVisible();
+      const tvDeadlineBefore = parseDeadlineLabel(
+        await tv.locator('#deadline-text span').first().innerText()
+      );
+      await host.getByRole('button', { name: '+30 seconds' }).click();
+      await expect
+        .poll(async () =>
+          parseDeadlineLabel(await tv.locator('#deadline-text span').first().innerText())
+        )
+        .toBeGreaterThanOrEqual(tvDeadlineBefore + 25);
       hostChecked = true;
       break;
     }
