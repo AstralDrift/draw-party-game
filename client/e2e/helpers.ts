@@ -286,6 +286,27 @@ export async function waitForGuessers(players: Page[]): Promise<Page[]> {
   );
 }
 
+export async function collectDrawingPrompts(players: Page[]): Promise<string[]> {
+  const prompts: string[] = [];
+  for (const player of players) {
+    await expect(player.locator('#prompt-text')).not.toHaveText('Waiting for prompt...');
+    prompts.push((await player.locator('#prompt-text').innerText()).trim());
+  }
+  return prompts;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export async function voteForRealPrompt(voter: Page, prompt: string): Promise<void> {
+  const option = voter.getByRole('button', {
+    name: new RegExp(`Option [A-Z]: ${escapeRegExp(prompt)}`)
+  });
+  await expect(option).toBeEnabled();
+  await option.click();
+}
+
 export async function waitForArtistIndex(players: Page[]): Promise<number> {
   let currentArtistIndex = -1;
   await expect

@@ -5,7 +5,18 @@ import {
   expectNoVerticalOverflow,
   TV_VIEWPORTS
 } from './tv-layout';
-import { expectTvGuessingStage, startPractice } from './helpers';
+import {
+  completeCurrentReveal,
+  createPlayers,
+  expectTvGuessingStage,
+  expectTvVotingStage,
+  expectWithinViewportHeight,
+  makeAppUrl,
+  startParty,
+  startPractice,
+  waitForGuessers,
+  waitForPagesWithVisibleLocatorCount
+} from './helpers';
 
 type Viewport = {
   width: number;
@@ -274,12 +285,103 @@ test('phone, Fire tablet, and iPad drawing layouts keep canvas and submit reacha
   }
 });
 
-function makeAppUrl(baseURL: string | undefined): (path: string) => string {
-  if (!baseURL) {
-    throw new Error('Playwright baseURL is required for Draw Party e2e tests.');
+test('Fire tablet and iPad keep fake title and vote grids within the viewport', async ({ baseURL, browser }) => {
+  const appUrl = makeAppUrl(baseURL);
+  const tabletTargets = [
+    { label: 'fire-hd-8-portrait', viewport: { width: 800, height: 1280 } },
+    { label: 'ipad-portrait', viewport: { width: 768, height: 1024 } }
+  ] as const;
+
+  for (const target of tabletTargets) {
+    const contexts: BrowserContext[] = [];
+    try {
+      const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+      contexts.push(tvContext);
+      const tv = await tvContext.newPage();
+      await tv.goto(appUrl('/'));
+      const roomCode = (await tv.locator('.room-code').innerText()).trim();
+      const phone = { width: 390, height: 844, isMobile: true as const };
+      const players = await createPlayers(
+        browser,
+        contexts,
+        appUrl,
+        roomCode,
+        ['Ava', 'Bo', 'Cy', 'Dee'],
+        [phone, target.viewport, phone, phone]
+      );
+      const tablet = players[1];
+      await startParty(players[0]);
+      for (const player of players) {
+        await drawStroke(player);
+        await player.getByRole('button', { name: 'Submit Drawing' }).click();
+      }
+
+      let tabletChecked = false;
+      for (let reveal = 0; reveal < players.length; reveal += 1) {
+        await expectTvGuessingStage(tv);
+        const guessers = await waitForGuessers(players);
+        if (guessers.includes(tablet)) {
+          const titleField = tablet.getByPlaceholder('Something that sounds legit…');
+          await expect(titleField).toBeFocused();
+          await expectWithinViewportHeight(
+            tablet,
+            'input[placeholder="Something that sounds legit…"]',
+            target.viewport.height
+          );
+          await titleField.fill(`${target.label} couch fake`);
+          await expectWithinViewportHeight(
+            tablet,
+            'button:has-text("Submit Fake Title")',
+            target.viewport.height
+          );
+          await tablet.getByRole('button', { name: 'Submit Fake Title' }).click();
+          tabletChecked = true;
+        } else {
+          await completeCurrentReveal(tv, players, `${target.label}-skip-${reveal}`);
+          continue;
+        }
+
+        for (const guesser of guessers) {
+          if (guesser === tablet) {
+            continue;
+          }
+          await guesser.getByPlaceholder('Something that sounds legit…').fill(`${target.label}-other`);
+          await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
+        }
+
+        await expectTvVotingStage(tv);
+        const voters = await waitForPagesWithVisibleLocatorCount(
+          players,
+          'button.vote-option:not([disabled])',
+          Math.max(0, players.length - 1)
+        );
+        if (voters.includes(tablet)) {
+          await expectWithinViewportHeight(tablet, '.player-vote-list', target.viewport.height);
+          await expectWithinViewportHeight(
+            tablet,
+            'button.vote-option:not([disabled])',
+            target.viewport.height
+          );
+          await tablet.locator('button.vote-option:not([disabled])').first().click();
+        }
+        for (const voter of voters) {
+          if (voter === tablet) {
+            continue;
+          }
+          await voter.locator('button.vote-option:not([disabled])').first().click();
+        }
+        await expect(tv.locator('.results-panel.display-results')).toHaveAttribute('data-reveal-stage', 'complete', {
+          timeout: 12_000
+        });
+        break;
+      }
+
+      expect(tabletChecked, `${target.label} must act as a guesser in a four-phone party`).toBe(true);
+    } finally {
+      await Promise.all(contexts.map((context) => context.close()));
+    }
   }
-  return (path: string) => new URL(path, baseURL).toString();
-}
+});
 
 async function startSoloDrawing(
   browser: Browser,

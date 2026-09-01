@@ -3,6 +3,7 @@ import {
   canvasHasInkNear,
   completeCurrentReveal,
   createPlayers,
+  collectDrawingPrompts,
   drawTopLeftLandmark,
   drawStroke,
   expectTvDrawingStage,
@@ -19,6 +20,7 @@ import {
   waitForArtistIndex,
   waitForGuessers,
   waitForPagesWithVisibleLocatorCount,
+  voteForRealPrompt,
   type PlayerViewport
 } from './helpers';
 
@@ -671,6 +673,69 @@ test('solo drawing keeps live ink stable, ignores extra touches, and submits den
     await tvContinue.click();
     await expect(tv.locator('.winner-callout h2')).toHaveText('Warm-up complete');
     await expect(player.locator('.winner-callout h2')).toHaveText('Warm-up complete');
+  } finally {
+    await Promise.all(contexts.map((context) => context.close()));
+  }
+});
+
+test('party reveal shows personal score on phones after the TV punchline', async ({ baseURL, browser }) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const players = await createPlayers(
+      browser,
+      contexts,
+      appUrl,
+      roomCode,
+      ['Ava', 'Bo', 'Cy'],
+      [
+        { width: 390, height: 844, isMobile: true },
+        { width: 390, height: 844, isMobile: true },
+        { width: 390, height: 844, isMobile: true }
+      ]
+    );
+    await startParty(players[0]);
+    const prompts = await collectDrawingPrompts(players);
+    for (const player of players) {
+      await drawStroke(player);
+      await player.getByRole('button', { name: 'Submit Drawing' }).click();
+    }
+
+    await expectTvGuessingStage(tv);
+    const artistIndex = await waitForArtistIndex(players);
+    const prompt = prompts[artistIndex] ?? '';
+    expect(prompt.length).toBeGreaterThan(0);
+    const guessers = await waitForGuessers(players);
+    for (const [index, guesser] of guessers.entries()) {
+      await guesser.getByPlaceholder('Something that sounds legit…').fill(`score-check-${index}`);
+      await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
+    }
+
+    await expectTvVotingStage(tv);
+    const voters = await waitForPagesWithVisibleLocatorCount(
+      players,
+      'button.vote-option:not([disabled])',
+      Math.max(0, players.length - 1)
+    );
+    expect(voters.length).toBeGreaterThan(0);
+    const scorer = voters[0];
+    await voteForRealPrompt(scorer, prompt);
+    for (const voter of voters.slice(1)) {
+      await voter.locator('button.vote-option:not([disabled])').first().click();
+    }
+
+    await expect(tv.locator('.results-panel.display-results')).toHaveAttribute('data-reveal-stage', 'complete', {
+      timeout: 12_000
+    });
+    await expect(scorer.locator('.personal-score')).toBeVisible();
+    await expect(scorer.locator('.personal-score')).toContainText('+');
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }
