@@ -1327,7 +1327,9 @@
   }
 
   .app-shell.player.phase-guessing,
-  .app-shell.player.phase-voting {
+  .app-shell.player.phase-voting,
+  .app-shell.player.phase-results,
+  .app-shell.player.phase-final-scores {
     position: relative;
   }
 
@@ -1335,7 +1337,9 @@
      is still obvious in a loud room. */
   .player.phase-drawing .shell-chrome,
   .player.phase-guessing .shell-chrome,
-  .player.phase-voting .shell-chrome {
+  .player.phase-voting .shell-chrome,
+  .player.phase-results .shell-chrome,
+  .player.phase-final-scores .shell-chrome {
     position: absolute;
     inset: 0;
     z-index: 8;
@@ -1348,7 +1352,11 @@
   .player.phase-guessing .shell-chrome .error,
   .player.phase-guessing .shell-chrome .connection-banner,
   .player.phase-voting .shell-chrome .error,
-  .player.phase-voting .shell-chrome .connection-banner {
+  .player.phase-voting .shell-chrome .connection-banner,
+  .player.phase-results .shell-chrome .error,
+  .player.phase-results .shell-chrome .connection-banner,
+  .player.phase-final-scores .shell-chrome .error,
+  .player.phase-final-scores .shell-chrome .connection-banner {
     pointer-events: auto;
     margin: 8px;
   }

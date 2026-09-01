@@ -30,6 +30,7 @@ echo "  Draw   · Canvas + Submit reachable; host +30 extends the TV clock if so
 echo "  Fake   · Title field above keyboard; after submit phone says Watch the TV; host +30 adds TV time"
 echo "  Vote   · Letter grid only; after pick phone clears to Look up; host +30 adds TV time"
 echo "  Reveal · TV punchline readable; phones show personal score; host Continue advances"
+echo "  Drop   · Airplane mode mid-draw/guess/vote/reveal; reconnect banner overlays without shifting controls"
 echo "  Rematch· Host phone Play Again resets scores for round 2"
 echo ""
 echo "Open on the TV: ${url}/"

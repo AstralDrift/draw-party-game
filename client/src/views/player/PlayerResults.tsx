@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { RotateCcw } from 'lucide';
 import { useGame } from '../../app/GameProvider';
 import {
   finalReplayPlan,
+  shouldClearPendingAdvanceAfterReconnect,
   shouldResetPendingServerAction,
   type ReplayAction
 } from '../../controller';
@@ -41,9 +42,16 @@ export function PlayerResults(): React.JSX.Element {
     personalEvents.length > 0 || Boolean(personalDelta && personalDelta.delta > 0);
   const showPersonalScore = Boolean(result) && complete && !spectator && !practice && scored;
   const scoreAfter = personalDelta?.scoreAfter ?? self?.score;
+  const priorStatusRef = useRef(status);
 
   useEffect(() => {
+    const priorStatus = priorStatusRef.current;
+    priorStatusRef.current = status;
     if (shouldResetPendingServerAction(advancePending, status, errorMessage)) {
+      setAdvancePending(false);
+      return;
+    }
+    if (shouldClearPendingAdvanceAfterReconnect(advancePending, priorStatus, status, errorMessage)) {
       setAdvancePending(false);
     }
   }, [advancePending, errorMessage, status]);
@@ -99,6 +107,7 @@ export function PlayerResults(): React.JSX.Element {
 export function PlayerFinal(): React.JSX.Element {
   const { snapshot, clientId, status, errorMessage, clearError, send } = useGame();
   const [advancePending, setAdvancePending] = useState<ReplayAction | null>(null);
+  const priorStatusRef = useRef(status);
   const scores = snapshot?.finalScores ?? [];
   const isHost = isSelfHost(snapshot?.players ?? [], clientId ?? '');
   const practice = (snapshot?.gameMode ?? 'party') === 'practice';
@@ -112,12 +121,26 @@ export function PlayerFinal(): React.JSX.Element {
   );
 
   useEffect(() => {
+    const priorStatus = priorStatusRef.current;
+    priorStatusRef.current = status;
     if (
       shouldResetPendingServerAction(
         Boolean(advancePending),
         status,
         errorMessage,
         replay?.action === advancePending
+      )
+    ) {
+      setAdvancePending(null);
+      return;
+    }
+    if (
+      advancePending &&
+      shouldClearPendingAdvanceAfterReconnect(
+        true,
+        priorStatus,
+        status,
+        errorMessage
       )
     ) {
       setAdvancePending(null);

@@ -101,6 +101,23 @@ export function shouldResetPendingServerAction(
   );
 }
 
+/** Re-enable host advance CTAs when reconnect finishes without a server ack. */
+export function shouldClearPendingAdvanceAfterReconnect(
+  pending: boolean,
+  previousConnectionStatus: string,
+  connectionStatus: string,
+  errorMessage: string
+): boolean {
+  return (
+    pending &&
+    connectionStatus === 'Connected' &&
+    (previousConnectionStatus === 'Connecting' ||
+      previousConnectionStatus === 'Disconnected' ||
+      previousConnectionStatus === 'Connection error') &&
+    !errorMessage.trim()
+  );
+}
+
 interface VoteOptionAccessibleState {
   ownGuess: boolean;
   selected: boolean;

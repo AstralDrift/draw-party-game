@@ -6,7 +6,7 @@ export type PlayerViewport = {
   isMobile?: boolean;
 };
 
-export type SubmissionMessageType = 'submitDrawing' | 'submitGuess' | 'submitVote' | 'setName';
+export type SubmissionMessageType = 'submitDrawing' | 'submitGuess' | 'submitVote' | 'setName' | 'startGame';
 
 type SubmissionHarnessMode = 'defer' | 'drop';
 

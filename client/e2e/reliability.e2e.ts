@@ -13,7 +13,8 @@ import {
   releaseDeferredSubmission,
   startParty,
   submissionSendCount,
-  waitForGuessers
+  waitForGuessers,
+  waitForPagesWithVisibleLocatorCount
 } from './helpers';
 
 const TURN_DRAFT_STORAGE_KEY = 'draw-party-turn-draft';
@@ -903,6 +904,85 @@ test('vote reconnect overlay keeps the letter grid on iPhone SE', async ({ baseU
 
     await guessers[1].locator('button.vote-option:not([disabled])').first().click();
     await expect(tv.locator('.reveal-prompt')).toBeVisible();
+  } finally {
+    await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
+  }
+});
+
+test('results reconnect overlay keeps host Continue on iPhone SE', async ({ baseURL, browser }) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const players = await createPlayers(
+      browser,
+      contexts,
+      appUrl,
+      roomCode,
+      ['Ava', 'Bo', 'Cy'],
+      [sePhone, sePhone, sePhone],
+      (context) => installSubmissionHarness(context)
+    );
+    const host = players[0];
+    await host.getByRole('button', { name: 'Relaxed: More time to draw' }).click();
+    await startParty(host);
+    for (const player of players) {
+      await drawStroke(player);
+      await player.getByRole('button', { name: 'Submit Drawing' }).click();
+    }
+
+    await expectTvGuessingStage(tv);
+    const guessers = await waitForGuessers(players);
+    for (const [index, guesser] of guessers.entries()) {
+      await guesser.getByPlaceholder('Something that sounds legit…').fill(`results overlay ${index}`);
+      await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
+    }
+
+    await expectTvVotingStage(tv);
+    const voters = await waitForPagesWithVisibleLocatorCount(
+      players,
+      'button.vote-option:not([disabled])',
+      Math.max(0, players.length - 1)
+    );
+    for (const voter of voters) {
+      await voter.locator('button.vote-option:not([disabled])').first().click();
+    }
+
+    await expect(tv.locator('.results-panel.display-results')).toHaveAttribute('data-reveal-stage', 'complete', {
+      timeout: 12_000
+    });
+    const hostContinue = host.getByRole('button', { name: 'Continue' });
+    await expect(hostContinue).toBeEnabled({ timeout: 12_000 });
+    const continueBefore = await host.locator('.result-phone-advance').boundingBox();
+    if (!continueBefore) {
+      throw new Error('Host Continue panel must have a layout box.');
+    }
+
+    await configureSubmissionHarness(host, 'startGame', 'drop');
+    await hostContinue.click();
+    await expect(host.locator('.connection-banner')).toBeVisible();
+    await expectWithinViewportHeight(host, '.result-phone-advance', sePhone.height);
+    await expectWithinViewportHeight(host, 'button:has-text("Continue")', sePhone.height);
+    const continueDuring = await host.locator('.result-phone-advance').boundingBox();
+    if (!continueDuring) {
+      throw new Error('Host Continue panel must stay laid out during reconnect.');
+    }
+    expect(Math.abs(continueDuring.y - continueBefore.y)).toBeLessThan(2);
+
+    await expect(host.locator('#connection-text')).toHaveText('Connected', { timeout: 5000 });
+    await expect(host.getByRole('button', { name: 'Continuing…' })).toHaveCount(0);
+    const continueButton = host.getByRole('button', { name: 'Continue' });
+    if (await continueButton.isVisible()) {
+      await expect(continueButton).toBeEnabled();
+      await continueButton.click();
+    }
+    await expectTvGuessingStage(tv);
   } finally {
     await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
   }
