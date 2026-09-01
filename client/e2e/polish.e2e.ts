@@ -845,6 +845,82 @@ test('party host keeps +30 seconds after locking a fake title', async ({ baseURL
   }
 });
 
+test('party host keeps +30 seconds after locking a vote', async ({ baseURL, browser }) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const players = await createPlayers(
+      browser,
+      contexts,
+      appUrl,
+      roomCode,
+      ['Ava', 'Bo', 'Cy', 'Dee'],
+      [
+        { width: 390, height: 844, isMobile: true },
+        { width: 390, height: 844, isMobile: true },
+        { width: 390, height: 844, isMobile: true },
+        { width: 390, height: 844, isMobile: true }
+      ]
+    );
+    const host = players[0];
+    await startParty(host);
+    for (const player of players) {
+      await drawStroke(player);
+      await player.getByRole('button', { name: 'Submit Drawing' }).click();
+    }
+
+    let hostChecked = false;
+    for (let reveal = 0; reveal < players.length; reveal += 1) {
+      await expectTvGuessingStage(tv);
+      const guessers = await waitForGuessers(players);
+      for (const [index, guesser] of guessers.entries()) {
+        await guesser.getByPlaceholder('Something that sounds legit…').fill(`vote-host-${index}`);
+        await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
+      }
+
+      await expectTvVotingStage(tv);
+      const voters = await waitForPagesWithVisibleLocatorCount(
+        players,
+        'button.vote-option:not([disabled])',
+        Math.max(0, players.length - 1)
+      );
+      if (!voters.includes(host)) {
+        for (const voter of voters) {
+          await voter.locator('button.vote-option:not([disabled])').first().click();
+        }
+        await expect(tv.locator('.results-panel.display-results')).toBeVisible();
+        await expect(tv.locator('.results-panel.display-results')).toHaveAttribute('data-reveal-stage', 'complete', {
+          timeout: 12_000
+        });
+        const tvContinue = tv.getByRole('button', {
+          name: 'Continue from TV (fallback)',
+          exact: true
+        });
+        await expect(tvContinue).toBeEnabled({ timeout: 12_000 });
+        await tvContinue.click();
+        continue;
+      }
+
+      await host.locator('button.vote-option:not([disabled])').first().click();
+      await expect(host.locator('.submission-state.is-accepted')).toHaveText('Watch the TV.');
+      await expect(host.getByRole('button', { name: '+30 seconds' })).toBeVisible();
+      hostChecked = true;
+      break;
+    }
+
+    expect(hostChecked, 'Host must act as a voter in a four-phone party').toBe(true);
+  } finally {
+    await Promise.all(contexts.map((context) => context.close()));
+  }
+});
+
 test('fake title submit stays above a simulated on-screen keyboard on iPhone SE', async ({
   baseURL,
   browser
