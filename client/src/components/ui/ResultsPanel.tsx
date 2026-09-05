@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { roundOutcomeText } from '../../polish';
-import type { DrawingDoc, RoundResult, ScoreEvent } from '../../protocol';
+import type { DrawingDoc, ResultPresentation, RoundResult, ScoreEntry, ScoreEvent } from '../../protocol';
+import { ShowResults } from './ShowResults';
 import {
   OPTION_STAGGER_MS,
   stageVisible,
@@ -20,6 +21,8 @@ interface ResultsPanelProps {
   showReactions?: boolean;
   controls?: ReactNode;
   practice?: boolean;
+  presentation?: ResultPresentation | null;
+  scores?: ScoreEntry[];
 }
 
 export interface GroupedScoreEvent extends ScoreEvent {
@@ -42,6 +45,8 @@ function revealAnnouncement(stage: RevealStage, result: RoundResult, practice: b
       return 'Votes locked in.';
     case 'tally':
       return 'The answer choices are in.';
+    case 'spotlight':
+      return 'The most convincing fake.';
     case 'correct':
       return `The real prompt was ${result.correctAnswer}.`;
     case 'deltas':
@@ -107,8 +112,14 @@ export function ResultsPanel({
   includeDrawing,
   showReactions = false,
   controls,
-  practice = false
+  practice = false,
+  presentation,
+  scores
 }: ResultsPanelProps): React.JSX.Element {
+  if (presentation && includeDrawing) {
+    return <ShowResults result={result} drawing={drawing} presentation={presentation}
+      stage={stage} practice={practice} controls={controls} scores={scores} />;
+  }
   const activeDeltas = result.scoreDeltas.filter((delta) => delta.delta > 0);
   const groupedEvents = groupScoreEvents(result.scoreEvents ?? []);
   const truthVisible = stageVisible(stage, 'correct');

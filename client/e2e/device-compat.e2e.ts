@@ -371,7 +371,7 @@ test('Fire tablet and iPad keep fake title and vote grids within the viewport', 
           await voter.locator('button.vote-option:not([disabled])').first().click();
         }
         await expect(tv.locator('.results-panel.display-results')).toHaveAttribute('data-reveal-stage', 'complete', {
-          timeout: 12_000
+          timeout: 18_000
         });
         break;
       }

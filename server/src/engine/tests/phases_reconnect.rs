@@ -175,7 +175,7 @@ fn results_continue_reveals_all_submitted_drawings_before_next_round() {
         assert_eq!(room.phase, GamePhase::Guessing);
         revealed_artists.insert(room.round.current_artist_id.clone().unwrap());
         play_guesses_then_vote_truth(&mut room, 300);
-        room.handle_start_or_advance(500).unwrap();
+        continue_after_show(&mut room);
     }
 
     assert_eq!(revealed_artists.len(), 3);
@@ -224,7 +224,7 @@ fn round_transition_keeps_a_disconnected_players_slot_and_score() {
         if reveal == 2 {
             room.mark_disconnected("p3", 550);
         }
-        room.handle_start_or_advance(600 + reveal * 100).unwrap();
+        continue_after_show(&mut room);
     }
 
     assert_eq!(room.phase, GamePhase::Drawing);
@@ -313,7 +313,7 @@ fn practice_accepts_exactly_one_player_and_scores_nothing() {
     assert!(result.score_events.is_empty());
     assert!(result.score_deltas.iter().all(|delta| delta.delta == 0));
 
-    room.handle_start_or_advance(300).unwrap();
+    continue_after_show(&mut room);
     assert_eq!(room.phase, GamePhase::FinalScores);
     let replay_unlock_ms = room.deadline_ms.expect("final scores unlock deadline");
     assert_eq!(
@@ -497,7 +497,7 @@ fn all_disconnected_between_rounds_timer_quiesces_until_a_player_reconnects() {
     for reveal in 0..3 {
         play_guesses_then_vote_truth(&mut room, 300 + reveal * 100);
         if reveal < 2 {
-            room.handle_start_or_advance(500 + reveal * 100).unwrap();
+            continue_after_show(&mut room);
         }
     }
     assert_eq!(room.phase, GamePhase::Results);
@@ -544,7 +544,7 @@ fn final_scores_unlock_deadline_does_not_starve_room_expiry() {
 
     for reveal in 0..3 {
         play_guesses_then_vote_truth(&mut room, 300 + reveal * 100);
-        room.handle_start_or_advance(500 + reveal * 100).unwrap();
+        continue_after_show(&mut room);
     }
     assert_eq!(room.phase, GamePhase::FinalScores);
     let unlock_deadline = room.deadline_ms.expect("final scores unlock deadline");
@@ -688,7 +688,7 @@ fn late_join_during_drawing_is_spectator_until_next_round() {
 
     for _ in 0..3 {
         play_guesses_then_vote_truth(&mut room, 500);
-        room.handle_start_or_advance(700).unwrap();
+        continue_after_show(&mut room);
     }
 
     assert_eq!(room.phase, GamePhase::Drawing);

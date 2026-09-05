@@ -1,5 +1,5 @@
 use super::super::*;
-use super::helpers::{play_guesses_then_vote_truth, submit_all_drawings};
+use super::helpers::{continue_after_show, play_guesses_then_vote_truth, submit_all_drawings};
 use crate::prompts::prompt_pack_prompts;
 use crate::protocol::{DEFAULT_PROMPT_PACK_ID, PARTY_CHAOS_PROMPT_PACK_ID};
 use std::collections::BTreeSet;
@@ -69,7 +69,7 @@ fn assert_maximum_game_uses_pack_without_repeats(prompt_pack_id: &str) {
         submit_all_drawings(&mut room, retry_at + 2);
         for _ in 0..MAX_PLAYERS {
             play_guesses_then_vote_truth(&mut room, retry_at + 3);
-            room.handle_start_or_advance(retry_at + 4).unwrap();
+            continue_after_show(&mut room);
         }
     }
 
@@ -236,7 +236,7 @@ fn play_again_preserves_prompt_history_while_unused_prompts_remain() {
     submit_all_drawings(&mut room, 30);
     for _ in 0..3 {
         play_guesses_then_vote_truth(&mut room, 40);
-        room.handle_start_or_advance(50).unwrap();
+        continue_after_show(&mut room);
     }
     assert_eq!(room.phase, GamePhase::FinalScores);
     assert_eq!(room.used_prompt_keys.len(), 3);

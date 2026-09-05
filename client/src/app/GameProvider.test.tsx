@@ -37,6 +37,11 @@ vi.mock('../net', () => ({
 vi.mock('../sound', () => ({
   playCue: harness.playCue,
   setSoundEnabled: vi.fn(),
+  setSoundMode: vi.fn(),
+  soundMode: () => 'effects',
+  setSoundPhase: vi.fn(),
+  stopSound: vi.fn(),
+  unlockSound: vi.fn(),
   setSoundScope: vi.fn(),
   soundEnabled: () => true
 }));

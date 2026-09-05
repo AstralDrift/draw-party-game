@@ -87,7 +87,7 @@ describe('ScoresPanel', () => {
     expect(displayMarkup).toContain('tv-action-fallback');
     expect(displayMarkup).toContain('btn--ghost');
     expect(displayMarkup).not.toContain('encore-title');
-    expect(displayMarkup).not.toContain('take it back');
+    expect(displayMarkup).toContain('Ava won by 200');
   });
 });
 

@@ -62,7 +62,7 @@ test('mixed motion preferences keep Continue behind the shared show beat', async
     await expect(tv.locator('.results-panel')).toBeVisible();
     await expect(tv.locator('#advance-button')).toHaveCount(0);
     await expect(player.getByRole('button', { name: 'Continue' })).toHaveCount(0);
-    await expect(tv.locator('#advance-button')).toBeEnabled({ timeout: 8000 });
+    await expect(tv.locator('#advance-button')).toBeEnabled({ timeout: 18000 });
     await expect(player.getByRole('button', { name: 'Continue' })).toBeEnabled();
     await expect(player.locator('#deadline-text')).toHaveCount(0);
     await expect(tv.locator('#deadline-text')).toBeVisible();
@@ -84,7 +84,7 @@ test('mixed motion preferences keep Continue behind the shared show beat', async
     await expect(tv.locator('.result-advance')).not.toContainText('Use the host phone');
     await expect(tv.getByText('Next drawing in')).toHaveCount(0);
     const punchlineRank = await tv.evaluate(() => {
-      const scoreLine = document.querySelector('.causal-score-event');
+      const scoreLine = document.querySelector('.show-scores .round-outcome');
       const continueButton = document.querySelector('#advance-button');
       if (!scoreLine || !continueButton) {
         throw new Error('Score beat and Continue must be on the TV.');
@@ -236,7 +236,7 @@ test('TV lobby gives room code and QR the showcase hierarchy', async ({ baseURL,
     await expect(page.getByText('host controller')).toHaveCount(0);
     await expect(page.getByText('host phone')).toHaveCount(0);
     await expect(page.locator('.settings-panel')).toHaveCount(0);
-    const tvSound = page.getByRole('button', { name: /Sound (On|Off)/ });
+    const tvSound = page.getByRole('button', { name: /^Game audio:/ });
     await expect(tvSound).toBeVisible();
     await expect(tvSound).toHaveText('');
     const roomCode = (await page.locator('.room-code').innerText()).trim();

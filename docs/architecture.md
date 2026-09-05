@@ -15,7 +15,7 @@ See also: [protocol.md](protocol.md) for the wire contract.
 | WebSocket auth, static serving, `/api/health` | Server (`server/src/main.rs`) |
 | TV/phone rendering and drawing input | Client |
 | Protocol guards (reject unknown/malformed) | Client (`client/src/protocol.ts`) |
-| Results reveal staging (hold → tally → correct → deltas → complete) | Client (`client/src/hooks/useRevealStage.ts`) |
+| Results schedule and Continue unlock | Server (`server/src/show.rs`); client renders the current server-timed beat |
 | PWA shell cache (not `/api/*` or `/ws`) | Client (`client/public/sw.js`) |
 
 Do not reintroduce peer-to-peer room authority or client-owned phase transitions. The display may request Continue early during Results; the engine still owns whether and when the phase advances.
@@ -39,7 +39,7 @@ stateDiagram-v2
 2. **Drawing** — each connected non-spectator draws an assigned prompt and submits once they have ink.
 3. **Guessing** — one drawing at a time; non-artist players submit titles; reactions allowed. The server accepts every sanitized title without revealing whether it matches the truth or another player's title.
 4. **Voting** — non-artists pick the real prompt; artist watches; reactions allowed. A normalized truth match is omitted from the fake list and becomes that player's locked correct vote. Normalized duplicate fakes share one option, and every coauthor is blocked from voting for it. If no fake remains, the server skips the trivial truth-only ballot: truth matchers keep their locked correct votes, non-submitters receive no vote, and a turn with no guesses awards nothing.
-5. **Results** — server publishes `RoundResult`; client stages reveal; engine auto-advances after `resultsSeconds` unless display Continues early.
+5. **Results** — server publishes `RoundResult` and the snapshot's `resultPresentation`. Clients render hold → tally → best-fake spotlight → truth with drawing → standings → complete. Without a voted-for fake, the spotlight is skipped and the actual duration shortens by 20%. The engine rejects Continue until the score beat finishes and auto-advances at `deadlineMs`.
 6. **FinalScores** — podium after configured rounds; host phone restarts after a server-enforced three-second celebration window; display can export a share card as a TV remote fallback after that window. Practice always finishes after one drawing round and must be explicitly replayed as Practice.
 
 During Drawing, Guessing, or Voting, the display or host phone may extend the current server deadline by 30 seconds once. Extension is rejected after expiry and resets only when the engine begins the next timed turn.
@@ -84,21 +84,30 @@ Every award also produces a typed causal score event. Per-player event sums equa
 
 The server decides scores and when Results ends. The client only stages presentation:
 
-- Hold → tally (votes) → correct answer → score deltas → complete via `client/src/hooks/useRevealStage.ts`
+- Hold → tally (vote counts) → best fake and its authors/voters → truth with drawing → standings → complete via `client/src/hooks/useRevealStage.ts`. Server boundaries use 4%, 20%, 40%, 65%, and 90% of the configured duration. Missing spotlight removes its 20% allocation. Reduced motion changes movement, never information timing. Refresh resumes the active beat without replaying missed audio.
 - Outcome copy, podium titles, and action hints live in `client/src/polish.ts` (not reveal timing)
 
 Changing reveal theater does not change scoring; changing scoring requires engine + tests updates and usually a docs touch here.
 
 ## Prompt freshness
 
+Each pack has 240 unique, family-friendly prompts, all short enough to fit a submitted title. Party Safe favors familiar visual situations; Party Chaos uses more surreal combinations.
+
 Prompt keys remain used across Play Again so consecutive games do not immediately repeat prompts. When the selected pack has fewer unused prompts than the next complete assignment needs, the engine clears that history and draws a unique full round from the complete pack. A suspended empty-drawing retry keeps its original assignments and never consumes a second set. If the host abandons that retry by switching between Party and Practice or selecting another prompt pack, those already-seen prompt keys remain used while the fresh game receives new assignments.
+
+## Earned awards and audio
+
+The engine accumulates only per-player award counters from accepted score events: bluff points, correct answers, and correct votes attracted as artist. Final Scores exposes positive leaders, including ties and retired players on the game's scoreboard. Shared fakes count their existing split points. A fresh game clears counters; between-round retries retain them. Awards never add points and Practice earns none.
+
+Display audio uses locally authored Web Audio arrangements and short effects. Browser-local `draw-party-audio` stores off/effects/full; the old sound preference maps to effects. Phones never play music. Audio starts after a gesture, stops on mute/disconnect/hidden tabs, and resumes the current scene without queuing old effects. It has no game authority or network dependency.
 
 ## Key source map
 
 | Area | Path |
 |------|------|
 | Room/phase/scoring | `server/src/engine.rs` |
-| Engine unit tests | `server/src/engine/tests.rs` |
+| Engine unit tests | `server/src/engine/tests/` |
+| Reveal schedule / awards | `server/src/show.rs` |
 | Prompt packs | `server/src/prompts.rs` |
 | HTTP/WS/static/health | `server/src/main.rs` |
 | Protocol types | `server/src/protocol.rs`, `client/src/protocol.ts` |

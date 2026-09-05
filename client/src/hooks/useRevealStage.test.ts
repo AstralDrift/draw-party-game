@@ -6,6 +6,7 @@ import {
   revealElapsedFromDeadline,
   revealStageAt,
   revealTimeline,
+  presentationStageAt,
   stageVisible,
   type RevealStage
 } from './useRevealStage';
@@ -15,14 +16,15 @@ vi.mock('../sound', () => ({
 }));
 
 describe('stageVisible', () => {
-  const stages: RevealStage[] = ['hold', 'tally', 'correct', 'deltas', 'complete'];
+  const stages: RevealStage[] = ['hold', 'tally', 'spotlight', 'correct', 'deltas', 'complete'];
 
   it('exposes a full progressive visibility matrix', () => {
     const expected: Record<RevealStage, RevealStage[]> = {
       hold: ['hold'],
       tally: ['hold', 'tally'],
-      correct: ['hold', 'tally', 'correct'],
-      deltas: ['hold', 'tally', 'correct', 'deltas'],
+      spotlight: ['hold', 'tally', 'spotlight'],
+      correct: ['hold', 'tally', 'spotlight', 'correct'],
+      deltas: ['hold', 'tally', 'spotlight', 'correct', 'deltas'],
       complete: stages
     };
 
@@ -35,6 +37,17 @@ describe('stageVisible', () => {
 });
 
 describe('server-synchronized reveal timing', () => {
+  it('resumes absolute show beats and skips a missing spotlight without changing motion timing', () => {
+    const show = { startedAtMs: 1000, tallyAtMs: 1560, spotlightAtMs: 3800,
+      truthAtMs: 6600, scoresAtMs: 10100, continueAtMs: 13600, spotlightOptionId: 'fake' };
+    expect(presentationStageAt(1000, show)).toBe('hold');
+    expect(presentationStageAt(1560, show)).toBe('tally');
+    expect(presentationStageAt(5000, show)).toBe('spotlight');
+    expect(presentationStageAt(6600, show)).toBe('correct');
+    expect(presentationStageAt(10100, show)).toBe('deltas');
+    expect(presentationStageAt(13600, show)).toBe('complete');
+    expect(presentationStageAt(3800, { ...show, spotlightOptionId: null, truthAtMs: 3800 })).toBe('correct');
+  });
   it('gives large reveals a full truth beat and scoring beat within ten seconds', () => {
     const timeline = revealTimeline(8);
 
