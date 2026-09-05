@@ -84,7 +84,7 @@ Every award also produces a typed causal score event. Per-player event sums equa
 
 The server decides scores and when Results ends. The client only stages presentation:
 
-- Hold → tally (vote counts) → best fake and its authors/voters → truth with drawing → standings → complete via `client/src/hooks/useRevealStage.ts`. Server boundaries use 4%, 20%, 40%, 65%, and 90% of the configured duration. Missing spotlight removes its 20% allocation. Reduced motion changes movement, never information timing. Refresh resumes the active beat without replaying missed audio.
+- Hold → tally (vote counts) → best fake and its authors/voters → truth with drawing → standings → complete via `client/src/hooks/useRevealStage.ts`. Server boundaries use 4%, 20%, 40%, 65%, and 90% of the configured duration. Missing spotlight removes its 20% allocation. Reduced motion changes movement, never information timing. Refresh resumes the active beat without replaying missed audio. Results displays current room participants while computing their ranks from all authoritative scores; departed players keep their scores for the finale.
 - Outcome copy, podium titles, and action hints live in `client/src/polish.ts` (not reveal timing)
 
 Changing reveal theater does not change scoring; changing scoring requires engine + tests updates and usually a docs touch here.

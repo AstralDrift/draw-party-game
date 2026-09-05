@@ -18,4 +18,17 @@ describe('reveal standings', () => {
     expect(revealStandings(result, [{ playerId: 'retired', name: 'Dee', score: 250 }, ...rows])[0])
       .toMatchObject({ playerId: 'retired', delta: 0, rank: 1, movement: 0 });
   });
+
+  it('shows current participants while keeping departed scores in the rank calculation', () => {
+    const scores = Array.from({ length: 16 }, (_, index) => ({
+      playerId: `player-${index}`, name: `Player ${index}`, score: 1600 - index * 100
+    }));
+    const playerIds = scores.slice(8).map((score) => score.playerId);
+    const result = { scoreDeltas: [{ playerId: 'player-8', name: 'Player 8', delta: 200, scoreAfter: 800 }] } as RoundResult;
+    const rows = revealStandings(result, scores, playerIds);
+    expect(rows).toHaveLength(8);
+    expect(rows[0]).toMatchObject({ playerId: 'player-8', rank: 9, movement: 1, score: 800 });
+    expect(scores).toHaveLength(16);
+  });
+
 });

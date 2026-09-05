@@ -56,6 +56,7 @@ export function DisplayResults(): React.JSX.Element {
             includeDrawing
             presentation={snapshot.resultPresentation}
             scores={snapshot.finalScores}
+            playerIds={snapshot.players.map((player) => player.id)}
             practice={(snapshot.gameMode ?? 'party') === 'practice'}
             controls={
               stage === 'deltas' || stage === 'complete' ? (

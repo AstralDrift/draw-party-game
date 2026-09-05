@@ -143,7 +143,7 @@ export function stopSound(): void {
 }
 
 export function playCue(name: CueName, key?: string): void {
-  if (!soundEnabled() || !unlocked || document.hidden ||
+  if (!soundEnabled() || !unlocked || phase === null || document.hidden ||
     (scope === 'controller' && name !== 'phase' && name !== 'submit') ||
     (key && playedKeys.has(key))) {
     return;

@@ -58,6 +58,10 @@ describe('party audio', () => {
     expect(vi.getTimerCount()).toBe(1);
     sound.setSoundPhase(null);
     expect(vi.getTimerCount()).toBe(0);
+    const disconnectedCount = oscillators.length;
+    sound.playCue('correct', 'disconnected:truth');
+    sound.playCue('tick');
+    expect(oscillators).toHaveLength(disconnectedCount);
     Object.defineProperty(document, 'hidden', { configurable: true, value: true });
     const count = oscillators.length;
     sound.setSoundPhase('drawing'); sound.playCue('phase');

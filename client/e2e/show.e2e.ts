@@ -1,4 +1,5 @@
 import { expect, test, type BrowserContext } from '@playwright/test';
+import { defaultRoomSettings, type RoomSnapshot } from '../src/protocol';
 import { createPlayers, drawStroke, startParty, waitForGuessers, makeAppUrl, assertAllWithinViewport } from './helpers';
 
 test('game show spotlights a convincing fake and fits eight players on 720p and 4K TVs', async ({ browser, baseURL }, testInfo) => {
@@ -62,3 +63,48 @@ test('TV audio offers music and effects without changing room settings', async (
   await page.getByRole('menuitemradio', { name: 'Off', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Game audio: Off', exact: true })).toBeVisible();
 });
+
+for (const departed of [1, 8]) {
+  test(`Results fits eight current players with ${departed} departed scores retained`, async ({ page, baseURL }, testInfo) => {
+    await page.routeWebSocket('**/ws?*', (socket) => {
+      socket.onMessage((message) => {
+        if (JSON.parse(String(message)).type !== 'createRoom') return;
+        const start = Date.now() - 10_000;
+        const players = Array.from({ length: 8 }, (_, index) => ({
+          id: `current-${index}`, name: `${'W'.repeat(23)}${index}`, score: 100,
+          connected: true, spectator: false, isHost: index === 0
+        }));
+        const snapshot: RoomSnapshot = {
+          roomCode: 'SHOW', phase: 'results', players, minPlayers: 3, maxPlayers: 8,
+          currentRound: 2, totalRounds: 2, settings: defaultRoomSettings(), turnToken: 99,
+          serverNowMs: Date.now(), deadlineMs: start + 11_200, gameMode: 'party',
+          votingOptions: [], drawingSubmittedIds: [], guessSubmittedIds: [], voteSubmittedIds: [],
+          finalScores: [
+            ...Array.from({ length: departed }, (_, index) => ({ playerId: `departed-${index}`, name: `Departed ${index}`, score: 200 })),
+            ...players.map((player) => ({ playerId: player.id, name: player.name, score: player.score }))
+          ],
+          roundResult: {
+            artistId: 'current-0', artistName: players[0]!.name, correctAnswer: 'A goose',
+            correctVoterNames: [], breakdown: [], scoreDeltas: [], nobodyFoundIt: true, perfectTruth: false
+          },
+          resultPresentation: {
+            startedAtMs: start, tallyAtMs: start + 560, spotlightAtMs: start + 2800,
+            truthAtMs: start + 2800, scoresAtMs: start + 6300, continueAtMs: start + 9800,
+            spotlightOptionId: null
+          }
+        };
+        socket.send(JSON.stringify({ type: 'roomCreated', snapshot, hostToken: 'fixture-host' }));
+      });
+    });
+    await page.goto(makeAppUrl(baseURL)('/'));
+    await expect(page.locator('.show-score-row')).toHaveCount(8);
+    await expect(page.locator('.show-score-row').first().locator('.show-rank')).toHaveText(String(departed + 1));
+    await expect(page.locator('.standings-note')).toContainText('Departed players keep their points');
+    for (const viewport of [{ width: 1280, height: 720 }, { width: 3840, height: 2160 }]) {
+      await page.setViewportSize(viewport);
+      await page.evaluate(() => document.fonts.ready);
+      await assertAllWithinViewport(page, ['.show-score-row', '.show-controls', '.standings-note']);
+      await page.screenshot({ path: testInfo.outputPath(`retained-${departed}-${viewport.width}.png`) });
+    }
+  });
+}

@@ -157,6 +157,7 @@
 .show-score-row[data-player-slot="5"] { --player-accent: var(--player-accent-5); }
 .show-score-row[data-player-slot="6"] { --player-accent: var(--player-accent-6); }
 .show-score-row[data-player-slot="7"] { --player-accent: var(--player-accent-7); }
+.standings-note { margin: 0; color: var(--color-text-secondary); font-size: var(--display-body); }
 .show-rank, .rank-movement { color: var(--color-text-secondary); }
 .show-score-row .score-delta { color: var(--color-success); font-size: inherit; padding: 0; }
 .show-score-total { font-weight: 700; text-align: right; }

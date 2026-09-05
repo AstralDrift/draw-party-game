@@ -18,11 +18,12 @@ interface ShowResultsProps {
   practice: boolean;
   controls?: ReactNode;
   scores?: ScoreEntry[];
+  playerIds?: string[];
 }
 
-export function ShowResults({ result, drawing, presentation, stage, practice, controls, scores }: ShowResultsProps) {
+export function ShowResults({ result, drawing, presentation, stage, practice, controls, scores, playerIds }: ShowResultsProps) {
   const spotlight = result.breakdown.find((option) => option.optionId === presentation.spotlightOptionId);
-  const standings = revealStandings(result, scores);
+  const standings = revealStandings(result, scores, playerIds);
   const scoring = stage === 'deltas' || stage === 'complete';
   const announcement = stage === 'spotlight' && spotlight
     ? `${spotlight.optionText}. A fake by ${spotlight.authorName}. Fooled ${spotlight.voterNames.join(', ')}.`
@@ -91,6 +92,9 @@ export function ShowResults({ result, drawing, presentation, stage, practice, co
               ))}
             </ol>
           )}
+          {!practice && scores && scores.length > standings.length ? (
+            <p className="standings-note">Departed players keep their points for the finale.</p>
+          ) : null}
         </div>
       ) : null}
       {controls ? <div className="show-controls">{controls}</div> : null}

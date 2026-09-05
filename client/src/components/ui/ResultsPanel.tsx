@@ -23,6 +23,7 @@ interface ResultsPanelProps {
   practice?: boolean;
   presentation?: ResultPresentation | null;
   scores?: ScoreEntry[];
+  playerIds?: string[];
 }
 
 export interface GroupedScoreEvent extends ScoreEvent {
@@ -114,11 +115,12 @@ export function ResultsPanel({
   controls,
   practice = false,
   presentation,
-  scores
+  scores,
+  playerIds
 }: ResultsPanelProps): React.JSX.Element {
   if (presentation && includeDrawing) {
     return <ShowResults result={result} drawing={drawing} presentation={presentation}
-      stage={stage} practice={practice} controls={controls} scores={scores} />;
+      stage={stage} practice={practice} controls={controls} scores={scores} playerIds={playerIds} />;
   }
   const activeDeltas = result.scoreDeltas.filter((delta) => delta.delta > 0);
   const groupedEvents = groupScoreEvents(result.scoreEvents ?? []);
