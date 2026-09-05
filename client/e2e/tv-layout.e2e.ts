@@ -254,31 +254,31 @@ test('TV layout gate: reduced-motion eight-player results stay staged and readab
       await expect(results.locator('.vote-chip')).toHaveCount(0);
       await expect(results.getByText('Voted by')).toHaveCount(0);
       await expect(results.getByText('No votes')).toHaveCount(0);
-      await expect(results.locator('.breakdown-row')).toHaveCount(8);
+      await expect(results.locator('.show-ballot-row')).toHaveCount(8);
       await expect(results.locator('.option-label')).toHaveText(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
       await assertDisplayPhaseFits(tv, { width: 1280, height: 720 });
-      await assertAllWithinViewport(tv, ['.result-sidebar', '.breakdown-row', '.option-label']);
+      await assertAllWithinViewport(tv, ['.show-ballot', '.show-ballot-row', '.option-label']);
     }
     await expect(results).toHaveAttribute('data-reveal-stage', 'correct', { timeout: 10_000 });
     await expect(results.locator('.reveal-prompt')).toBeVisible();
-    await expect(results.locator('h2')).toHaveCount(0);
+    await expect(results.locator('.show-truth .result-canvas')).toBeVisible();
     await expect(results.locator('.result-summary > .eyebrow')).toHaveCount(0);
     await expect(results.locator('.round-outcome')).toBeHidden();
     await expect(results.locator('.breakdown')).toBeHidden();
     await assertDisplayPhaseFits(tv, { width: 1280, height: 720 });
-    await assertAllWithinViewport(tv, ['.result-summary', '.reveal-prompt']);
+    await assertAllWithinViewport(tv, ['.show-truth', '.reveal-prompt']);
     const promptSize = await results
       .locator('.reveal-prompt')
       .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
     expect(promptSize).toBeGreaterThanOrEqual(32);
 
     await expect(results).toHaveAttribute('data-reveal-stage', 'deltas', { timeout: 10_000 });
-    await expect(results.locator('.causal-score-event')).not.toHaveCount(0);
+    await expect(results.locator('.show-score-row')).not.toHaveCount(0);
     await expect(results.locator('.round-outcome')).toBeVisible();
     await expect(results.locator('.result-summary')).toBeHidden();
     await expect(results.locator('.reveal-prompt')).toBeHidden();
     const shortTvScoreSizes = await results
-      .locator('.round-outcome, .causal-score-event, .score-total')
+      .locator('.round-outcome, .show-score-row, .show-score-total')
       .evaluateAll((elements) => elements.map((element) => Number.parseFloat(getComputedStyle(element).fontSize)));
     expect(shortTvScoreSizes.every((size) => size >= 18), JSON.stringify(shortTvScoreSizes)).toBe(true);
     for (const viewport of [
@@ -302,10 +302,10 @@ test('TV layout gate: reduced-motion eight-player results stay staged and readab
         });
       await assertDisplayPhaseFits(tv, viewport);
       const selectors = [
-        '.result-sidebar',
+        '.show-scores',
         '.round-outcome',
-        '.causal-score-event',
-        '.score-total',
+        '.show-score-row',
+        '.show-score-total',
         '.advance-panel',
         '#deadline-text'
       ];
@@ -316,7 +316,7 @@ test('TV layout gate: reduced-motion eight-player results stay staged and readab
         await expect
           .poll(async () => {
             const sizes = await results
-              .locator('.round-outcome, .causal-score-event, .score-total')
+              .locator('.round-outcome, .show-score-row, .show-score-total')
               .evaluateAll((elements) =>
                 elements.map((element) => Number.parseFloat(getComputedStyle(element).fontSize))
               );

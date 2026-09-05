@@ -15,6 +15,7 @@ import {
   installControllableVisualViewport,
   makeAppUrl,
   parseDeadlineLabel,
+  REVEAL_COMPLETE_TIMEOUT_MS,
   setVisualViewportHeight,
   startParty,
   startPractice,
@@ -62,7 +63,7 @@ test('mixed motion preferences keep Continue behind the shared show beat', async
     await expect(tv.locator('.results-panel')).toBeVisible();
     await expect(tv.locator('#advance-button')).toHaveCount(0);
     await expect(player.getByRole('button', { name: 'Continue' })).toHaveCount(0);
-    await expect(tv.locator('#advance-button')).toBeEnabled({ timeout: 8000 });
+    await expect(tv.locator('#advance-button')).toBeEnabled({ timeout: REVEAL_COMPLETE_TIMEOUT_MS });
     await expect(player.getByRole('button', { name: 'Continue' })).toBeEnabled();
     await expect(player.locator('#deadline-text')).toHaveCount(0);
     await expect(tv.locator('#deadline-text')).toBeVisible();
@@ -84,7 +85,7 @@ test('mixed motion preferences keep Continue behind the shared show beat', async
     await expect(tv.locator('.result-advance')).not.toContainText('Use the host phone');
     await expect(tv.getByText('Next drawing in')).toHaveCount(0);
     const punchlineRank = await tv.evaluate(() => {
-      const scoreLine = document.querySelector('.causal-score-event');
+      const scoreLine = document.querySelector('.show-scores .round-outcome');
       const continueButton = document.querySelector('#advance-button');
       if (!scoreLine || !continueButton) {
         throw new Error('Score beat and Continue must be on the TV.');
@@ -236,7 +237,7 @@ test('TV lobby gives room code and QR the showcase hierarchy', async ({ baseURL,
     await expect(page.getByText('host controller')).toHaveCount(0);
     await expect(page.getByText('host phone')).toHaveCount(0);
     await expect(page.locator('.settings-panel')).toHaveCount(0);
-    const tvSound = page.getByRole('button', { name: /Sound (On|Off)/ });
+    const tvSound = page.getByRole('button', { name: /^Game audio:/ });
     await expect(tvSound).toBeVisible();
     await expect(tvSound).toHaveText('');
     const roomCode = (await page.locator('.room-code').innerText()).trim();
@@ -729,11 +730,12 @@ test('party reveal shows personal score on phones after the TV punchline', async
     const scorer = voters[0];
     await voteForRealPrompt(scorer, prompt);
     for (const voter of voters.slice(1)) {
-      await voter.locator('button.vote-option:not([disabled])').first().click();
+      // Exercise the full spotlight timeline, rather than randomly skipping it.
+      await voter.locator('button.vote-option:not([disabled])').filter({ hasText: 'score-check-' }).click();
     }
 
     await expect(tv.locator('.results-panel.display-results')).toHaveAttribute('data-reveal-stage', 'complete', {
-      timeout: 12_000
+      timeout: REVEAL_COMPLETE_TIMEOUT_MS
     });
     await expect(scorer.locator('.personal-score')).toBeVisible();
     await expect(scorer.locator('.personal-score')).toContainText('+');
@@ -907,13 +909,13 @@ test('party host keeps +30 seconds after locking a vote', async ({ baseURL, brow
         }
         await expect(tv.locator('.results-panel.display-results')).toBeVisible();
         await expect(tv.locator('.results-panel.display-results')).toHaveAttribute('data-reveal-stage', 'complete', {
-          timeout: 12_000
+          timeout: REVEAL_COMPLETE_TIMEOUT_MS
         });
         const tvContinue = tv.getByRole('button', {
           name: 'Continue from TV (fallback)',
           exact: true
         });
-        await expect(tvContinue).toBeEnabled({ timeout: 12_000 });
+        await expect(tvContinue).toBeEnabled({ timeout: REVEAL_COMPLETE_TIMEOUT_MS });
         await tvContinue.click();
         continue;
       }

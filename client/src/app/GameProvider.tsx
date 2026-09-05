@@ -35,7 +35,7 @@ import {
   type RoomSnapshot,
   type ServerMessage
 } from '../protocol';
-import { playCue, setSoundEnabled, setSoundScope, soundEnabled } from '../sound';
+import { playCue, setSoundMode, setSoundScope, setSoundPhase, soundEnabled, soundMode, stopSound, unlockSound, type SoundMode } from '../sound';
 import { PendingRenameCache } from '../pending-rename-cache';
 import { clearTurnDraft, reconcileTurnDraft } from '../turn-draft-cache';
 import {
@@ -75,6 +75,8 @@ interface GameContextValue {
   deadlineLabel: string;
   deadlineUrgent: boolean;
   soundOn: boolean;
+  audioMode: SoundMode;
+  selectSoundMode: (mode: SoundMode) => void;
   reactionBursts: ReactionBurst[];
   setPlayerName: (name: string) => void;
   setRoomCodeDraft: (code: string) => void;
@@ -250,7 +252,8 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   const [authoritativeSnapshotRevision, setAuthoritativeSnapshotRevision] = useState(0);
   const [deadlineLabel, setDeadlineLabel] = useState('');
   const [deadlineUrgent, setDeadlineUrgent] = useState(false);
-  const [soundOn, setSoundOn] = useState(() => soundEnabled());
+  const [audioMode, setAudioModeState] = useState(() => soundMode());
+  const soundOn = audioMode !== 'off';
   const [reactionBursts, setReactionBursts] = useState<ReactionBurst[]>([]);
 
   useEffect(() => {
@@ -264,6 +267,27 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
   useEffect(() => {
     setSoundScope(boot.role === 'player' ? 'controller' : 'display');
   }, [boot.role]);
+
+  useEffect(() => {
+    const update = () => {
+      setSoundPhase(status === 'Connected' && !document.hidden ? snapshot?.phase ?? null : null);
+      if (document.hidden || status !== 'Connected') stopSound();
+    };
+    update();
+    document.addEventListener('visibilitychange', update);
+    return () => document.removeEventListener('visibilitychange', update);
+  }, [snapshot?.phase, status]);
+
+  useEffect(() => {
+    window.addEventListener('pointerdown', unlockSound);
+    window.addEventListener('keydown', unlockSound);
+    return () => {
+      window.removeEventListener('pointerdown', unlockSound);
+      window.removeEventListener('keydown', unlockSound);
+      setSoundPhase(null);
+      stopSound();
+    };
+  }, []);
 
   const haptic = useCallback((pattern: number | number[] = 10) => {
     try {
@@ -343,7 +367,7 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       }
       const phaseChanged = Boolean(lastPhaseRef.current && lastPhaseRef.current !== next.phase);
       if (boot.role === 'display' && phaseChanged) {
-        playCue(next.phase === 'results' ? 'results' : next.phase === 'finalScores' ? 'podium' : 'phase');
+        playCue(next.phase === 'finalScores' ? 'podium' : 'phase');
       }
       lastPhaseRef.current = next.phase;
 
@@ -884,13 +908,14 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
     [send]
   );
 
-  const toggleSound = useCallback(() => {
-    setSoundOn((current) => {
-      const next = !current;
-      setSoundEnabled(next);
-      return next;
-    });
+  const selectSoundMode = useCallback((next: SoundMode) => {
+    setSoundMode(next);
+    setAudioModeState(next);
   }, []);
+
+  const toggleSound = useCallback(() => {
+    selectSoundMode(soundEnabled() ? 'off' : 'effects');
+  }, [selectSoundMode]);
 
   const value = useMemo<GameContextValue>(
     () => ({
@@ -908,6 +933,8 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       deadlineLabel,
       deadlineUrgent,
       soundOn,
+      audioMode,
+      selectSoundMode,
       reactionBursts,
       setPlayerName,
       setRoomCodeDraft,
@@ -937,6 +964,8 @@ export function GameProvider({ children }: { children: ReactNode }): React.JSX.E
       deadlineLabel,
       deadlineUrgent,
       soundOn,
+      audioMode,
+      selectSoundMode,
       reactionBursts,
       joinRoom,
       setName,

@@ -392,13 +392,16 @@ fn reaches_final_scores_then_restart_resets_scores() {
 
     for _ in 0..3 {
         play_guesses_then_vote_truth(&mut room, 300);
-        room.handle_start_or_advance(500).unwrap();
+        continue_after_show(&mut room);
     }
 
     assert_eq!(room.phase, GamePhase::FinalScores);
     assert!(room.players.values().any(|player| player.score > 0));
     let replay_unlock_ms = room.deadline_ms.expect("final scores unlock deadline");
-    assert_eq!(replay_unlock_ms, 3_500);
+    assert_eq!(
+        replay_unlock_ms,
+        room.round.presentation.as_ref().unwrap().continue_at_ms + 3_000
+    );
     let prior_scores: BTreeMap<_, _> = room
         .players
         .iter()

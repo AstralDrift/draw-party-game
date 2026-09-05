@@ -85,6 +85,30 @@ function expectStageHidden(target: 'tally' | 'correct' | 'deltas', hidden: boole
 }
 
 describe('ResultsPanel staged accessibility', () => {
+  it('reveals the bluff authors only at spotlight and keeps the truth with its drawing', () => {
+    const presentation = { startedAtMs: 0, tallyAtMs: 560, spotlightAtMs: 2800,
+      truthAtMs: 5600, scoresAtMs: 9100, continueAtMs: 12600, spotlightOptionId: 'fake' };
+    const show = (stage: RevealStage) => {
+      document.body.innerHTML = renderToStaticMarkup(<ResultsPanel result={result} drawing={null}
+        stage={stage} includeDrawing presentation={presentation} />);
+    };
+    show('tally');
+    expect(document.querySelector('.show-fake-credit')).toBeNull();
+    expect(document.querySelector('.reveal-prompt')).toBeNull();
+    expect(document.querySelectorAll('.show-vote-count')).toHaveLength(2);
+    show('spotlight');
+    expect(document.querySelector('.show-fake-title')?.textContent).toBe('Soap opera in space');
+    expect(document.querySelector('.show-fake-credit')?.textContent).toContain('Cy');
+    expect(document.querySelector('.show-fooled')?.textContent).toContain('Di · Eli');
+    expect(document.querySelector('.reveal-prompt')).toBeNull();
+    show('correct');
+    expect(document.querySelector('.show-truth .result-canvas')).not.toBeNull();
+    expect(document.querySelector('.reveal-prompt')?.textContent).toBe(result.correctAnswer);
+    show('deltas');
+    expect(document.querySelectorAll('.show-score-row')).toHaveLength(3);
+    expect(document.querySelector('.show-score-total')?.textContent).toContain('450');
+    expect(document.querySelector('.reveal-prompt')).toBeNull();
+  });
   it.each<{
     stage: RevealStage;
     hidden: Record<'tally' | 'correct' | 'deltas', boolean>;

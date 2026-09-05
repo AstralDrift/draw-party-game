@@ -27,7 +27,7 @@ describe('room settings presets', () => {
         drawSeconds: 60,
         guessSeconds: 25,
         voteSeconds: 15,
-        resultsSeconds: 10
+        resultsSeconds: 12
       },
       {
         id: 'standard',
@@ -35,7 +35,7 @@ describe('room settings presets', () => {
         drawSeconds: 75,
         guessSeconds: 30,
         voteSeconds: 20,
-        resultsSeconds: 10
+        resultsSeconds: 14
       },
       {
         id: 'relaxed',
@@ -43,7 +43,7 @@ describe('room settings presets', () => {
         drawSeconds: 120,
         guessSeconds: 45,
         voteSeconds: 30,
-        resultsSeconds: 12
+        resultsSeconds: 15
       }
     ]);
   });

@@ -11,3 +11,4 @@ mod prompts;
 mod reactions;
 mod scoring;
 mod settings;
+mod show;

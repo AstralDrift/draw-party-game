@@ -27,7 +27,8 @@ export function PlayerResults(): React.JSX.Element {
     result,
     snapshot?.turnToken ?? 0,
     snapshot?.deadlineMs,
-    snapshot?.settings.resultsSeconds
+    snapshot?.settings.resultsSeconds,
+    snapshot?.resultPresentation
   );
   const players = snapshot?.players ?? [];
   const self = players.find((player) => player.id === clientId);
@@ -154,6 +155,8 @@ export function PlayerFinal(): React.JSX.Element {
         podium
         role="player"
         practice={practice}
+        awards={replayReady ? snapshot?.gameAwards : undefined}
+        selfId={clientId ?? undefined}
       />
 
       {isHost && replay?.action && replayReady ? (

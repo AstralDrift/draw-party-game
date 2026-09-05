@@ -71,9 +71,34 @@ const validRoundResult = {
   ],
   nobodyFoundIt: false,
   perfectTruth: false
-};
+} satisfies import('./protocol').RoundResult;
 
 describe('protocol helpers', () => {
+  it('rejects invalid show ordering, early deadlines, and secret spotlight references', () => {
+    const show = { startedAtMs: 1000, tallyAtMs: 1560, spotlightAtMs: 3800,
+      truthAtMs: 3800, scoresAtMs: 7300, continueAtMs: 10800, spotlightOptionId: null };
+    const snapshot = baseSnapshot({ phase: 'results', roundResult: validRoundResult,
+      deadlineMs: 12200, resultPresentation: show });
+    const valid = (candidate: unknown) => isServerMessage({ type: 'roomSnapshot', snapshot: candidate });
+    expect(valid(snapshot)).toBe(true);
+    expect(valid({ ...snapshot, resultPresentation: undefined })).toBe(true);
+    expect(valid({ ...snapshot, deadlineMs: 10799 })).toBe(false);
+    expect(valid({ ...snapshot, resultPresentation: { ...show, scoresAtMs: 2000 } })).toBe(false);
+    expect(valid({ ...snapshot, resultPresentation: { ...show, spotlightOptionId: 'option-0' } })).toBe(false);
+    expect(valid({ ...snapshot, resultPresentation: { ...show, continueAtMs: Infinity } })).toBe(false);
+    expect(valid({ ...snapshot, phase: 'voting' })).toBe(false);
+  });
+
+  it('validates positive earned awards and rejects duplicate kinds and winners', () => {
+    const award = { kind: 'masterBluffer', value: 25, winners: [{ playerId: 'p1', name: 'Ada' }] };
+    const valid = (awards: unknown) => isServerMessage({ type: 'roomSnapshot',
+      snapshot: { ...baseSnapshot(), gameAwards: awards } });
+    expect(valid([award])).toBe(true);
+    expect(valid([{ ...award, value: 0 }])).toBe(false);
+    expect(valid([{ ...award, kind: 'participation' }])).toBe(false);
+    expect(valid([award, award])).toBe(false);
+    expect(valid([{ ...award, winners: [...award.winners, ...award.winners] }])).toBe(false);
+  });
   it('binds deadline extensions to the requested turn', () => {
     const message = {
       type: 'extendDeadline',
@@ -363,7 +388,7 @@ describe('protocol helpers', () => {
       drawSeconds: 75,
       guessSeconds: 30,
       voteSeconds: 20,
-      resultsSeconds: 10,
+      resultsSeconds: 14,
       promptPackId: 'safe-party'
     });
   });

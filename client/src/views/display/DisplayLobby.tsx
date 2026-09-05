@@ -1,4 +1,5 @@
-import { Play, Volume2, VolumeX } from 'lucide';
+import { Play } from 'lucide';
+import { AudioControl } from '../../components/ui/AudioControl';
 import { useGame } from '../../app/GameProvider';
 import { PARTY_MIN_PLAYERS } from '../../controller';
 import { displayLobbyStartNote } from '../../polish';
@@ -9,7 +10,7 @@ import { PlayerList } from '../../components/ui/PlayerList';
 import { QrCode } from '../../components/ui/QrCode';
 
 export function DisplayLobby(): React.JSX.Element {
-  const { snapshot, send, soundOn, toggleSound } = useGame();
+  const { snapshot, send } = useGame();
   if (!snapshot) {
     return <GlassPanel>Connecting…</GlassPanel>;
   }
@@ -30,6 +31,7 @@ export function DisplayLobby(): React.JSX.Element {
         <div className="room-intro">
           <div className="room-hero-copy">
             <h2>Everybody draws. Everybody guesses.</h2>
+            <p className="party-how-to">Draw a secret. Invent a fake. Find the truth.</p>
           </div>
           <div className="room-code-wrap" aria-label={`Room Code ${snapshot.roomCode}`}>
             <div className="room-code">{snapshot.roomCode}</div>
@@ -59,14 +61,7 @@ export function DisplayLobby(): React.JSX.Element {
                   onClick={() => send({ type: 'startGame' })}
                 />
               ) : null}
-              <Button
-                variant="ghost"
-                icon={soundOn ? Volume2 : VolumeX}
-                className={`sound-toggle ${soundOn ? 'is-selected' : ''}`}
-                aria-label={soundOn ? 'Sound On' : 'Sound Off'}
-                aria-pressed={soundOn}
-                onClick={toggleSound}
-              />
+              <AudioControl />
             </div>
           </div>
           <PlayerList players={snapshot.players} />

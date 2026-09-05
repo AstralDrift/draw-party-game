@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
-import { competitionRank, finalWinnerText, ordinalRank, podiumTitles } from '../../polish';
+import { competitionRank, finalWinnerText, ordinalRank, podiumTitles, rematchPrompt } from '../../polish';
 import type { ClientRole } from '../../app/GameProvider';
-import type { ScoreEntry } from '../../protocol';
+import type { GameAward, ScoreEntry } from '../../protocol';
+import { GameAwards } from './GameAwards';
+import { ShowDoodle } from './ShowDoodle';
 import { exportShareCard, podiumShareLabel } from '../../share-card';
 import { Button } from './Button';
 import { Confetti } from './Confetti';
@@ -15,6 +17,8 @@ interface ScoresPanelProps {
   onShareFailed?: () => void;
   actions?: ReactNode;
   shareReady?: boolean;
+  awards?: GameAward[];
+  selfId?: string;
 }
 
 export function ScoresPanel({
@@ -24,7 +28,9 @@ export function ScoresPanel({
   practice = false,
   onShareFailed,
   actions,
-  shareReady = false
+  shareReady = false,
+  awards,
+  selfId
 }: ScoresPanelProps): React.JSX.Element {
   const showPodium = podium && !practice;
   const topScores = showPodium
@@ -44,6 +50,7 @@ export function ScoresPanel({
   return (
     <GlassPanel className="scores-panel" id="scores-panel">
       {showPodium ? <Confetti variant="final" /> : null}
+      {showPodium ? <ShowDoodle /> : null}
       {practice ? (
         <div className="winner-callout">
           <p className="eyebrow">Practice · scores off</p>
@@ -90,8 +97,10 @@ export function ScoresPanel({
           })}
         </div>
       ) : null}
+      {showPodium && awards ? <GameAwards awards={awards} selfId={role === 'player' ? selfId : undefined} /> : null}
       {actions || showShare ? (
         <div className="tv-finale-actions">
+          {showPodium ? <p className="rematch-invite">{rematchPrompt(scores)}</p> : null}
           {actions}
           {showShare ? (
             <Button

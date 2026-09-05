@@ -955,10 +955,10 @@ test('results reconnect overlay keeps host Continue on iPhone SE', async ({ base
     }
 
     await expect(tv.locator('.results-panel.display-results')).toHaveAttribute('data-reveal-stage', 'complete', {
-      timeout: 12_000
+      timeout: 18_000
     });
     const hostContinue = host.getByRole('button', { name: 'Continue' });
-    await expect(hostContinue).toBeEnabled({ timeout: 12_000 });
+    await expect(hostContinue).toBeEnabled({ timeout: 18_000 });
     const continueBefore = await host.locator('.result-phone-advance').boundingBox();
     if (!continueBefore) {
       throw new Error('Host Continue panel must have a layout box.');

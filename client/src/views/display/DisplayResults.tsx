@@ -25,7 +25,8 @@ export function DisplayResults(): React.JSX.Element {
     result,
     snapshot?.turnToken ?? 0,
     snapshot?.deadlineMs,
-    snapshot?.settings.resultsSeconds
+    snapshot?.settings.resultsSeconds,
+    snapshot?.resultPresentation
   );
 
   useEffect(() => {
@@ -53,6 +54,9 @@ export function DisplayResults(): React.JSX.Element {
             drawing={snapshot.currentDrawing}
             stage={stage}
             includeDrawing
+            presentation={snapshot.resultPresentation}
+            scores={snapshot.finalScores}
+            playerIds={snapshot.players.map((player) => player.id)}
             practice={(snapshot.gameMode ?? 'party') === 'practice'}
             controls={
               stage === 'deltas' || stage === 'complete' ? (
@@ -141,6 +145,7 @@ export function DisplayFinal(): React.JSX.Element {
           role="display"
           practice={practice}
           shareReady={replayReady}
+          awards={replayReady ? snapshot.gameAwards : undefined}
           onShareFailed={() => setErrorMessage('Could not export the podium card.')}
           actions={
             replay?.action && replayReady ? (

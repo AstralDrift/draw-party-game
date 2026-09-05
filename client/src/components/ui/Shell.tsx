@@ -5,6 +5,7 @@ import { LucideIcon } from './LucideIcon';
 import { useGame } from '../../app/GameProvider';
 import { useKeyboardInset } from '../../hooks/useKeyboardInset';
 import { phaseLabel } from '../../protocol';
+import { AudioControl } from './AudioControl';
 
 interface ShellProps {
   title: string;
@@ -81,6 +82,7 @@ export function Shell({ title, children }: ShellProps): React.JSX.Element {
         {snapshot ? `${phaseLabel(snapshot.phase)}. ${status}.` : connection}
       </div>
       {children}
+      {role === 'display' && snapshot && snapshot.phase !== 'lobby' ? <AudioControl /> : null}
     </div>
   );
 }

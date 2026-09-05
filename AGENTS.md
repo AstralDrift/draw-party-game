@@ -35,9 +35,10 @@ Draw Party is an open-source Drawful-style party game for a TV/display browser a
 ## Important Source Areas
 
 - `server/src/engine.rs`: room state, phase progression, scoring, prompt assignment, settings validation, reconnect/dropout rules.
-- `server/src/engine/tests.rs`: engine unit tests.
+- `server/src/engine/tests/`: engine unit tests.
 - `server/src/main.rs`: HTTP/WebSocket routes, connection authorization, static serving/cache headers, health response, room maintenance, and integration-style WebSocket tests.
 - `server/src/protocol.rs`: Rust protocol types and gameplay constants.
+- `server/src/show.rs`: Results presentation timing and aggregate earned awards.
 - `server/src/prompts.rs`: prompt packs (`safe-party`, `party-chaos`).
 - `client/src/main.tsx`: React mount + service worker registration only.
 - `client/src/app/GameProvider.tsx`: WebSocket, room join/reconnect, submissions, voting, shared client state.
@@ -46,7 +47,8 @@ Draw Party is an open-source Drawful-style party game for a TV/display browser a
 - `client/src/protocol.ts`: TypeScript protocol types and runtime guards for server messages.
 - `client/src/drawing.ts`: drawing pad, stroke capture, simplification, rendering, limits.
 - `client/src/spectator.ts`: active/spectator roster helpers.
-- `client/src/hooks/useRevealStage.ts`: results reveal staging timing (hold → tally → correct → deltas → complete).
+- `client/src/hooks/useRevealStage.ts`: results reveal staging timing (hold → tally → spotlight → correct → deltas → complete).
+- `client/src/music.ts`, `client/src/sound.ts`: gesture-enabled display music and effects; phones never play music.
 - `client/src/polish.ts`: outcome copy, podium titles, and action hints.
 - `client/src/design/`: CSS tokens and glass styles (see `docs/design.md`).
 - `client/e2e/`: Playwright coverage for full rounds, device compatibility, TV layout gates, polish, and PWA cache behavior.
@@ -57,8 +59,8 @@ Draw Party is an open-source Drawful-style party game for a TV/display browser a
 2. Drawing: each connected non-spectator draws their assigned prompt and submits once they have ink.
 3. Guessing: each drawing is revealed in turn; non-artist players submit fake answers. Phones may send ephemeral reactions.
 4. Voting: non-artist players choose the real prompt while the artist watches. Reactions remain available.
-5. Results: the client stages the reveal (hold → tally → correct → deltas → complete); the engine auto-advances after `resultsSeconds` unless the display Continues early. Scoring includes nobody-found and perfect-truth bonuses.
-6. Final Scores: after the configured round count, the display shows the podium (with titles). The host phone starts again after the celebration window; the display can export a share card as a remote fallback.
+5. Results: the server schedules drawing hold → vote tally → best-fake spotlight → truth with drawing → standings → Continue. It skips the spotlight when no fake fooled anyone, rejects early Continue, and auto-advances at the published deadline. Scoring includes nobody-found and perfect-truth bonuses.
+6. Final Scores: after the configured round count, the display shows the podium, followed by earned awards (shared on ties). The host phone starts again after the celebration window; the display can export a share card as a remote fallback.
 
 Scoring values and reconnect rules: [docs/architecture.md](docs/architecture.md).
 
@@ -67,7 +69,7 @@ Scoring values and reconnect rules: [docs/architecture.md](docs/architecture.md)
 | If you change… | Also update… |
 |----------------|--------------|
 | `server/src/protocol.rs` | `client/src/protocol.ts`, `docs/protocol.md`, relevant tests |
-| Scoring / phases / reconnect | `server/src/engine/tests.rs`, `docs/architecture.md` |
+| Scoring / phases / reconnect | `server/src/engine/tests/`, `docs/architecture.md` |
 | Design tokens or glass rules | `client/src/design/**`, `docs/design.md` |
 | Client phase ownership or routes | `docs/client-ui.md` (do not move phase authority to the client) |
 | Env / deploy / PWA cache | `docs/deployment.md`, README deploy section if the quick start changes |
@@ -79,7 +81,7 @@ Canonical command list and blast-radius matrix: [docs/contributing.md](docs/cont
 
 Narrow change tips (see contributing for the full matrix):
 
-- Engine / scoring: `cargo test --manifest-path server/Cargo.toml` (+ `server/src/engine/tests.rs`)
+- Engine / scoring: `cargo test --manifest-path server/Cargo.toml` (+ `server/src/engine/tests/`)
 - WebSocket / reconnect / health / static: `cargo test` including `main.rs` tests
 - Client logic / protocol: `npm --prefix client test -- --run` + typecheck
 - UI / layout / touch: relevant Playwright e2e (include mobile phone contexts); couch-loop UX: `npm run e2e:couch-loop`; living-room playtest: `npm run playtest:local`; live deploy smoke: `npm run playtest:live`

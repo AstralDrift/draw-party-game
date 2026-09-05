@@ -1,13 +1,14 @@
 use crate::prompts::prompt_pack_prompts;
 use crate::protocol::{
-    DrawingDoc, GameMode, GamePhase, PlayerPublic, Point, ReactionBurst, RoomSettings,
-    RoomSnapshot, RoundResult, ScoreDelta, ScoreEntry, ScoreEvent, ScoreEventKind, Stroke,
-    VoteBreakdown, VotingOption, ALLOWED_REACTIONS, CANVAS_HEIGHT, CANVAS_WIDTH,
+    DrawingDoc, GameMode, GamePhase, PlayerPublic, Point, ReactionBurst, ResultPresentation,
+    RoomSettings, RoomSnapshot, RoundResult, ScoreDelta, ScoreEntry, ScoreEvent, ScoreEventKind,
+    Stroke, VoteBreakdown, VotingOption, ALLOWED_REACTIONS, CANVAS_HEIGHT, CANVAS_WIDTH,
     DEADLINE_EXTENSION_SECONDS, MAX_DRAW_SECONDS, MAX_GUESS_LEN, MAX_GUESS_SECONDS, MAX_NAME_LEN,
     MAX_PLAYERS, MAX_POINTS_PER_STROKE, MAX_RESULTS_SECONDS, MAX_ROUNDS, MAX_STROKES,
     MAX_VOTE_SECONDS, MIN_DRAW_SECONDS, MIN_GUESS_SECONDS, MIN_PLAYERS, MIN_RESULTS_SECONDS,
     MIN_ROUNDS, MIN_VOTE_SECONDS, PRACTICE_PLAYERS, REACTION_COOLDOWN_MS, ROOM_TTL_MS,
 };
+use crate::show::{game_awards, presentation, record_awards, AwardStats};
 use rand::{seq::SliceRandom, Rng};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -43,6 +44,8 @@ pub struct RoundState {
     pub votes: BTreeMap<String, String>,
     pub voting_options: Vec<VotingOption>,
     pub result: Option<RoundResult>,
+    #[serde(default)]
+    pub presentation: Option<ResultPresentation>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -87,6 +90,8 @@ pub struct Room {
     current_round_prompt_viewers: BTreeSet<String>,
     #[serde(default)]
     retired_scores: BTreeMap<String, ScoreEntry>,
+    #[serde(default)]
+    award_stats: BTreeMap<String, AwardStats>,
     pub created_at_ms: u64,
     pub last_active_ms: u64,
 }
@@ -139,6 +144,7 @@ impl Room {
             pending_drawing_retry: None,
             current_round_prompt_viewers: BTreeSet::new(),
             retired_scores: BTreeMap::new(),
+            award_stats: BTreeMap::new(),
             created_at_ms: now_ms,
             last_active_ms: now_ms,
         }
@@ -419,6 +425,17 @@ impl Room {
                 Ok(EngineEvent::PhaseChanged)
             }
             GamePhase::Results => {
+                if self
+                    .round
+                    .presentation
+                    .as_ref()
+                    .is_some_and(|show| now_ms < show.continue_at_ms)
+                {
+                    return Err(EngineError::new(
+                        "results_locked",
+                        "Let the reveal land before continuing.",
+                    ));
+                }
                 if self.advance_after_results(now_ms)? {
                     Ok(EngineEvent::FinalScores)
                 } else {
@@ -777,6 +794,16 @@ impl Room {
             voting_options,
             nailed_it: false,
             round_result: self.round.result.clone(),
+            result_presentation: (self.phase == GamePhase::Results)
+                .then(|| self.round.presentation.clone())
+                .flatten(),
+            game_awards: if self.phase == GamePhase::FinalScores
+                && self.game_mode == GameMode::Party
+            {
+                game_awards(&self.award_stats, &self.final_scores())
+            } else {
+                Vec::new()
+            },
             final_scores: self.final_scores(),
             drawing_submitted_ids: self.round.drawings.keys().cloned().collect(),
             guess_submitted_ids: self.round.guesses.keys().cloned().collect(),
@@ -911,6 +938,7 @@ impl Room {
         if self.current_round == 0 || self.phase == GamePhase::FinalScores {
             self.current_round = 1;
             self.retired_scores.clear();
+            self.award_stats.clear();
             for player in self.players.values_mut() {
                 player.score = 0;
                 player.has_played = false;
@@ -1260,7 +1288,8 @@ impl Room {
         let (score_delta_by_player, score_events) =
             apply_score_events(&mut self.players, &pending_score_events);
 
-        let breakdown = self
+        record_awards(&mut self.award_stats, &score_events);
+        let breakdown: Vec<VoteBreakdown> = self
             .round
             .voting_options
             .iter()
@@ -1302,6 +1331,8 @@ impl Room {
             })
             .collect();
 
+        let (show, deadline) = presentation(&breakdown, now_ms, self.settings.results_seconds);
+        self.round.presentation = Some(show);
         self.round.result = Some(RoundResult {
             artist_id,
             artist_name,
@@ -1315,7 +1346,7 @@ impl Room {
         });
         self.phase = GamePhase::Results;
         self.turn_token = self.turn_token.saturating_add(1);
-        self.deadline_ms = Some(deadline_after(now_ms, self.settings.results_seconds));
+        self.deadline_ms = Some(deadline);
         self.deadline_extension_used = false;
         Ok(())
     }
