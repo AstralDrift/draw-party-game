@@ -321,11 +321,11 @@ test('Fire tablet and iPad keep fake title and vote grids within the viewport', 
         await expectTvGuessingStage(tv);
         const guessers = await waitForGuessers(players);
         if (guessers.includes(tablet)) {
-          const titleField = tablet.getByPlaceholder('Something that sounds legit…');
+          const titleField = tablet.getByPlaceholder('Invent a title…');
           await expect(titleField).toBeFocused();
           await expectWithinViewportHeight(
             tablet,
-            'input[placeholder="Something that sounds legit…"]',
+            'input[placeholder="Invent a title…"]',
             target.viewport.height
           );
           await titleField.fill(`${target.label} couch fake`);
@@ -345,7 +345,7 @@ test('Fire tablet and iPad keep fake title and vote grids within the viewport', 
           if (guesser === tablet) {
             continue;
           }
-          await guesser.getByPlaceholder('Something that sounds legit…').fill(`${target.label}-other`);
+          await guesser.getByPlaceholder('Invent a title…').fill(`${target.label}-other`);
           await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
         }
 

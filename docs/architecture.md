@@ -59,13 +59,17 @@ Spectators are not eligible voters. The artist is never an eligible voter for th
 
 When normalized duplicate fakes are merged, Results names every coauthor. Each fooled voter's +50 award is split once across those coauthors: player IDs are sorted, integer division supplies the base share, and any remainder is assigned in that order. The related `fooledPlayer` events therefore total exactly 50 for each fooled voter.
 
+Answer matching folds straight and smart apostrophes (`'`, `‘`, `’`) together before the existing Unicode, whitespace, and case normalization. Truth matches, fake grouping, authorship, and scoring use this same comparison; original answer wording is preserved for the reveal. Player-name comparisons and prompt-freshness keys keep their existing normalization.
+
 Every award also produces a typed causal score event. Per-player event sums equal `ScoreDelta.delta`, and `ScoreDelta.scoreAfter` is the authoritative post-award total.
 
 ## Reconnect and dropout
 
 - Disconnected players remain on the roster with `connected: false`.
-- Progress does not wait forever on disconnected players: once all **connected** eligible players have submitted (draw / guess / vote), the engine can advance.
+- Progress does not wait forever on disconnected players: once all **connected** eligible players have submitted (draw / guess / vote), the engine can advance. Deadline transitions and manual or automatic Results transitions apply the same readiness check, so turns with no connected guessers or voters go directly to their timed Results reveal.
 - Player re-join sets `connected: true`; display re-attach re-registers the display via host token. Heartbeats are keepalive only (`Pong`); they do not flip `connected`.
+- While visible, clients reconnect after 45 seconds without valid inbound traffic, including a stalled connection handshake. Hidden tabs pause this watchdog. Returning to the foreground or coming online sends an immediate heartbeat with a five-second reply window; repeated events share one probe. Recovery uses the existing reconnect backoff, identity, and turn drafts without auto-submitting.
+- During a pending join or retry, **Change room** cancels the socket and retry and returns the editable form with the name retained. Terminal session errors settle the attempt, clear the pending room and drafts, and show the appropriate other-tab or original-device guidance. They preserve the device identity and session token.
 - The first connected phone is the room host (`players[].isHost`) and may change lobby settings, start the game, add 30 seconds to a timed turn, Continue results, or Play Again. Host is sticky while that player stays connected; if they disconnect, the engine promotes the earliest-joined connected non-spectator, otherwise the earliest-joined connected player. The client renders the +30 control only on the host phone. The TV display remains server-authorized as an optional remote / e2e fallback, but party play should not require a TV remote after the room code appears.
 - If a display reconnects to an expired room (`room_not_found`), the client clears the stale host token and creates a fresh lobby.
 - A between-round Results deadline that cannot advance because every player is disconnected becomes quiescent instead of retrying and logging every maintenance tick. A returning player re-arms the transition deadline; without one, failed deadline work does not refresh activity and the fully disconnected room remains eligible for normal TTL cleanup.
@@ -76,6 +80,7 @@ Every award also produces a typed causal score event. Per-player event sums equa
 ## Spectators and seat limits
 
 - `MAX_PLAYERS` (8) includes spectators. Late joiners still consume a seat.
+- A new identity joining a full fresh lobby (round zero, no suspended drawing retry) may reclaim one seat whose player has been disconnected for at least 60 seconds. The longest-disconnected player is replaced first, with join time then player ID breaking ties. Reconnects clear that private disconnect timestamp; repeat disconnect notifications do not restart it. Available-capacity lobbies and active games retain their seats, and suspended retries keep their existing assignment-replacement rules.
 - Mid-game joiners arrive as `PlayerPublic.spectator: true` until the next drawing round, when the engine promotes them. A replacement waiting on a suspended blank-drawing retry remains a spectator only while that retry is preserved; abandoning it promotes connected replacements in the resulting fresh lobby.
 - Practice never promotes a late joiner during that game; it remains a one-player drawing round.
 - Lobby readiness and progress panels should count **active** (non-spectator) players only. Client helpers live in `client/src/spectator.ts`.

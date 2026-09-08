@@ -53,6 +53,8 @@ Player identity uses eight non-purple accents (`--player-accent-0` through `--pl
 - Body: `DM Sans`, fallbacks `Segoe UI`, `Helvetica Neue`, sans-serif
 - Mono (codes): `IBM Plex Mono`, fallbacks `ui-monospace`, monospace
 
+Fonts ship as local WOFF2 assets through `client/src/design/fonts.css`, with `font-display: swap` and the same fallback stacks. The client does not depend on Google-hosted stylesheets or font requests. Distribution notices are served at `/font-licenses.txt`.
+
 Syne carries the brand mark and TV headlines; DM Sans handles controller UI. Avoid Inter, Roboto, Arial, and bare system UI as the primary voice.
 
 ### Scale
@@ -93,6 +95,8 @@ Base unit: **4px**.
 TV shell: centered, max ~2520px, one composition per phase. Phone shell: max 680px, safe-area aware, large tap targets.
 
 Every interactive control has a hit box of at least 52×52 CSS pixels, including compact inputs and selects, drawing tools, vote options, share/replay actions, and TV fallback controls. Icons and visible glyphs may be smaller, but the interactive box may not opt out of `--touch` to save layout space.
+
+Every phone lobby includes a native, collapsed “How to play” disclosure below its primary controls. Opening it explains Draw, Invent, Vote, and scoring without adding a blocking introduction or duplicating the TV roster. The disclosure resets on each lobby visit. Guessing uses a visible “Fake title” field label and the short “Invent a title…” placeholder; automatic capitalization is off. Anonymous TV voting and tally titles render lowercase so keyboard casing cannot distinguish fakes; spotlight and truth beats retain original wording.
 
 Results use one full TV composition per beat: drawing hold, two-column lettered vote tally, an oversized best-fake spotlight, truth beside the art, then standings. Eight-player standings use two columns with point gains, totals, and rank movement. Continue appears only after the score beat. Phone results remain a single-column look-up companion until the server unlocks personal points.
 

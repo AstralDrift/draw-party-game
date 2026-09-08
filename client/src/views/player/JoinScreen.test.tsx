@@ -43,6 +43,7 @@ interface JoinGameMockOverrides {
 function renderJoinScreen(overrides: JoinGameMockOverrides = {}) {
   const joinRoom = vi.fn();
   const setErrorMessage = vi.fn();
+  const cancelJoin = vi.fn();
   useGameMock.mockReturnValue({
     role: 'player',
     snapshot: null,
@@ -56,7 +57,7 @@ function renderJoinScreen(overrides: JoinGameMockOverrides = {}) {
     setRoomCodeDraft: vi.fn(),
     setErrorMessage,
     joinRoom,
-    cancelJoin: vi.fn(),
+    cancelJoin,
     clearError: vi.fn(),
     ...overrides
   });
@@ -70,6 +71,7 @@ function renderJoinScreen(overrides: JoinGameMockOverrides = {}) {
     container,
     joinRoom,
     setErrorMessage,
+    cancelJoin,
     unmount: () => {
       act(() => root.unmount());
       container.remove();
@@ -214,11 +216,11 @@ describe('JoinScreen keyboard flow', () => {
     }
   });
 
-  it('keeps the join form while seating instead of a second headline', () => {
+  it.each(['Connecting', 'Disconnected', 'Connection error'])('keeps Change room usable while seating or retrying (%s)', (status) => {
     const screen = renderJoinScreen({
       initialRoomCode: 'ABCD',
       pendingJoin: { roomCode: 'ABCD', name: 'Ada' },
-      status: 'Connecting'
+      status
     });
 
     try {
@@ -230,8 +232,11 @@ describe('JoinScreen keyboard flow', () => {
       expect(name.disabled).toBe(true);
       const submit = requiredElement<HTMLButtonElement>(screen.container, 'button[type="submit"]');
       expect(submit.disabled).toBe(true);
-      expect(submit.textContent).toContain('Joining');
-      expect(screen.container.querySelector('button.join-change-room')).toBeNull();
+      expect(submit.textContent).toContain(status === 'Connecting' ? 'Joining' : 'Retrying');
+      const changeRoom = requiredElement<HTMLButtonElement>(screen.container, 'button.join-change-room');
+      expect(changeRoom.disabled).toBe(false);
+      act(() => changeRoom.click());
+      expect(screen.cancelJoin).toHaveBeenCalledOnce();
     } finally {
       screen.unmount();
     }

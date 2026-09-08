@@ -59,7 +59,16 @@ Match blast radius for narrow PRs:
 | Protocol constants/messages | Both Rust and TS sides + tests above |
 | Docs only | Link walk + constant accuracy vs code |
 
-`npm run e2e` builds the client, starts the Rust server on `127.0.0.1:3100`, and runs Playwright. Set `E2E_PORT` or `E2E_BASE_URL` as needed.
+`npm run e2e` builds the client, starts the Rust server on `127.0.0.1:3100`, and runs Playwright. Chromium runs the full suite; WebKit runs the focused phone smoke. Set `E2E_PORT` or `E2E_BASE_URL` as needed.
+
+The phone smoke covers joining, optional lobby help, drawing draft recovery after refresh, drawing submission, fake titles, voting, and results with external requests blocked. Run it in both engines after phone flow changes:
+
+```bash
+npm --prefix client run e2e:install  # Chromium and WebKit, once
+npm run e2e -- phone-smoke.e2e.ts
+```
+
+WebKit phone contexts exercise the browser engine with a touch viewport. Real phone keyboard behavior, background sleep, and network switching still require a physical-device playtest.
 
 ### TV layout gate (living-room / TV Bro)
 

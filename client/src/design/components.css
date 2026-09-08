@@ -497,6 +497,30 @@
   min-width: 0;
 }
 
+.lobby-how-to {
+  border-top: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
+}
+
+.lobby-how-to summary {
+  min-height: var(--touch);
+  padding-block: var(--space-4);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.lobby-how-to ol {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding-inline-start: var(--space-6);
+}
+
+.lobby-how-to p {
+  margin: var(--space-4) 0 0;
+}
+
 .settings-preset {
   min-width: 0;
   min-height: var(--touch);

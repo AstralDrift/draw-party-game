@@ -187,7 +187,7 @@ export function JoinScreen(): React.JSX.Element {
           <Button wide icon={LogIn} type="submit" disabled={joining} aria-busy={joining}>
             {joining ? (joinRetrying ? 'Retrying…' : 'Joining…') : 'Join the Party'}
           </Button>
-          {displayCode && !joining ? (
+          {displayCode ? (
             <Button type="button" variant="ghost" className="join-change-room" onClick={changeRoom}>
               Change room
             </Button>

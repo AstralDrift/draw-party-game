@@ -26,6 +26,7 @@ const SUMMARY_COLOR_LABELS: Record<string, string> = {
 };
 const MAX_STROKES = 220;
 const MAX_POINTS_PER_STROKE = 180;
+const MAX_ACTIVE_POINTS = MAX_POINTS_PER_STROKE * 2;
 const POINT_DISTANCE_THRESHOLD = 4;
 const CLEAR_ARM_MS = 3000;
 const PORTRAIT_DRAWING_QUERY = '(max-width: 699px) and (orientation: portrait)';
@@ -426,12 +427,10 @@ export class DrawingPad {
       const point = this.getPoint(event);
       const previous = this.currentStroke.points.at(-1);
       if (!previous || Math.abs(previous.x - point.x) + Math.abs(previous.y - point.y) >= POINT_DISTANCE_THRESHOLD) {
-        if (this.currentStroke.points.length >= MAX_POINTS_PER_STROKE) {
-          this.limitMessage = 'Stroke is full. Lift your finger to keep drawing.';
-          this.updateStatus();
-          return;
-        }
         this.currentStroke.points.push(point);
+        if (this.currentStroke.points.length >= MAX_ACTIVE_POINTS) {
+          this.currentStroke.points = simplifyStrokePoints(this.currentStroke.points, MAX_POINTS_PER_STROKE);
+        }
         this.redraw();
       }
     });
@@ -441,6 +440,13 @@ export class DrawingPad {
         return;
       }
       event.preventDefault();
+      if (event.type === 'pointerup') {
+        const point = this.getPoint(event);
+        const previous = this.currentStroke.points.at(-1);
+        if (!previous || previous.x !== point.x || previous.y !== point.y) {
+          this.currentStroke.points.push(point);
+        }
+      }
       const normalizedStroke = normalizeStroke(completeTapStroke(this.currentStroke));
       if (normalizedStroke.points.length >= 2 && this.drawing.strokes.length < MAX_STROKES) {
         this.drawing.strokes.push(normalizedStroke);

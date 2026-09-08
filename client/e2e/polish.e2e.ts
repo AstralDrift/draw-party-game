@@ -336,7 +336,7 @@ test('large-phone lobby presents player-ready hierarchy without clipping', async
     await expect(ava.getByRole('button', { name: 'Practice Drawing' })).toHaveCount(0);
     await expect(ava.getByText(/1 more|one more/i)).toBeVisible();
     await expect(bo.getByText(/1 more|one more/i)).toHaveCount(0);
-    await expect(bo.getByText('Watch the TV.')).toBeVisible();
+    await expect(bo.getByText('Watch the TV.', { exact: true })).toBeVisible();
     await expect(ava.getByRole('button', { name: 'Edit name' })).toBeVisible();
     await expect(ava.locator('.players-panel')).toHaveCount(0);
     await expect(bo.locator('.players-panel')).toHaveCount(0);
@@ -350,8 +350,8 @@ test('large-phone lobby presents player-ready hierarchy without clipping', async
     await expect(ava.getByRole('button', { name: 'Start Party' })).toBeEnabled();
     await expect(bo.getByText('Party is ready')).toHaveCount(0);
     await expect(cy.getByText('Party is ready')).toHaveCount(0);
-    await expect(bo.getByText('Watch the TV.')).toBeVisible();
-    await expect(cy.getByText('Watch the TV.')).toBeVisible();
+    await expect(bo.getByText('Watch the TV.', { exact: true })).toBeVisible();
+    await expect(cy.getByText('Watch the TV.', { exact: true })).toBeVisible();
     await expect(bo.locator('.player-room-chip')).toHaveCount(0);
     await expect(cy.locator('.player-room-chip')).toHaveCount(0);
     await expect(ava.getByText('The host phone can start the game.')).toHaveCount(0);
@@ -716,7 +716,7 @@ test('party reveal shows personal score on phones after the TV punchline', async
     expect(prompt.length).toBeGreaterThan(0);
     const guessers = await waitForGuessers(players);
     for (const [index, guesser] of guessers.entries()) {
-      await guesser.getByPlaceholder('Something that sounds legit…').fill(`score-check-${index}`);
+      await guesser.getByPlaceholder('Invent a title…').fill(`score-check-${index}`);
       await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
     }
 
@@ -833,7 +833,7 @@ test('party host keeps +30 seconds after locking a fake title', async ({ baseURL
         continue;
       }
 
-      await host.getByPlaceholder('Something that sounds legit…').fill('host slow room');
+      await host.getByPlaceholder('Invent a title…').fill('host slow room');
       await host.getByRole('button', { name: 'Submit Fake Title' }).click();
       await expect(host.locator('.submission-state.is-accepted')).toHaveText('Watch the TV.');
       await expect(host.getByRole('button', { name: '+30 seconds' })).toBeVisible();
@@ -893,7 +893,7 @@ test('party host keeps +30 seconds after locking a vote', async ({ baseURL, brow
       await expectTvGuessingStage(tv);
       const guessers = await waitForGuessers(players);
       for (const [index, guesser] of guessers.entries()) {
-        await guesser.getByPlaceholder('Something that sounds legit…').fill(`vote-host-${index}`);
+        await guesser.getByPlaceholder('Invent a title…').fill(`vote-host-${index}`);
         await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
       }
 
@@ -977,7 +977,7 @@ test('fake title submit stays above a simulated on-screen keyboard on iPhone SE'
 
     await expectTvGuessingStage(tv);
     const [guesser] = await waitForGuessers(players);
-    const titleField = guesser.getByPlaceholder('Something that sounds legit…');
+    const titleField = guesser.getByPlaceholder('Invent a title…');
     await expect(titleField).toBeFocused();
     await titleField.fill('keyboard couch test');
     await setVisualViewportHeight(guesser, 400);
@@ -987,7 +987,7 @@ test('fake title submit stays above a simulated on-screen keyboard on iPhone SE'
       'button:has-text("Submit Fake Title")',
       seViewport.height
     );
-    await expectWithinViewportHeight(guesser, 'input[placeholder="Something that sounds legit…"]', seViewport.height);
+    await expectWithinViewportHeight(guesser, 'input[placeholder="Invent a title…"]', seViewport.height);
     await expect
       .poll(async () =>
         guesser.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--keyboard-inset'))
@@ -1068,10 +1068,10 @@ test('a locked phone vote looks up instead of keeping the letter grid', async ({
 
     await expectTvGuessingStage(tv);
     await expect(tv.getByText('Title it on your phone.')).toHaveCount(0);
-    const guessers = await waitForPagesWithVisibleLocatorCount(players, 'input[placeholder="Something that sounds legit…"]', 2);
+    const guessers = await waitForPagesWithVisibleLocatorCount(players, 'input[placeholder="Invent a title…"]', 2);
     await expect(guessers[0].locator('.action-hint')).toHaveCount(0);
-    await expect(guessers[0].locator('.field-label:not(.visually-hidden)')).toHaveCount(0);
-    const titleField = guessers[0].getByPlaceholder('Something that sounds legit…');
+    await expect(guessers[0].locator('.field-label:not(.visually-hidden)')).toHaveText('Fake title');
+    const titleField = guessers[0].getByPlaceholder('Invent a title…');
     await expect(titleField).toBeFocused();
     const titleFieldBox = await titleField.boundingBox();
     if (!titleFieldBox) {
@@ -1099,13 +1099,13 @@ test('a locked phone vote looks up instead of keeping the letter grid', async ({
       await expect(guesser.locator('.phone-canvas')).toHaveCount(0);
       await expect(guesser.locator('.reaction-bar')).toBeHidden();
     }
-    await guessers[0].getByPlaceholder('Something that sounds legit…').fill('fake vote 0');
+    await guessers[0].getByPlaceholder('Invent a title…').fill('fake vote 0');
     await expect(guessers[0].getByRole('button', { name: 'Submit Fake Title' })).toBeEnabled();
     await guessers[0].getByRole('button', { name: 'Submit Fake Title' }).click();
     await expect(guessers[0].locator('.submission-state.is-accepted')).toHaveText('Watch the TV.');
     await expect(guessers[0].locator('#deadline-text')).toHaveCount(0);
     await expect(guessers[0].locator('.reaction-bar')).toBeVisible();
-    await guessers[1].getByPlaceholder('Something that sounds legit…').fill('fake vote 1');
+    await guessers[1].getByPlaceholder('Invent a title…').fill('fake vote 1');
     await expect(guessers[1].getByRole('button', { name: 'Submit Fake Title' })).toBeEnabled();
     await guessers[1].getByRole('button', { name: 'Submit Fake Title' }).click();
 
@@ -1194,13 +1194,13 @@ test('TV progress names submitted players and who is still waiting', async ({ ba
 
     await expectTvGuessingStage(tv);
     await expect(tv.getByText('Title it on your phone.')).toHaveCount(0);
-    const guessers = await waitForPagesWithVisibleLocatorCount(players, 'input[placeholder="Something that sounds legit…"]', 2);
+    const guessers = await waitForPagesWithVisibleLocatorCount(players, 'input[placeholder="Invent a title…"]', 2);
     const artist = players.find((player) => !guessers.includes(player));
     const firstGuesserName = nameForPage.get(guessers[0]) ?? '';
     const secondGuesserName = nameForPage.get(guessers[1]) ?? '';
     const artistName = artist ? (nameForPage.get(artist) ?? '') : '';
 
-    await guessers[0].getByPlaceholder('Something that sounds legit…').fill('first fake');
+    await guessers[0].getByPlaceholder('Invent a title…').fill('first fake');
     await guessers[0].getByRole('button', { name: 'Submit Fake Title' }).click();
     await expectProgressSummary(
       tv,
@@ -1212,7 +1212,7 @@ test('TV progress names submitted players and who is still waiting', async ({ ba
     );
     await expectNoVerticalOverflow(tv);
 
-    await guessers[1].getByPlaceholder('Something that sounds legit…').fill('second fake');
+    await guessers[1].getByPlaceholder('Invent a title…').fill('second fake');
     await guessers[1].getByRole('button', { name: 'Submit Fake Title' }).click();
 
     await expectTvVotingStage(tv);
@@ -1278,7 +1278,7 @@ test('one-round finale renders podium and scores without overflow', async ({ bas
       await expectTvGuessingStage(tv);
       const guessers = await waitForGuessers(players);
       for (const [index, guesser] of guessers.entries()) {
-        await guesser.getByPlaceholder('Something that sounds legit…').fill(`fake finale ${turn} ${index}`);
+        await guesser.getByPlaceholder('Invent a title…').fill(`fake finale ${turn} ${index}`);
         await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
       }
 

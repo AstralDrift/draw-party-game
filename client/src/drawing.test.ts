@@ -15,6 +15,51 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+function createPointerPad(portrait = false) {
+  vi.spyOn(window, 'matchMedia').mockImplementation((query: string) =>
+    ({
+      matches: portrait && query === '(max-width: 699px) and (orientation: portrait)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    }) as unknown as MediaQueryList
+  );
+  const context = {
+    clearRect: vi.fn(),
+    fillRect: vi.fn(),
+    save: vi.fn(),
+    restore: vi.fn(),
+    transform: vi.fn(),
+    beginPath: vi.fn(),
+    arc: vi.fn(),
+    fill: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    stroke: vi.fn()
+  };
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
+    context as unknown as CanvasRenderingContext2D
+  );
+  const onChange = vi.fn();
+  const pad = new DrawingPad(onChange);
+  const canvas = pad.root.querySelector<HTMLCanvasElement>('canvas.draw-canvas')!;
+  vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(
+    DOMRect.fromRect({ x: 0, y: 0, width: CANVAS_WIDTH, height: CANVAS_HEIGHT })
+  );
+  const fire = (type: string, x: number, y: number, pointerId = 1) => {
+    canvas.dispatchEvent(new PointerEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      pointerId,
+      pointerType: 'pen',
+      buttons: type === 'pointerup' || type === 'pointercancel' ? 0 : 1,
+      clientX: x,
+      clientY: y
+    }));
+  };
+  return { pad, context, fire, onChange };
+}
+
 describe('drawing utilities', () => {
   it('creates protocol-sized empty drawings', () => {
     expect(createEmptyDrawing()).toEqual({
@@ -498,5 +543,71 @@ describe('drawing utilities', () => {
     expect(oddSimplified).toHaveLength(180);
     expect(oddSimplified[0]).toEqual(odd[0]);
     expect(oddSimplified.at(-1)).toEqual(odd.at(-1));
+  });
+
+  it('keeps capturing a long gesture through multiple bounded compactions and includes its release endpoint', () => {
+    const { pad, context, fire, onChange } = createPointerPad();
+    fire('pointerdown', 0, 0);
+    for (let index = 1; index <= 900; index += 1) {
+      const x = (index % 100) * 8;
+      const y = Math.floor(index / 100) * 60;
+      context.lineTo.mockClear();
+      fire('pointermove', x, y);
+      expect(context.lineTo).toHaveBeenLastCalledWith(x, y);
+      expect(context.lineTo.mock.calls.length).toBeLessThan(360);
+    }
+    expect(pad.root.querySelector('.draw-status')?.textContent).not.toContain('full');
+    expect(onChange).not.toHaveBeenCalled();
+
+    fire('pointerup', 1000, 700);
+    const drawing = pad.getDrawing();
+    expect(drawing.strokes).toHaveLength(1);
+    expect(drawing.strokes[0]?.points).toHaveLength(180);
+    expect(drawing.strokes[0]?.points[0]).toEqual({ x: 0, y: 0 });
+    expect(drawing.strokes[0]?.points.at(-1)).toEqual({ x: 1000, y: 700 });
+    expect(drawing.strokes[0]?.points.some((point) => point.y === 480)).toBe(true);
+    expect(cloneValidDrawing(drawing)).toEqual(drawing);
+    expect(onChange).toHaveBeenCalledTimes(1);
+
+    pad.root.querySelector<HTMLButtonElement>('button[aria-label="Undo last stroke"]')?.click();
+    expect(pad.hasInk()).toBe(false);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    pad.destroy();
+  });
+
+  it.each([
+    { portrait: false, firstX: 0, lastX: 1 },
+    { portrait: true, firstX: 224, lastX: 225 }
+  ])('captures a distinct release below the movement threshold (portrait: $portrait)', ({ portrait, firstX, lastX }) => {
+    const { pad, fire } = createPointerPad(portrait);
+    fire('pointerdown', 0, 10);
+    fire('pointerup', 1, 10);
+    expect(pad.getDrawing().strokes[0]?.points).toEqual([
+      { x: firstX, y: 10 },
+      { x: lastX, y: 10 }
+    ]);
+    pad.destroy();
+  });
+
+  it('finishes cancellation at the last captured sample and allows a new pointer to draw', () => {
+    const { pad, fire, onChange } = createPointerPad();
+    fire('pointerdown', 10, 20);
+    fire('pointermove', 30, 40);
+    fire('pointercancel', 0, 0);
+    fire('pointerup', 100, 100);
+    expect(pad.getDrawing().strokes[0]?.points).toEqual([
+      { x: 10, y: 20 },
+      { x: 30, y: 40 }
+    ]);
+    expect(onChange).toHaveBeenCalledTimes(1);
+
+    fire('pointerdown', 50, 60, 2);
+    fire('pointercancel', 0, 0, 2);
+    expect(pad.getDrawing().strokes[1]?.points).toEqual([
+      { x: 50, y: 60 },
+      { x: 50, y: 60 }
+    ]);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    pad.destroy();
   });
 });

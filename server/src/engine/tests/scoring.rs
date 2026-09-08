@@ -382,6 +382,100 @@ fn canonically_equivalent_unicode_truth_guess_is_auto_voted() {
 }
 
 #[test]
+fn straight_and_smart_apostrophe_truth_matches_lock_the_correct_vote() {
+    for truth in [
+        "a pirate's parrot",
+        "a pirate’s parrot",
+        "a pirate‘s parrot",
+    ] {
+        for guess in [
+            "a pirate's parrot",
+            "a pirate’s parrot",
+            "a pirate‘s parrot",
+        ] {
+            let mut room = room_with_players();
+            reach_guessing(&mut room, 100);
+            let artist = room.round.current_artist_id.clone().unwrap();
+            room.round.prompts.insert(artist, truth.into());
+            let voters = non_artist_ids(&room);
+            let token = room.turn_token;
+            room.submit_guess(&voters[0], token, guess.into(), 300)
+                .unwrap();
+            assert!(!room.player_nailed_it(&voters[0]));
+            room.submit_guess(&voters[1], token, "a fake".into(), 301)
+                .unwrap();
+            assert_eq!(room.phase, GamePhase::Voting);
+            assert!(room.player_nailed_it(&voters[0]));
+            assert_eq!(room.round.voting_options.len(), 2);
+            let truth_option = truth_option_id(&room);
+            assert_eq!(room.round.votes.get(&voters[0]), Some(&truth_option));
+            room.submit_vote(&voters[1], room.turn_token, truth_option, 400)
+                .unwrap();
+            assert_eq!(deltas_map(&room).get(&voters[0]), Some(&200));
+            assert_eq!(room.round.result.as_ref().unwrap().correct_answer, truth);
+        }
+    }
+}
+
+#[test]
+fn apostrophe_duplicate_fakes_share_authorship_and_split_fooled_points() {
+    let mut room = room_with_players();
+    room.upsert_player("p4".into(), "Margaret".into(), 2)
+        .unwrap();
+    room.upsert_player("p5".into(), "Katherine".into(), 3)
+        .unwrap();
+    reach_guessing(&mut room, 100);
+    let voters = non_artist_ids(&room);
+    let token = room.turn_token;
+    for (voter, guess) in voters.iter().zip([
+        "  Pirate's   parrot  ",
+        "PIRATE’S PARROT",
+        "pirate‘s parrot",
+        "a fake",
+    ]) {
+        room.submit_guess(voter, token, guess.into(), 300).unwrap();
+    }
+    assert_eq!(room.phase, GamePhase::Voting);
+    assert_eq!(room.round.voting_options.len(), 3);
+    let fake_id = fake_option_id_for(&room, &voters[0]);
+    for voter in &voters[..3] {
+        assert_eq!(
+            room.submit_vote(voter, room.turn_token, fake_id.clone(), 400)
+                .unwrap_err()
+                .code,
+            "own_guess"
+        );
+    }
+    let truth_id = truth_option_id(&room);
+    let token = room.turn_token;
+    for voter in &voters[..3] {
+        room.submit_vote(voter, token, truth_id.clone(), 401)
+            .unwrap();
+    }
+    room.submit_vote(&voters[3], token, fake_id, 402).unwrap();
+    let result = room.round.result.as_ref().unwrap();
+    let points: Vec<i32> = result
+        .score_events
+        .iter()
+        .filter(|event| event.kind == ScoreEventKind::FooledPlayer)
+        .map(|event| event.points)
+        .collect();
+    assert_eq!(points, [17, 17, 16]);
+    let authors = result
+        .breakdown
+        .iter()
+        .find(|option| normalize_answer(&option.option_text) == "pirate's parrot")
+        .unwrap()
+        .author_name
+        .as_deref()
+        .unwrap();
+    for voter in &voters[..3] {
+        assert!(authors.contains(&room.players[voter].name));
+    }
+    assert_ne!(normalize_text("pirate's"), normalize_text("pirate’s"));
+}
+
+#[test]
 fn reaches_final_scores_then_restart_resets_scores() {
     let mut room = room_with_players();
     let mut settings = custom_settings();
