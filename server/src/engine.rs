@@ -15,6 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use unicode_normalization::UnicodeNormalization;
 
 const FINAL_SCORES_CELEBRATION_SECONDS: u64 = 3;
+const LOBBY_SEAT_RECLAIM_AFTER_MS: u64 = 60_000;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Player {
@@ -25,6 +26,8 @@ pub struct Player {
     pub spectator: bool,
     #[serde(default)]
     pub joined_at_ms: u64,
+    #[serde(default)]
+    disconnected_at_ms: Option<u64>,
     #[serde(default, skip)]
     pub last_reaction_ms: u64,
     #[serde(default, skip)]
@@ -195,6 +198,7 @@ impl Room {
         self.touch(now_ms);
         if !self.players.contains_key(&player_id) && self.players.len() >= MAX_PLAYERS {
             self.make_room_for_pending_retry_player(&player_id);
+            self.make_room_for_fresh_lobby_player(now_ms);
         }
         let has_retry_assignment = self
             .pending_drawing_retry
@@ -217,6 +221,7 @@ impl Room {
             // Reconnect is identity recovery, not an implicit rename. The canonical name only
             // changes through set_name, where collision handling can be applied deliberately.
             player.connected = true;
+            player.disconnected_at_ms = None;
         } else {
             let restored_score = self.retired_scores.remove(&player_id);
             let requested_name = restored_score
@@ -232,6 +237,7 @@ impl Room {
                     connected: true,
                     spectator: joining_as_spectator,
                     joined_at_ms: now_ms,
+                    disconnected_at_ms: None,
                     last_reaction_ms: 0,
                     session_token,
                     has_played: restored_score.is_some(),
@@ -242,6 +248,35 @@ impl Room {
         self.rearm_quiescent_results_deadline(now_ms);
 
         Ok(())
+    }
+
+    fn make_room_for_fresh_lobby_player(&mut self, now_ms: u64) {
+        if self.phase != GamePhase::Lobby
+            || self.current_round != 0
+            || self.pending_drawing_retry.is_some()
+        {
+            return;
+        }
+        let departed_id = self
+            .players
+            .values()
+            .filter(|player| {
+                !player.connected
+                    && player.disconnected_at_ms.is_some_and(|disconnected_at_ms| {
+                        now_ms.saturating_sub(disconnected_at_ms) >= LOBBY_SEAT_RECLAIM_AFTER_MS
+                    })
+            })
+            .min_by_key(|player| {
+                (
+                    player.disconnected_at_ms,
+                    player.joined_at_ms,
+                    player.id.as_str(),
+                )
+            })
+            .map(|player| player.id.clone());
+        if let Some(departed_id) = departed_id {
+            self.players.remove(&departed_id);
+        }
     }
 
     fn make_room_for_pending_retry_player(&mut self, replacement_id: &str) {
@@ -366,6 +401,9 @@ impl Room {
         self.touch(now_ms);
         self.displays.remove(client_id);
         if let Some(player) = self.players.get_mut(client_id) {
+            if player.connected {
+                player.disconnected_at_ms = Some(now_ms);
+            }
             player.connected = false;
         }
         self.ensure_host();
@@ -439,6 +477,7 @@ impl Room {
                 if self.advance_after_results(now_ms)? {
                     Ok(EngineEvent::FinalScores)
                 } else {
+                    self.advance_if_ready(now_ms)?;
                     Ok(EngineEvent::PhaseChanged)
                 }
             }
@@ -694,6 +733,7 @@ impl Room {
             _ => Ok(None),
         };
         if let Ok(Some(_)) = &event {
+            self.advance_if_ready(now_ms)?;
             self.touch(now_ms);
         }
         event
@@ -831,7 +871,7 @@ impl Room {
         let Some(option_id) = self.round.votes.get(player_id) else {
             return false;
         };
-        normalize_text(guess) == normalize_text(correct_answer)
+        normalize_answer(guess) == normalize_answer(correct_answer)
             && self
                 .round
                 .voting_options
@@ -1097,7 +1137,7 @@ impl Room {
             .cloned()
             .ok_or_else(|| EngineError::new("missing_prompt", "No prompt is active."))?;
 
-        let normalized_correct_answer = normalize_text(&correct_answer);
+        let normalized_correct_answer = normalize_answer(&correct_answer);
         let mut options = vec![VotingOption {
             id: String::new(),
             text: correct_answer,
@@ -1109,7 +1149,7 @@ impl Room {
         let mut fake_groups: BTreeMap<String, (String, Vec<String>)> = BTreeMap::new();
 
         for (player_id, guess) in &self.round.guesses {
-            let normalized_guess = normalize_text(guess);
+            let normalized_guess = normalize_answer(guess);
             if normalized_guess == normalized_correct_answer {
                 nailed_it_player_ids.push(player_id.clone());
                 continue;
@@ -1499,11 +1539,11 @@ impl Room {
         if option.is_correct {
             return Vec::new();
         }
-        let normalized_option = normalize_text(&option.text);
+        let normalized_option = normalize_answer(&option.text);
         self.round
             .guesses
             .iter()
-            .filter(|(_, guess)| normalize_text(guess) == normalized_option)
+            .filter(|(_, guess)| normalize_answer(guess) == normalized_option)
             .map(|(player_id, _)| player_id.clone())
             .collect()
     }
@@ -1827,6 +1867,10 @@ fn is_valid_color(color: &str) -> bool {
             .chars()
             .skip(1)
             .all(|character| character.is_ascii_hexdigit())
+}
+
+fn normalize_answer(text: &str) -> String {
+    normalize_text(&text.replace(['\u{2018}', '\u{2019}'], "'"))
 }
 
 fn normalize_text(text: &str) -> String {

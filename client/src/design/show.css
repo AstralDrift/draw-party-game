@@ -76,6 +76,12 @@
 }
 .show-vote-count { font: 700 clamp(1.5rem, 2vw, 3.5rem) var(--font-display); }
 
+/* Keyboard capitalization must not distinguish fakes from the real prompt. */
+.display.phase-voting .vote-answer,
+.display.phase-results [data-reveal-stage="tally"] .breakdown-answer {
+  text-transform: lowercase;
+}
+
 .show-spotlight { align-items: center; text-align: center; }
 .show-doodle { position: absolute; top: 4%; right: 3%; width: clamp(64px, 8vw, 180px); height: auto; color: var(--player-accent-4); opacity: 0.2; pointer-events: none; }
 .player .show-doodle { width: 64px; top: 8px; right: 8px; }

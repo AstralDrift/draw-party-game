@@ -447,7 +447,7 @@ test('a fake title is accepted once and survives an interrupted retry with its t
 
     const guessers = await waitForGuessers(players);
     const accepted = guessers[0];
-    const acceptedInput = accepted.getByPlaceholder('Something that sounds legit…');
+    const acceptedInput = accepted.getByPlaceholder('Invent a title…');
     await acceptedInput.fill('deferred fake title');
     await configureSubmissionHarness(accepted, 'submitGuess', 'defer');
     await accepted.getByRole('button', { name: 'Submit Fake Title' }).evaluate((button: HTMLButtonElement) => {
@@ -460,7 +460,7 @@ test('a fake title is accepted once and survives an interrupted retry with its t
     await expect(accepted.locator('.submission-state.is-accepted')).toContainText('Watch the TV.');
 
     const interrupted = guessers[1];
-    const interruptedInput = interrupted.getByPlaceholder('Something that sounds legit…');
+    const interruptedInput = interrupted.getByPlaceholder('Invent a title…');
     await interruptedInput.fill('keep this exact fake');
     await configureSubmissionHarness(interrupted, 'submitGuess', 'drop');
     await interrupted.getByRole('button', { name: 'Submit Fake Title' }).click();
@@ -473,7 +473,7 @@ test('a fake title is accepted once and survives an interrupted retry with its t
     await interrupted.getByRole('button', { name: 'Try Again' }).click();
     await expect(interrupted.locator('.submission-state.is-accepted')).toContainText('Watch the TV.');
 
-    await guessers[2].getByPlaceholder('Something that sounds legit…').fill('last fake');
+    await guessers[2].getByPlaceholder('Invent a title…').fill('last fake');
     await guessers[2].getByRole('button', { name: 'Submit Fake Title' }).click();
     await expectTvVotingStage(tv);
   } finally {
@@ -503,13 +503,13 @@ test('an unfinished fake title survives full refresh without becoming a pending 
 
     const guessers = await waitForGuessers(players);
     const recovering = guessers[0];
-    const input = recovering.getByPlaceholder('Something that sounds legit…');
+    const input = recovering.getByPlaceholder('Invent a title…');
     await input.fill('the exact reload fake');
     await expect.poll(() => turnDraftStored(recovering)).toBe(true);
 
     await recovering.reload();
 
-    const restoredInput = recovering.getByPlaceholder('Something that sounds legit…');
+    const restoredInput = recovering.getByPlaceholder('Invent a title…');
     await expect(restoredInput).toHaveValue('the exact reload fake');
     await expect(recovering.locator('.submission-state.is-pending')).toHaveCount(0);
     await expect(recovering.getByRole('button', { name: 'Submit Fake Title' })).toBeEnabled();
@@ -584,7 +584,7 @@ test('late join mid-drawing becomes spectator and promotes next round', async ({
       await expect(late.getByText('Look up')).toBeVisible();
       const guessers = await waitForGuessers(players);
       for (const [index, guesser] of guessers.entries()) {
-        await guesser.getByPlaceholder('Something that sounds legit…').fill(`late fake ${turn} ${index}`);
+        await guesser.getByPlaceholder('Invent a title…').fill(`late fake ${turn} ${index}`);
         await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
       }
       await expectTvVotingStage(tv);
@@ -679,7 +679,7 @@ test('a vote is accepted once and an interrupted choice remains retryable', asyn
     await expectTvGuessingStage(tv);
     const guessers = await waitForGuessers(players);
     for (const [index, guesser] of guessers.entries()) {
-      await guesser.getByPlaceholder('Something that sounds legit…').fill(`reconnect fake ${index}`);
+      await guesser.getByPlaceholder('Invent a title…').fill(`reconnect fake ${index}`);
       await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
     }
     await expectTvVotingStage(tv);
@@ -807,7 +807,7 @@ test('guess reconnect overlay keeps fake title controls on iPhone SE', async ({ 
     await expectTvGuessingStage(tv);
     const guessers = await waitForGuessers(players);
     const interrupted = guessers[0];
-    const titleInput = interrupted.getByPlaceholder('Something that sounds legit…');
+    const titleInput = interrupted.getByPlaceholder('Invent a title…');
     await titleInput.fill('overlay couch fake');
     const inputBefore = await titleInput.boundingBox();
     if (!inputBefore) {
@@ -817,7 +817,7 @@ test('guess reconnect overlay keeps fake title controls on iPhone SE', async ({ 
     await configureSubmissionHarness(interrupted, 'submitGuess', 'drop');
     await interrupted.getByRole('button', { name: 'Submit Fake Title' }).click();
     await expect(interrupted.locator('.connection-banner')).toBeVisible();
-    await expectWithinViewportHeight(interrupted, 'input[placeholder="Something that sounds legit…"]', sePhone.height);
+    await expectWithinViewportHeight(interrupted, 'input[placeholder="Invent a title…"]', sePhone.height);
     await expectWithinViewportHeight(interrupted, 'button:has-text("Try Again")', sePhone.height);
     const inputDuring = await titleInput.boundingBox();
     if (!inputDuring) {
@@ -830,7 +830,7 @@ test('guess reconnect overlay keeps fake title controls on iPhone SE', async ({ 
     await expect(interrupted.locator('.submission-state.is-accepted')).toContainText('Watch the TV.');
 
     for (const [index, guesser] of guessers.slice(1).entries()) {
-      await guesser.getByPlaceholder('Something that sounds legit…').fill(`se fake ${index}`);
+      await guesser.getByPlaceholder('Invent a title…').fill(`se fake ${index}`);
       await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
     }
     await expectTvVotingStage(tv);
@@ -868,7 +868,7 @@ test('vote reconnect overlay keeps the letter grid on iPhone SE', async ({ baseU
     await expectTvGuessingStage(tv);
     const guessers = await waitForGuessers(players);
     for (const [index, guesser] of guessers.entries()) {
-      await guesser.getByPlaceholder('Something that sounds legit…').fill(`vote overlay ${index}`);
+      await guesser.getByPlaceholder('Invent a title…').fill(`vote overlay ${index}`);
       await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
     }
     await expectTvVotingStage(tv);
@@ -940,7 +940,7 @@ test('results reconnect overlay keeps host Continue on iPhone SE', async ({ base
     await expectTvGuessingStage(tv);
     const guessers = await waitForGuessers(players);
     for (const [index, guesser] of guessers.entries()) {
-      await guesser.getByPlaceholder('Something that sounds legit…').fill(`results overlay ${index}`);
+      await guesser.getByPlaceholder('Invent a title…').fill(`results overlay ${index}`);
       await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
     }
 

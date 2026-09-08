@@ -52,6 +52,10 @@ Root `Dockerfile` builds the client (Node 22), builds the release server (Rust),
 
 Production should serve `client/dist` from the same origin as `/ws` and `/api/*` so `sw.js`, `manifest.webmanifest`, and hashed assets share origin.
 
+The build includes the game's WOFF2 fonts as hashed `/assets/` files, so typography needs no external Google Fonts access. Serve `/font-licenses.txt` with the built client to retain the fonts' SIL Open Font License notices. Font assets use the existing built-asset cache behavior.
+
+Local HTTP play on a LAN uses cryptographically random UUIDs through `crypto.getRandomValues` when the browser's secure-context-only `crypto.randomUUID` is unavailable. HTTPS remains the production setup; this fallback does not change session-token validation.
+
 The service worker may cache the app shell and built assets. It must keep live game routes **network-first**:
 
 - do not cache `/api/*`

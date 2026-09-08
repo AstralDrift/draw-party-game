@@ -21,7 +21,7 @@ test('game show spotlights a convincing fake and fits eight players on 720p and 
     }
     const guessers = await waitForGuessers(players);
     for (const [index, player] of guessers.entries()) {
-      await player.getByPlaceholder('Something that sounds legit…').fill(`A very suspicious goose wearing ${index + 1} enormous raincoats`);
+      await player.getByPlaceholder('Invent a title…').fill(`A very suspicious goose wearing ${index + 1} enormous raincoats`);
       await player.getByRole('button', { name: 'Submit Fake Title' }).click();
     }
     for (const [index, player] of guessers.entries()) {

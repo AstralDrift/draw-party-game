@@ -46,8 +46,8 @@ jobs:
       - name: Build client
         run: npm --prefix client run build
 
-      - name: Install Playwright browser
-        run: npm --prefix client exec -- playwright install --with-deps chromium
+      - name: Install Playwright browsers
+        run: npm --prefix client exec -- playwright install --with-deps chromium webkit
 
       - name: Build server for e2e
         run: cargo build --manifest-path server/Cargo.toml

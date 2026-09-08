@@ -292,7 +292,7 @@ export async function waitForPagesWithVisibleLocatorCount(
 export async function waitForGuessers(players: Page[]): Promise<Page[]> {
   return waitForPagesWithVisibleLocatorCount(
     players,
-    'input[placeholder="Something that sounds legit…"]',
+    'input[placeholder="Invent a title…"]',
     Math.max(0, players.length - 1)
   );
 }
@@ -353,7 +353,7 @@ export async function completeCurrentReveal(
   for (const [index, guesser] of guessers.entries()) {
     const prefix = `${uniqueLabel}-${index}-`;
     const fake = maxLengthAnswers ? `${prefix}${'x'.repeat(Math.max(0, 60 - prefix.length))}` : `${prefix}fake`;
-    await guesser.getByPlaceholder('Something that sounds legit…').fill(fake.slice(0, 60));
+    await guesser.getByPlaceholder('Invent a title…').fill(fake.slice(0, 60));
     await guesser.getByRole('button', { name: /Submit Fake Title|Try Again/ }).click();
   }
 

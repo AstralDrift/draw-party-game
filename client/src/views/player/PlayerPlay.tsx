@@ -122,10 +122,11 @@ export function PlayerGuessing(): React.JSX.Element {
                 Not accepted yet. Your title is still here—edit it or try again.
               </div>
             ) : null}
-            <Field label="Fake title" hideLabel>
+            <Field label="Fake title">
               <TextInput
                 maxLength={60}
-                placeholder="Something that sounds legit…"
+                placeholder="Invent a title…"
+                autoCapitalize="none"
                 disabled={sending}
                 autoFocus
                 value={guess}

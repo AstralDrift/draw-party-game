@@ -5,6 +5,7 @@ mod helpers;
 mod actions;
 mod drawing_validation;
 mod host;
+mod lobby_seats;
 mod names;
 mod phases_reconnect;
 mod prompts;

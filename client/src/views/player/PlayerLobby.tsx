@@ -136,6 +136,15 @@ export function PlayerLobby(): React.JSX.Element {
           ) : spectating ? null : (
             <p className="muted">Watch the TV.</p>
           )}
+          <details className="lobby-how-to">
+            <summary>How to play</summary>
+            <ol>
+              <li><strong>Draw</strong> the secret prompt on your phone. Keep it a secret!</li>
+              <li><strong>Invent</strong> a believable fake title for the drawing on the TV.</li>
+              <li><strong>Vote</strong> for the real title by tapping its letter on your phone.</li>
+            </ol>
+            <p>Earn points for finding the truth and fooling the room. After submitting, watch the TV.</p>
+          </details>
         </GlassPanel>
         {isHost ? (
           <RoomSettingsPanel settings={snapshot.settings} onSave={updateSettings} />

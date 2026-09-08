@@ -447,6 +447,98 @@ fn drawing_timeout_with_partial_submissions_enters_guessing() {
 }
 
 #[test]
+fn drawing_deadline_without_connected_guessers_goes_straight_to_results() {
+    for artist_stays_connected in [false, true] {
+        let mut room = room_with_players();
+        room.handle_start_or_advance(100).unwrap();
+        room.submit_drawing("p1", room.turn_token, drawing(), 200)
+            .unwrap();
+        for player_id in ["p1", "p2", "p3"] {
+            if player_id != "p1" || !artist_stays_connected {
+                room.mark_disconnected(player_id, 201);
+            }
+        }
+        let deadline = room.deadline_ms.unwrap();
+        assert_eq!(
+            room.advance_if_expired(deadline).unwrap(),
+            Some(EngineEvent::PhaseChanged)
+        );
+        assert_eq!(room.phase, GamePhase::Results);
+        let result = room.round.result.as_ref().unwrap();
+        assert_eq!(result.artist_id, "p1");
+        assert!(result.score_events.is_empty());
+        assert!(room.deadline_ms.unwrap() > deadline);
+        assert_eq!(
+            room.handle_start_or_advance(deadline).unwrap_err().code,
+            "results_locked"
+        );
+    }
+}
+
+#[test]
+fn guessing_deadline_with_a_fake_and_no_connected_voters_finishes_immediately() {
+    let mut room = room_with_players();
+    reach_guessing(&mut room, 100);
+    let voters = non_artist_ids(&room);
+    room.submit_guess(&voters[0], room.turn_token, "a fake".into(), 300)
+        .unwrap();
+    for voter in &voters {
+        room.mark_disconnected(voter, 301);
+    }
+    let deadline = room.deadline_ms.unwrap();
+    assert_eq!(
+        room.advance_if_expired(deadline).unwrap(),
+        Some(EngineEvent::PhaseChanged)
+    );
+    assert_eq!(room.phase, GamePhase::Results);
+    assert_eq!(room.round.voting_options.len(), 2);
+    assert!(room.round.result.as_ref().unwrap().score_events.is_empty());
+}
+
+#[test]
+fn results_manual_and_automatic_continue_skip_turns_with_no_connected_guessers() {
+    for automatic in [false, true] {
+        for artist_stays_connected in [false, true] {
+            let mut room = room_with_players();
+            reach_guessing(&mut room, 100);
+            play_guesses_then_vote_truth(&mut room, 300);
+            let next_artist = room.round.order[room.round.current_index].clone();
+            for player_id in ["p1", "p2", "p3"] {
+                if player_id != next_artist || !artist_stays_connected {
+                    room.mark_disconnected(player_id, 401);
+                }
+            }
+            let now_ms = if automatic {
+                room.deadline_ms.unwrap()
+            } else {
+                room.round.presentation.as_ref().unwrap().continue_at_ms
+            };
+            if automatic {
+                assert_eq!(
+                    room.advance_if_expired(now_ms).unwrap(),
+                    Some(EngineEvent::PhaseChanged)
+                );
+            } else {
+                assert_eq!(
+                    room.handle_start_or_advance(now_ms).unwrap(),
+                    EngineEvent::PhaseChanged
+                );
+            }
+            assert_eq!(room.phase, GamePhase::Results);
+            let result = room.round.result.as_ref().unwrap();
+            assert_eq!(result.artist_id, next_artist);
+            assert!(result.score_events.is_empty());
+            assert!(room.deadline_ms.unwrap() > now_ms);
+            assert_eq!(room.round.current_index, 2);
+            assert_eq!(
+                room.handle_start_or_advance(now_ms).unwrap_err().code,
+                "results_locked"
+            );
+        }
+    }
+}
+
+#[test]
 fn guessing_timeout_without_guesses_auto_finishes_and_awards_nothing() {
     let mut room = room_with_players();
     reach_guessing(&mut room, 100);

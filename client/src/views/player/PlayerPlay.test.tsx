@@ -236,7 +236,9 @@ describe('PlayerGuessing', () => {
 
     const markup = renderToStaticMarkup(<PlayerGuessing />);
 
-    expect(markup).toContain('Something that sounds legit');
+    expect(markup).toContain('Invent a title');
+    expect(markup).toContain('class="field-label">Fake title');
+    expect(markup).toContain('autoCapitalize="none"');
     expect(markup).toContain('autofocus');
     expect(markup).not.toContain('aria-label="+30 seconds"');
   });
