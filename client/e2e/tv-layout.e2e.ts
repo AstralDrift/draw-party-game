@@ -4,6 +4,7 @@ import {
   assertNoOverlaps,
   createPlayers,
   drawStroke,
+  expectTvGuessingStage,
   expectTvVotingStage,
   expectUniformVoteLetterHeights,
   makeAppUrl,
@@ -179,6 +180,7 @@ test('TV layout gate: reduced-motion eight-player results stay staged and readab
       viewport: { width: 1280, height: 720 }
     });
     contexts.push(tvContext);
+    await tvContext.clock.install();
     const tv = await tvContext.newPage();
     await tv.goto(appUrl('/'));
     const roomCode = (await tv.locator('.room-code').innerText()).trim();
@@ -192,7 +194,8 @@ test('TV layout gate: reduced-motion eight-player results stay staged and readab
       appUrl,
       roomCode,
       names,
-      names.map(() => sePhone)
+      names.map(() => sePhone),
+      (context) => context.clock.install()
     );
     await startParty(players[0]);
     for (const player of players) {
@@ -206,22 +209,41 @@ test('TV layout gate: reduced-motion eight-player results stay staged and readab
       const prefix = `MAX-${index}-`;
       const fake = `${prefix}${'X'.repeat(60 - prefix.length)}`;
       fakes.push(fake);
-      await guesser.getByPlaceholder('Something that sounds legit…').fill(fake);
+      await guesser.getByPlaceholder('Invent a title…').fill(fake);
       await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
-      if (index < 5) {
-        await guesser.getByRole('button', { name: '😂' }).click();
-      }
       if (index === 4) {
-        for (const target of [tv, guessers[0]]) {
-          await expect(target.locator('.reaction-layer')).toHaveCount(1);
-          await expect(target.locator('.reaction-burst')).toHaveCount(5);
-          const slots = await target.locator('.reaction-burst').evaluateAll((elements) =>
-            elements.map((element) => element.getAttribute('data-slot'))
-          );
-          expect(new Set(slots).size).toBe(5);
-          await assertAllWithinViewport(target, ['.reaction-burst']);
-          await assertNoOverlaps(target, '.reaction-burst', true);
+        const reactionTargets = [tv, guessers[0]];
+        // Bursts expire after 1.6s; CI speed must not determine how many coexist
+        // while measuring the real five-player reaction layout.
+        for (const target of reactionTargets) {
+          await target.clock.pauseAt(await target.evaluate(() => Date.now() + 1000));
         }
+        try {
+          for (const sender of guessers.slice(0, 5)) {
+            await sender.getByRole('button', { name: '😂' }).click();
+          }
+          for (const target of reactionTargets) {
+            await expect(target.locator('.reaction-layer')).toHaveCount(1);
+            await expect(target.locator('.reaction-burst')).toHaveCount(5);
+            const slots = await target.locator('.reaction-burst').evaluateAll((elements) =>
+              elements.map((element) => element.getAttribute('data-slot'))
+            );
+            expect(new Set(slots).size).toBe(5);
+            await assertAllWithinViewport(target, ['.reaction-burst']);
+            await assertNoOverlaps(target, '.reaction-burst', true);
+            await target.clock.fastForward(1600);
+            await expect(target.locator('.reaction-burst')).toHaveCount(0);
+          }
+        } finally {
+          for (const target of reactionTargets) {
+            await target.clock.resume();
+          }
+        }
+        // Reattach with fresh server-clock samples before testing timed results.
+        await tv.reload();
+        await expectTvGuessingStage(tv);
+        await guessers[0].reload();
+        await expect(guessers[0].locator('.submission-state.is-accepted')).toHaveText('Watch the TV.');
       }
     }
 
