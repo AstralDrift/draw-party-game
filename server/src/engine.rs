@@ -1850,7 +1850,7 @@ fn validate_stroke(stroke: &Stroke) -> EngineResult<()> {
         ));
     }
     for Point { x, y } in &stroke.points {
-        if *x > CANVAS_WIDTH || *y > CANVAS_HEIGHT {
+        if *x >= CANVAS_WIDTH || *y >= CANVAS_HEIGHT {
             return Err(EngineError::new(
                 "point_out_of_bounds",
                 "Drawing point is outside the canvas.",
