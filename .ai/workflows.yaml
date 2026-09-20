@@ -19,11 +19,11 @@ workflows:
       - server_main
       - client_app
   run_tests:
-    description: Run full test suite (Rust + client + e2e)
+    description: Run unit/integration suite (client vitest + typecheck + cargo). Does not run Playwright e2e.
     steps:
-      - action: run_all_tests
+      - action: run_unit_and_typecheck
         command: npm run test
-        note: Runs server tests, client tests, typecheck, and e2e
+        note: Runs client vitest, client typecheck, and cargo test — not e2e
     alternative_narrow_tests:
       - label: Server tests only
         command: cargo test --manifest-path server/Cargo.toml
@@ -31,12 +31,11 @@ workflows:
         command: npm --prefix client test -- --run
       - label: Client typecheck
         command: npm --prefix client run typecheck
-      - label: E2E tests
+      - label: E2E tests (separate from npm run test)
         command: npm run e2e
     touches_components:
       - server_engine
       - client_app
-      - client_e2e
   add_protocol_message:
     description: Add a new protocol message or constant
     steps:
