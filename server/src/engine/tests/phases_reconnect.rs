@@ -586,7 +586,12 @@ fn room_expires_only_after_everyone_disconnects_and_ttl_passes() {
 
 #[test]
 fn room_expiry_clock_starts_from_last_player_disconnect_not_from_each_disconnect() {
-    let mut room = Room::new("CODE".to_string(), "display".to_string(), "host".to_string(), 0);
+    let mut room = Room::new(
+        "CODE".to_string(),
+        "display".to_string(),
+        "host".to_string(),
+        0,
+    );
     room.upsert_player("p1".to_string(), "Alice".to_string(), 1000)
         .unwrap();
     room.upsert_player("p2".to_string(), "Bob".to_string(), 2000)

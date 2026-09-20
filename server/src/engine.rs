@@ -406,9 +406,7 @@ impl Room {
             player.connected = false;
         }
 
-        if !self.displays.is_empty()
-            || self.players.values().any(|player| player.connected)
-        {
+        if !self.displays.is_empty() || self.players.values().any(|player| player.connected) {
             self.touch(now_ms);
         }
 
