@@ -65,6 +65,7 @@ describe('PlayerLobby', () => {
     expect(markup).toContain('Need 1 more player.');
     expect(markup).toContain('Start Party');
     expect(markup).toContain('aria-label="Turn alerts off"');
+    expect(markup).toContain('aria-label="Edit name"');
   });
 
   it('leaves non-host phones on Watch the TV', () => {
@@ -94,5 +95,11 @@ describe('PlayerLobby', () => {
     expect(markup).not.toContain('spectator-pill');
     expect(markup).not.toContain('>You play next round.<');
     expect(markup).not.toContain('Start Party');
+  });
+
+  it('shows Edit name button with Pencil icon', () => {
+    const markup = renderLobby('host', 2);
+    expect(markup).toContain('lobby-rename-button');
+    expect(markup).toContain('aria-label="Edit name"');
   });
 });
