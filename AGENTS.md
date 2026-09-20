@@ -1,108 +1,68 @@
 # Draw Party Agent Context
 
-Canonical guidance for AI agents working in this repository. Deep dives live under [`docs/`](docs/README.md) — open only what the task needs.
+This project uses **AI Context as Code (AICaC) v2.0** — structured YAML in `.ai/` validated against JSON Schemas.
 
-## Project Overview
+Before answering any question, use this router to load **ONLY the relevant `.ai/` file** — do not load them all at once.
 
-Draw Party is an open-source Drawful-style party game for a TV/display browser and phone controllers. The display creates a room and shows a QR/code. Players join from phones, draw assigned prompts, submit fake guesses for other drawings, vote for the real prompt, and score points for correct votes and convincing fake answers.
+## Router: intent → file
 
-## Product Principles
+| Query intent | Load this file only |
+|-------------|---------------------|
+| Project overview, setup, dependencies, dev commands | `.ai/context.yaml` |
+| Architecture, components, data flow, tech stack | `.ai/architecture.yaml` |
+| How-to tasks, commands, adding features, workflows | `.ai/workflows.yaml` |
+| Why decisions were made, trade-offs, ADRs | `.ai/decisions.yaml` |
+| Errors, debugging, troubleshooting | `.ai/errors.yaml` |
 
-- Keep the core flow explainable in 30 seconds or less.
-- Optimize for party play: loud rooms, mixed devices, quick joins, and low-friction rounds.
-- Treat phones as controllers and the TV/display as the shared room state.
-- Prefer reliability, clear recovery, and readable code over broad feature expansion.
-- Keep v1 ephemeral: no accounts, no database, no persistent room history.
+## Examples
 
-## Docs Index
+- "How do I add a protocol message?" → `.ai/workflows.yaml` → `add_protocol_message` workflow
+- "Why is the server authoritative?" → `.ai/decisions.yaml` → `adr_001_server_authority`
+- "Fix WebSocket connection error" → `.ai/errors.yaml` → `err_websocket_failed`
+- "What are the main components?" → `.ai/architecture.yaml` → `components` section
+- "How do I run tests?" → `.ai/workflows.yaml` → `run_tests` workflow
 
-| Doc | Use when |
-|-----|----------|
-| [docs/architecture.md](docs/architecture.md) | Phases, authority, reconnect, spectators, scoring |
-| [docs/protocol.md](docs/protocol.md) | Constants, messages, dual Rust/TS updates |
-| [docs/client-ui.md](docs/client-ui.md) | React tree, phase screens, client non-negotiables |
-| [docs/design.md](docs/design.md) | Glass tokens, type, motion, components |
-| [docs/deployment.md](docs/deployment.md) | Env vars, Docker, Railway, PWA/cache |
-| [docs/contributing.md](docs/contributing.md) | Prerequisites, scripts, PR validation |
+Each `.ai/*.yaml` file has a top-level `summary:` field — read that first to confirm you picked the right file, then load the rest as needed.
 
-## Current Architecture
+## Quick reference
 
-- `server/` is the Rust authoritative game server. It owns rooms, host tokens, WebSocket connections, phase transitions, deadlines, prompt assignment, scoring, reconnect/dropout handling, room cleanup, static client serving, and `/api/health` deploy metadata.
-- `client/` is a Vite + TypeScript browser app. It renders the TV display and phone player flows, implements the drawing canvas, validates server protocol messages, syncs server time for countdowns, and ships PWA assets through `client/public/`.
-- Drawings are compact vector stroke documents, not image data URLs.
-- Rooms are in-memory and expire after all participants disconnect and the TTL passes.
+- **Project**: Draw Party — Open-source Drawful-style party game
+- **Stack**: Rust (server) + Vite/React/TypeScript (client)
+- **Entry**: `server/src/main.rs` (server), `client/src/main.tsx` (client)
+- **Docs**: See [`docs/`](docs/README.md) for deep dives (architecture, protocol, design, deployment, contributing)
 
-## Important Source Areas
+```bash
+npm run server:dev       # Rust server on :3000
+npm run client:dev       # Vite; proxies /ws and /api to :3000
+npm run test             # Full suite: server + client + e2e
+npm run e2e              # Playwright tests
+```
 
-- `server/src/engine.rs`: room state, phase progression, scoring, prompt assignment, settings validation, reconnect/dropout rules.
-- `server/src/engine/tests/`: engine unit tests.
-- `server/src/main.rs`: HTTP/WebSocket routes, connection authorization, static serving/cache headers, health response, room maintenance, and integration-style WebSocket tests.
-- `server/src/protocol.rs`: Rust protocol types and gameplay constants.
-- `server/src/show.rs`: Results presentation timing and aggregate earned awards.
-- `server/src/prompts.rs`: prompt packs (`safe-party`, `party-chaos`).
-- `client/src/main.tsx`: React mount + service worker registration only.
-- `client/src/app/GameProvider.tsx`: WebSocket, room join/reconnect, submissions, voting, shared client state.
-- `client/src/app/App.tsx`: role + phase router.
-- `client/src/views/`: display and player phase screens (including spectator watch).
-- `client/src/protocol.ts`: TypeScript protocol types and runtime guards for server messages.
-- `client/src/drawing.ts`: drawing pad, stroke capture, simplification, rendering, limits.
-- `client/src/spectator.ts`: active/spectator roster helpers.
-- `client/src/hooks/useRevealStage.ts`: results reveal staging timing (hold → tally → spotlight → correct → deltas → complete).
-- `client/src/music.ts`, `client/src/sound.ts`: gesture-enabled display music and effects; phones never play music.
-- `client/src/polish.ts`: outcome copy, podium titles, and action hints.
-- `client/src/design/`: CSS tokens and glass styles (see `docs/design.md`).
-- `client/e2e/`: Playwright coverage for full rounds, device compatibility, TV layout gates, polish, and PWA cache behavior.
+## Code principles
 
-## Game Flow
+- **Server authority**: Rust server owns rooms, phases, deadlines, scoring, reconnect. Client renders authoritative snapshots. Do not reintroduce client-side phase ownership.
+- **Ephemeral rooms**: In-memory only; no accounts or database in v1. Rooms expire 3 hours after all disconnect.
+- **Vector drawings**: Compact stroke arrays, not image data URLs.
+- **Protocol dual maintenance**: Changes to `server/src/protocol.rs` require mirroring in `client/src/protocol.ts` and `docs/protocol.md`.
+- **Spectator seats**: Spectators consume `MAX_PLAYERS` (8) seats same as active players.
 
-1. Lobby: the display creates a room; phones join by QR/code; the display can adjust room settings (timers, results pacing, prompt pack).
-2. Drawing: each connected non-spectator draws their assigned prompt and submits once they have ink.
-3. Guessing: each drawing is revealed in turn; non-artist players submit fake answers. Phones may send ephemeral reactions.
-4. Voting: non-artist players choose the real prompt while the artist watches. Reactions remain available.
-5. Results: the server schedules drawing hold → vote tally → best-fake spotlight → truth with drawing → standings → Continue. It skips the spotlight when no fake fooled anyone, rejects early Continue, and auto-advances at the published deadline. Scoring includes nobody-found and perfect-truth bonuses.
-6. Final Scores: after the configured round count, the display shows the podium, followed by earned awards (shared on ties). The host phone starts again after the celebration window; the display can export a share card as a remote fallback.
-
-Scoring values and reconnect rules: [docs/architecture.md](docs/architecture.md).
-
-## When Changing X, Also Update Y
+## When changing X, also update Y
 
 | If you change… | Also update… |
 |----------------|--------------|
 | `server/src/protocol.rs` | `client/src/protocol.ts`, `docs/protocol.md`, relevant tests |
 | Scoring / phases / reconnect | `server/src/engine/tests/`, `docs/architecture.md` |
 | Design tokens or glass rules | `client/src/design/**`, `docs/design.md` |
-| Client phase ownership or routes | `docs/client-ui.md` (do not move phase authority to the client) |
-| Env / deploy / PWA cache | `docs/deployment.md`, README deploy section if the quick start changes |
-| Validation commands | `docs/contributing.md` only (README/AGENTS link there) |
+| Validation commands | `docs/contributing.md` |
 
-## Validation
+## Validation blast radius
 
-Canonical command list and blast-radius matrix: [docs/contributing.md](docs/contributing.md#validation).
+| Change area | Validate with |
+|-------------|---------------|
+| Engine / scoring | `cargo test --manifest-path server/Cargo.toml` |
+| WebSocket / reconnect / health | `cargo test` (incl. `main.rs` tests) |
+| Client logic / protocol | `npm --prefix client test -- --run` + typecheck |
+| UI / layout / touch | Relevant Playwright e2e (include mobile contexts) |
+| TV display layout | `npm run e2e:tv` + `npm run e2e:tvbro` |
 
-Narrow change tips (see contributing for the full matrix):
-
-- Engine / scoring: `cargo test --manifest-path server/Cargo.toml` (+ `server/src/engine/tests/`)
-- WebSocket / reconnect / health / static: `cargo test` including `main.rs` tests
-- Client logic / protocol: `npm --prefix client test -- --run` + typecheck
-- UI / layout / touch: relevant Playwright e2e (include mobile phone contexts); couch-loop UX: `npm run e2e:couch-loop`; living-room playtest: `npm run playtest:local`; live deploy smoke: `npm run playtest:live`
-- TV / display layout: `npm run e2e:tv` + `npm run e2e:tvbro` (+ `npm run review:tv` / `review:tvbro` gallery; optional `npm run review:tvbro:device` for real TV Bro)
-- Release verification: `/api/health` commit check, then `E2E_BASE_URL=<url> npm run e2e` when practical
-
-## Development Guidance
-
-- Keep the Rust server authoritative. Do not reintroduce peer-to-peer room authority or client-side phase ownership.
-- Centralize phase advancement in the engine rather than duplicating progression rules in route handlers or client code.
-- Preserve reconnect and dropout behavior: disconnected players should not block progress once all connected eligible players have submitted.
-- Keep room and player limits enforced on both protocol constants and user-facing controls. Spectators consume `MAX_PLAYERS` seats (same roster cap as active players).
-- Keep client protocol guards strict; unknown or malformed server messages should not mutate UI state.
-- Avoid complex drawing features unless they directly improve the simple party flow.
-- Prefer small, reviewable changes with tests close to the changed behavior.
-- Do not duplicate this file into `CLAUDE.md` / Copilot instruction forks; keep one canonical agent doc.
-
-## Deployment Notes
-
-- The Rust server serves the built client from `client/dist`.
-- Service worker and static asset behavior must keep live game routes network-first: `/api/*` and `/ws` should not be cached.
-- Railway deployments can expose commit, branch, deployment, and environment metadata through `/api/health`.
-- Do not assume static-only hosting is sufficient for current gameplay; the WebSocket server is required.
-- Env catalog and smoke steps: [docs/deployment.md](docs/deployment.md).
+Full CI matrix: `docs/contributing.md#validation`
