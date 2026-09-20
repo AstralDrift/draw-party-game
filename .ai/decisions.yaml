@@ -1,0 +1,101 @@
+version: '2.0'
+summary: Architectural decisions for Draw Party — server authority, ephemeral rooms, vector drawings, spectator seats.
+decisions:
+  ADR-001:
+    title: Rust server is authoritative for all game state
+    date: '2024-01-15'
+    status: accepted
+    context: Early prototypes explored peer-to-peer room authority with display as coordinator. This caused reconnect complexity and inconsistent phase transitions when display disconnected.
+    decision: Centralize all room state, phase transitions, deadlines, scoring, and reconnect logic in the Rust server. Client renders authoritative snapshots.
+    consequences:
+      positive:
+        - Single source of truth for game state
+        - Reliable reconnect for all roles
+        - Display disconnect does not break game
+      negative:
+        - Requires server deployment (cannot do static-only hosting)
+    affects_components:
+      - server_engine
+      - server_main
+      - client_app
+  ADR-002:
+    title: Rooms are in-memory and ephemeral (no database)
+    date: '2024-01-18'
+    status: accepted
+    context: V1 scope prioritizes quick party play over persistent history. Accounts, room archives, and leaderboards would complicate onboarding.
+    decision: Keep rooms in-memory on the server. Expire rooms 3 hours after all participants disconnect. No accounts, no database.
+    consequences:
+      positive:
+        - Extremely simple deployment (no database setup)
+        - Fast joins with QR/code only
+        - No GDPR/data retention concerns
+      negative:
+        - Rooms lost on server restart
+        - No historical stats or replays
+    affects_components:
+      - server_engine
+      - server_main
+  ADR-003:
+    title: Drawings are vector strokes, not raster images
+    date: '2024-01-20'
+    status: accepted
+    context: Raster image data URLs are large (30–200 KB base64) and require server-side image processing for display normalization.
+    decision: Capture drawings as vector stroke arrays (points, color, width). Client renders strokes on canvas. Server stores compact JSON.
+    consequences:
+      positive:
+        - Small payload (~2–10 KB per drawing)
+        - No server-side image processing
+        - Responsive replay and zoom
+      negative:
+        - Client must implement stroke rendering
+        - No photo import or complex brush effects
+    affects_components:
+      - client_drawing
+      - server_protocol
+  ADR-004:
+    title: Spectators consume MAX_PLAYERS seats (same as active players)
+    date: '2024-02-10'
+    status: accepted
+    context: Mid-game joiners become spectators until next drawing round. Should spectators have unlimited seats or share the 8-player cap?
+    decision: Spectators consume MAX_PLAYERS (8) seats. Late joiners to a full room are rejected unless a disconnected player's seat can be reclaimed after 60s.
+    consequences:
+      positive:
+        - Simple roster management
+        - Prevents room flooding
+        - Predictable capacity
+      negative:
+        - Spectators block active player joins
+        - May feel restrictive for large parties
+    affects_components:
+      - server_engine
+  ADR-005:
+    title: Protocol changes require Rust and TypeScript updates together
+    date: '2024-02-15'
+    status: accepted
+    context: Server uses Rust serde types; client uses TypeScript types + runtime guards. Drift causes silent failures.
+    decision: Always update server/src/protocol.rs and client/src/protocol.ts together. Document in docs/protocol.md. CI runs typecheck + Rust tests.
+    consequences:
+      positive:
+        - Type safety on both sides
+        - Runtime guards catch malformed messages
+        - CI enforces alignment
+      negative:
+        - Requires dual edits for every protocol change
+    affects_components:
+      - server_protocol
+      - client_protocol
+  ADR-006:
+    title: Disconnected players do not block progress once connected eligible players submit
+    date: '2024-03-01'
+    status: accepted
+    context: Early versions waited for all assigned players to submit, even if disconnected. This caused stuck phases when players dropped mid-game.
+    decision: Phase advances when all **connected** eligible players have submitted. Disconnected players remain on roster but do not block. Deadline transitions also use this readiness check.
+    consequences:
+      positive:
+        - Game continues even with dropouts
+        - No timeout stalls
+        - Reconnect still possible
+      negative:
+        - Disconnected player misses turn
+    affects_components:
+      - server_engine
