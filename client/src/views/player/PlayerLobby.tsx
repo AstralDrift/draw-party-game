@@ -65,7 +65,7 @@ export function PlayerLobby(): React.JSX.Element {
           {spectating ? <SpectatorBanner /> : null}
           {!editingName ? (
             <div className="lobby-name-row">
-              <Button variant="ghost" className="tool-button lobby-rename-button" aria-label="Edit name" onClick={startRename}>
+              <Button variant="ghost" icon={Pencil} className="tool-button lobby-rename-button" aria-label="Edit name" onClick={startRename}>
                 {displayName}
               </Button>
               <Button
