@@ -1,0 +1,144 @@
+version: '2.0'
+summary: Common dev/test/deploy workflows for Draw Party. Server dev on :3000, client dev proxies to it. E2E builds client + runs Playwright.
+workflows:
+  local_dev:
+    description: Run local development servers (server + client)
+    steps:
+      - action: install_client_deps
+        command: npm --prefix client ci
+      - action: install_e2e_browsers
+        command: npm --prefix client run e2e:install
+        note: Run once to install Playwright browsers
+      - action: start_server
+        command: npm run server:dev
+        note: Starts Rust server on localhost:3000
+      - action: start_client
+        command: npm run client:dev
+        note: Vite dev server proxies /ws and /api to :3000
+    touches_components:
+      - server_main
+      - client_app
+  run_tests:
+    description: Run full test suite (Rust + client + e2e)
+    steps:
+      - action: run_all_tests
+        command: npm run test
+        note: Runs server tests, client tests, typecheck, and e2e
+    alternative_narrow_tests:
+      - label: Server tests only
+        command: cargo test --manifest-path server/Cargo.toml
+      - label: Client tests only
+        command: npm --prefix client test -- --run
+      - label: Client typecheck
+        command: npm --prefix client run typecheck
+      - label: E2E tests
+        command: npm run e2e
+    touches_components:
+      - server_engine
+      - client_app
+      - client_e2e
+  add_protocol_message:
+    description: Add a new protocol message or constant
+    steps:
+      - action: define_rust_type
+        location: server/src/protocol.rs
+        note: Add enum variant or struct with serde camelCase
+      - action: define_typescript_type
+        location: client/src/protocol.ts
+        note: Mirror the Rust type
+      - action: add_runtime_guard
+        location: client/src/protocol.ts
+        note: Add validation function for the message
+      - action: update_docs
+        location: docs/protocol.md
+        note: Document the new message/constant
+      - action: run_tests
+        command: cargo test --manifest-path server/Cargo.toml && npm --prefix client run typecheck
+    touches_components:
+      - server_protocol
+      - client_protocol
+  change_engine_scoring:
+    description: Modify scoring rules or phase progression
+    steps:
+      - action: update_engine
+        location: server/src/engine.rs
+        note: Change scoring logic or phase transition rules
+      - action: update_engine_tests
+        location: server/src/engine/tests/
+        note: Add or update unit tests for scoring changes
+      - action: update_docs
+        location: docs/architecture.md
+        note: Update scoring table or phase diagram
+      - action: run_engine_tests
+        command: cargo test --manifest-path server/Cargo.toml
+    touches_components:
+      - server_engine
+  deploy_production:
+    description: Deploy to Railway production
+    steps:
+      - action: install_deps
+        command: npm --prefix client ci
+      - action: build_client
+        command: npm --prefix client run build
+      - action: build_server
+        command: cargo build --manifest-path server/Cargo.toml --release
+      - action: run_server
+        command: DRAW_PARTY_STATIC_DIR=client/dist ./target/release/draw-party-server
+        note: Server serves static client from client/dist
+      - action: verify_health
+        command: curl https://drawparty.up.railway.app/api/health
+        note: Check commit SHA matches deployed version
+      - action: verify_e2e
+        command: E2E_BASE_URL=https://drawparty.up.railway.app npm run e2e
+        note: Optional full smoke test against live deploy
+    touches_components:
+      - server_main
+      - client_app
+  add_client_view:
+    description: Add a new phase screen or modify existing UI
+    steps:
+      - action: create_view_component
+        location: client/src/views/
+        note: Add display/player component for the phase
+      - action: update_router
+        location: client/src/app/App.tsx
+        note: Wire the new view into the role + phase router
+      - action: add_e2e_tests
+        location: client/e2e/
+        note: Add Playwright tests for the new screen
+      - action: run_e2e
+        command: npm run e2e
+    touches_components:
+      - client_views
+      - client_app
+      - client_e2e
+  tv_layout_check:
+    description: Verify TV display layout (geometric + pixel preview)
+    steps:
+      - action: run_geometric_checks
+        command: npm run e2e:tv
+        note: Catches clipped text, overlapping elements, forced scroll
+      - action: run_webview_preview
+        command: npm run e2e:tvbro
+        note: TV Bro WebView-shaped Chromium pixel baselines (not APK)
+      - action: optional_apk_truth
+        command: npm run review:tvbro:device
+        note: Local Android TV emulator harness for APK truth
+    touches_components:
+      - client_views
+      - client_e2e
+  playtest_lan:
+    description: Living-room playtest with real phones + TV on LAN
+    steps:
+      - action: start_lan_server
+        command: npm run playtest:local
+        note: Binds 0.0.0.0:3000; prints LAN URL for TV
+      - action: open_tv_display
+        note: Open the printed LAN URL on TV browser so QR join works
+      - action: join_phones
+        note: Scan QR or enter code on real phones
+      - action: play_round
+        note: Draw, guess, vote through final scores
+    touches_components:
+      - server_main
+      - client_app
