@@ -574,9 +574,45 @@ fn room_expires_only_after_everyone_disconnects_and_ttl_passes() {
     room.mark_disconnected("display", 10);
     room.mark_disconnected("p1", 11);
     room.mark_disconnected("p2", 12);
+    assert_eq!(room.last_active_ms, 12);
     room.mark_disconnected("p3", 13);
-    assert!(!room.is_expired(13 + ROOM_TTL_MS));
-    assert!(room.is_expired(14 + ROOM_TTL_MS));
+    assert_eq!(
+        room.last_active_ms, 12,
+        "last_active_ms stays at 12 because everyone was already disconnected at 13"
+    );
+    assert!(!room.is_expired(12 + ROOM_TTL_MS));
+    assert!(room.is_expired(12 + ROOM_TTL_MS + 1));
+}
+
+#[test]
+fn room_expiry_clock_starts_from_last_player_disconnect_not_from_each_disconnect() {
+    let mut room = Room::new("CODE".to_string(), "display".to_string(), "host".to_string(), 0);
+    room.upsert_player("p1".to_string(), "Alice".to_string(), 1000)
+        .unwrap();
+    room.upsert_player("p2".to_string(), "Bob".to_string(), 2000)
+        .unwrap();
+    room.upsert_player("p3".to_string(), "Charlie".to_string(), 3000)
+        .unwrap();
+
+    room.mark_disconnected("display", 100_000);
+    room.mark_disconnected("p1", 200_000);
+    room.mark_disconnected("p2", 300_000);
+
+    let last_connected_activity = room.last_active_ms;
+    room.mark_disconnected("p3", 400_000);
+
+    assert_eq!(
+        room.last_active_ms, last_connected_activity,
+        "mark_disconnected should not update last_active_ms when only disconnected clients remain"
+    );
+    assert!(
+        !room.is_expired(last_connected_activity + ROOM_TTL_MS),
+        "Room should not expire exactly at TTL boundary"
+    );
+    assert!(
+        room.is_expired(last_connected_activity + ROOM_TTL_MS + 1),
+        "Room should expire TTL+1 after the last moment when any client was still connected"
+    );
 }
 
 #[test]

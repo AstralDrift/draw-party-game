@@ -398,7 +398,6 @@ impl Room {
     }
 
     pub fn mark_disconnected(&mut self, client_id: &str, now_ms: u64) {
-        self.touch(now_ms);
         self.displays.remove(client_id);
         if let Some(player) = self.players.get_mut(client_id) {
             if player.connected {
@@ -406,6 +405,13 @@ impl Room {
             }
             player.connected = false;
         }
+
+        if !self.displays.is_empty()
+            || self.players.values().any(|player| player.connected)
+        {
+            self.touch(now_ms);
+        }
+
         self.ensure_host();
     }
 
