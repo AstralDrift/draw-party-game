@@ -7,6 +7,7 @@ interface DrawingPadHostProps {
   onReadyChange: (ready: boolean) => void;
   onDrawingChange?: (drawing: DrawingDoc) => void;
   padRef: React.MutableRefObject<DrawingPad | null>;
+  toolsSlotRef?: React.RefObject<HTMLElement | null>;
   initialDrawing?: DrawingDoc | null;
   locked?: boolean;
   children?: ReactNode;
@@ -16,6 +17,7 @@ export function DrawingPadHost({
   onReadyChange,
   onDrawingChange,
   padRef,
+  toolsSlotRef,
   initialDrawing = null,
   locked = false,
   children
@@ -49,10 +51,14 @@ export function DrawingPadHost({
     const submitSlot = document.createElement('div');
     submitSlot.className = 'submit-slot-host';
 
-    const pad = new DrawingPad(() => {
-      onReadyChangeRef.current(pad.hasInk());
-      onDrawingChangeRef.current?.(pad.getDrawing());
-    }, submitSlot);
+    const pad = new DrawingPad(
+      () => {
+        onReadyChangeRef.current(pad.hasInk());
+        onDrawingChangeRef.current?.(pad.getDrawing());
+      },
+      submitSlot,
+      toolsSlotRef?.current ?? undefined
+    );
     if (initialDrawingRef.current) {
       pad.restoreDrawing(initialDrawingRef.current);
     }

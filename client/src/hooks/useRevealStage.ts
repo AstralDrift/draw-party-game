@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import type { RoundResult } from '../protocol';
+import type { ResultPresentation, RoundResult } from '../protocol';
 import { playCue } from '../sound';
 import { nowMs } from '../time';
 
-export type RevealStage = 'hold' | 'tally' | 'correct' | 'deltas' | 'complete';
+export type RevealStage = 'hold' | 'tally' | 'spotlight' | 'correct' | 'deltas' | 'complete';
 
-const STAGE_ORDER: RevealStage[] = ['hold', 'tally', 'correct', 'deltas', 'complete'];
+const STAGE_ORDER: RevealStage[] = ['hold', 'tally', 'spotlight', 'correct', 'deltas', 'complete'];
 const HOLD_MS = 600;
 export const OPTION_STAGGER_MS = 120;
 const READING_BEAT_MS = 500;
@@ -82,11 +82,30 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
+function presentationBoundaries(show: ResultPresentation): Array<[RevealStage, number]> {
+  return [
+    ['tally', show.tallyAtMs],
+    ...(show.spotlightOptionId ? [['spotlight', show.spotlightAtMs] as [RevealStage, number]] : []),
+    ['correct', show.truthAtMs],
+    ['deltas', show.scoresAtMs],
+    ['complete', show.continueAtMs]
+  ];
+}
+
+export function presentationStageAt(currentMs: number, show: ResultPresentation): RevealStage {
+  let stage: RevealStage = 'hold';
+  for (const [target, atMs] of presentationBoundaries(show)) {
+    if (currentMs >= atMs) stage = target;
+  }
+  return stage;
+}
+
 export function useRevealStage(
   result: RoundResult | null | undefined,
   turnToken: number,
   deadlineMs?: number | null,
-  resultsSeconds = 10
+  resultsSeconds = 10,
+  presentation?: ResultPresentation | null
 ): { stage: RevealStage; complete: boolean } {
   const key = result ? `${result.artistId}:${result.correctAnswer}:${turnToken}` : '';
   const [stage, setStage] = useState<RevealStage>('hold');
@@ -106,13 +125,19 @@ export function useRevealStage(
 
     const reducedMotion = prefersReducedMotion();
     const fallbackStartMs = fallbackStartRef.current.atMs;
-    const elapsed = () =>
-      revealElapsedFromDeadline(deadlineMs, resultsSeconds, nowMs(), fallbackStartMs);
-    setStage(revealStageAt(elapsed(), optionCount, reducedMotion));
+    const elapsed = () => presentation
+      ? Math.max(0, nowMs() - presentation.startedAtMs)
+      : revealElapsedFromDeadline(deadlineMs, resultsSeconds, nowMs(), fallbackStartMs);
+    const current = () => presentation
+      ? presentationStageAt(nowMs(), presentation)
+      : revealStageAt(elapsed(), optionCount, reducedMotion);
+    setStage(current());
 
     const timeline = revealTimeline(optionCount);
     const timers: number[] = [];
-    const boundaries: Array<[RevealStage, number]> = [
+    const boundaries: Array<[RevealStage, number]> = presentation
+      ? presentationBoundaries(presentation).map(([target, atMs]) => [target, atMs - presentation.startedAtMs])
+      : [
       ['tally', timeline.tallyAt],
       ['correct', timeline.correctAt],
       ['deltas', timeline.deltasAt],
@@ -123,23 +148,26 @@ export function useRevealStage(
       if (remainingMs <= 0) continue;
       timers.push(
         window.setTimeout(() => {
-          const currentStage = revealStageAt(elapsed(), optionCount);
+          const currentStage = current();
           setStage(currentStage);
-          if (currentStage === 'correct' && target === 'correct') {
-            playCue('correct');
+          if (currentStage === 'spotlight' && target === 'spotlight') {
+            playCue('fooled', `${key}:spotlight`);
+          } else if (currentStage === 'correct' && target === 'correct') {
+            playCue('correct', `${key}:correct`);
           } else if (currentStage === 'deltas' && target === 'deltas') {
-            playCue(fooled ? 'fooled' : 'results');
+            playCue(!presentation && fooled ? 'fooled' : 'results', `${key}:scores`);
           }
         }, remainingMs)
       );
     }
 
+    const onVisible = () => { if (!document.hidden) setStage(current()); };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
-      for (const id of timers) {
-        window.clearTimeout(id);
-      }
+      for (const id of timers) window.clearTimeout(id);
+      document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [deadlineMs, fooled, key, optionCount, result, resultsSeconds]);
+  }, [deadlineMs, fooled, key, optionCount, result, resultsSeconds, presentation]);
 
   return { stage, complete: stage === 'complete' };
 }

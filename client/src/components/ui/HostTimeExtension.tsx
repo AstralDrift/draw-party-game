@@ -41,6 +41,7 @@ export function HostTimeExtension(): React.JSX.Element | null {
       className="tool-button"
       icon={Clock3}
       disabled={requested}
+      aria-label={requested ? 'Adding 30 seconds' : '+30 seconds'}
       onClick={() => {
         if (requested) {
           return;
@@ -53,7 +54,7 @@ export function HostTimeExtension(): React.JSX.Element | null {
         setRequestedTurn(snapshot.turnToken);
       }}
     >
-      {requested ? 'Adding…' : '+30 seconds'}
+      <span className="host-extend-label">{requested ? 'Adding…' : '+30 seconds'}</span>
     </Button>
   );
 }

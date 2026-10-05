@@ -33,6 +33,13 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome']
       }
+    },
+    {
+      name: 'webkit',
+      testMatch: '**/phone-smoke.e2e.ts',
+      use: {
+        ...devices['Desktop Safari']
+      }
     }
   ],
   // Linux CI baselines are canonical. Regenerate with:

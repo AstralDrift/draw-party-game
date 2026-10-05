@@ -153,3 +153,9 @@ pub(super) fn deltas_map(room: &Room) -> BTreeMap<String, i32> {
         .map(|delta| (delta.player_id.clone(), delta.delta))
         .collect()
 }
+
+pub(super) fn continue_after_show(room: &mut Room) {
+    assert_eq!(room.phase, GamePhase::Results);
+    let now_ms = room.round.presentation.as_ref().unwrap().continue_at_ms;
+    room.handle_start_or_advance(now_ms).unwrap();
+}

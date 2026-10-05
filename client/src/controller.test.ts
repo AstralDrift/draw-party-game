@@ -17,6 +17,7 @@ import {
   retryPendingSubmission,
   scheduleSubmissionWatchdog,
   shouldResetPendingServerAction,
+  shouldClearPendingAdvanceAfterReconnect,
   SUBMISSION_WATCHDOG_MS,
   supportsPracticeMode,
   voteOptionAccessibleName,
@@ -205,6 +206,21 @@ describe('recoverable server actions', () => {
     expect(shouldResetPendingServerAction(true, 'Disconnected', '')).toBe(true);
     expect(shouldResetPendingServerAction(true, 'Connected', '', false)).toBe(true);
     expect(shouldResetPendingServerAction(false, 'Disconnected', 'Rejected', false)).toBe(false);
+  });
+
+  it('re-enables host advance after reconnect without a server ack', () => {
+    expect(
+      shouldClearPendingAdvanceAfterReconnect(true, 'Connecting', 'Connected', '')
+    ).toBe(true);
+    expect(
+      shouldClearPendingAdvanceAfterReconnect(true, 'Disconnected', 'Connected', '')
+    ).toBe(true);
+    expect(
+      shouldClearPendingAdvanceAfterReconnect(true, 'Connected', 'Connected', '')
+    ).toBe(false);
+    expect(
+      shouldClearPendingAdvanceAfterReconnect(true, 'Connecting', 'Connected', 'Rejected')
+    ).toBe(false);
   });
 });
 
