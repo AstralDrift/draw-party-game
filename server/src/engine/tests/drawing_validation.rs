@@ -106,6 +106,34 @@ fn validate_drawing_rejects_malformed_payloads_and_accepts_limits() {
             )]),
             "point_out_of_bounds",
         ),
+        (
+            drawing_with_strokes(vec![stroke_with_points(
+                vec![
+                    Point {
+                        x: CANVAS_WIDTH,
+                        y: 1,
+                    },
+                    Point { x: 2, y: 2 },
+                ],
+                "#111111",
+                6,
+            )]),
+            "point_out_of_bounds",
+        ),
+        (
+            drawing_with_strokes(vec![stroke_with_points(
+                vec![
+                    Point {
+                        x: 1,
+                        y: CANVAS_HEIGHT,
+                    },
+                    Point { x: 2, y: 2 },
+                ],
+                "#111111",
+                6,
+            )]),
+            "point_out_of_bounds",
+        ),
     ];
     for (doc, code) in rejects {
         assert_eq!(validate_drawing(&doc).unwrap_err().code, code);
@@ -130,8 +158,8 @@ fn validate_drawing_rejects_malformed_payloads_and_accepts_limits() {
         drawing_with_strokes(vec![stroke_with_points(
             vec![
                 Point {
-                    x: CANVAS_WIDTH,
-                    y: CANVAS_HEIGHT,
+                    x: CANVAS_WIDTH - 1,
+                    y: CANVAS_HEIGHT - 1,
                 },
                 Point { x: 0, y: 0 },
             ],

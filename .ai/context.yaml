@@ -1,0 +1,39 @@
+version: '2.0'
+summary: Draw Party — Open-source Drawful-style party game. Rust WebSocket server + Vite/React client. TV displays room, phones draw/guess/vote.
+project:
+  name: draw-party
+  type: web-app
+  description: Lightweight TV display + phone controller party drawing game. Players join via QR, draw prompts, submit fake titles, vote for truth, and score points for correct votes and convincing fakes.
+  primary_language: typescript
+  languages:
+    - typescript
+    - rust
+    - javascript
+repository:
+  default_branch: main
+  url: https://github.com/AstralDrift/draw-party-game
+entrypoints:
+  server: server/src/main.rs
+  client: client/src/main.tsx
+  game_engine: server/src/engine.rs
+context_modules:
+  architecture: architecture.yaml
+  workflows: workflows.yaml
+  decisions: decisions.yaml
+  errors: errors.yaml
+common_tasks:
+  dev_server: cargo run --manifest-path server/Cargo.toml
+  dev_client: npm --prefix client run dev
+  test: npm run test
+  build: npm --prefix client run build
+  server_test: cargo test --manifest-path server/Cargo.toml
+  client_test: npm --prefix client test -- --run
+  e2e: npm run e2e
+constraints:
+  - Rust server is authoritative for rooms, phases, deadlines, scoring, reconnects
+  - Client never owns phase transitions; server engine decides when to advance
+  - Drawings are vector strokes, not image data URLs
+  - Rooms are ephemeral in-memory; no accounts or database in v1
+  - Keep client protocol guards strict; reject unknown/malformed messages
+  - Spectators consume MAX_PLAYERS (8) seats same as active players
+  - After protocol changes, update both server/src/protocol.rs and client/src/protocol.ts

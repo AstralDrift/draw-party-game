@@ -3,7 +3,9 @@ import { PencilLine } from 'lucide';
 import { Atmosphere } from './Atmosphere';
 import { LucideIcon } from './LucideIcon';
 import { useGame } from '../../app/GameProvider';
+import { useKeyboardInset } from '../../hooks/useKeyboardInset';
 import { phaseLabel } from '../../protocol';
+import { AudioControl } from './AudioControl';
 
 interface ShellProps {
   title: string;
@@ -13,6 +15,7 @@ interface ShellProps {
 export function Shell({ title, children }: ShellProps): React.JSX.Element {
   const shellRef = useRef<HTMLDivElement>(null);
   const { role, snapshot, status, pendingJoin, errorMessage } = useGame();
+  useKeyboardInset(role === 'player');
   const phaseClass = !snapshot
     ? role === 'player' && !pendingJoin
       ? 'phase-join'
@@ -79,6 +82,7 @@ export function Shell({ title, children }: ShellProps): React.JSX.Element {
         {snapshot ? `${phaseLabel(snapshot.phase)}. ${status}.` : connection}
       </div>
       {children}
+      {role === 'display' && snapshot && snapshot.phase !== 'lobby' ? <AudioControl /> : null}
     </div>
   );
 }

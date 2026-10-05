@@ -1,0 +1,119 @@
+version: '2.0'
+summary: Rust authoritative server + Vite/React client. Server owns room lifecycle, phases, scoring, reconnect. Client renders TV/player views, captures drawings, validates protocol.
+components:
+  server_engine:
+    purpose: Authoritative game engine — room state, phase progression, scoring, prompt assignment, reconnect/dropout rules
+    location: server/src/engine.rs
+    description: Owns all room state management, phase transitions with deadlines, prompt assignment, scoring logic, and reconnect/dropout progress rules. Settings validation happens here before broadcasting.
+    tech_stack:
+      - rust
+      - tokio
+      - axum
+    depends_on:
+      - server_protocol
+  server_main:
+    purpose: HTTP/WebSocket routes, connection auth, static client serving, health endpoint, room maintenance
+    location: server/src/main.rs
+    description: Handles WebSocket upgrade and authorization, serves static client files from client/dist, provides /api/health deploy metadata, and runs background room cleanup task.
+    tech_stack:
+      - rust
+      - axum
+      - tokio
+    depends_on:
+      - server_engine
+      - server_protocol
+  server_protocol:
+    purpose: Rust protocol types and gameplay constants (MAX_PLAYERS, timers, canvas size)
+    location: server/src/protocol.rs
+    description: Defines message type enums, gameplay constants including MAX_PLAYERS=8, MIN_PLAYERS=3, canvas dimensions, and timer ranges. Uses serde for JSON serialization.
+    tech_stack:
+      - rust
+      - serde
+    depends_on: []
+  server_prompts:
+    purpose: Prompt packs (safe-party, party-chaos) with 240 unique prompts each
+    location: server/src/prompts.rs
+    description: Contains prompt pack definitions and freshness tracking to avoid repeating prompts within a session.
+    tech_stack:
+      - rust
+    depends_on: []
+  server_show:
+    purpose: Results presentation timing and earned awards calculation
+    location: server/src/show.rs
+    description: Computes results reveal stage timing (hold → tally → spotlight → truth → standings) and aggregates earned awards across all players.
+    tech_stack:
+      - rust
+    depends_on:
+      - server_protocol
+  client_app:
+    purpose: React role + phase router, WebSocket provider, main rendering entry
+    location: client/src/app/
+    description: Routes between display and player roles, manages WebSocket connection lifecycle, and coordinates phase-based screen rendering.
+    tech_stack:
+      - typescript
+      - react
+      - vite
+    depends_on:
+      - client_protocol
+      - client_views
+  client_protocol:
+    purpose: TypeScript protocol types and runtime guards for server messages
+    location: client/src/protocol.ts
+    description: Mirrors server protocol types in TypeScript with runtime validation guards to reject unknown/malformed messages. Defines protocol constants matching server.
+    tech_stack:
+      - typescript
+    depends_on: []
+  client_views:
+    purpose: Display and player phase screens (lobby, drawing, guessing, voting, results, final scores)
+    location: client/src/views/
+    description: Implements TV display rendering and phone player UI for each game phase, including spectator watch screens.
+    tech_stack:
+      - typescript
+      - react
+    depends_on:
+      - client_protocol
+      - client_drawing
+  client_drawing:
+    purpose: Drawing pad, stroke capture, simplification, rendering, limits
+    location: client/src/drawing.ts
+    description: Handles canvas touch/mouse input, stroke simplification, drawing rendering, and enforces MAX_STROKES (220) and MAX_POINTS_PER_STROKE (180) limits.
+    tech_stack:
+      - typescript
+    depends_on: []
+  client_e2e:
+    purpose: Playwright coverage for full rounds, device compat, TV layout, polish, PWA cache
+    location: client/e2e/
+    description: End-to-end tests covering full game flows, phone viewport smoke tests, TV layout geometry gates, and PWA cache behavior verification.
+    tech_stack:
+      - typescript
+      - playwright
+    depends_on:
+      - server_main
+      - client_app
+data_flow:
+  - from: client_app
+    to: server_main
+    protocol: WebSocket
+    description: JSON messages for join, draw submission, guess, vote, settings, continue
+  - from: server_main
+    to: client_app
+    protocol: WebSocket
+    description: Snapshot broadcasts (room state, phase, scores), acknowledgements, errors
+  - from: server_engine
+    to: server_main
+    protocol: in-memory
+    description: Room state updates, phase transitions, score deltas
+  - from: client_drawing
+    to: client_app
+    protocol: in-memory
+    description: Stroke arrays for submission
+deployment:
+  production:
+    type: container
+    platform: Railway
+    build_steps:
+      - npm --prefix client ci
+      - npm --prefix client run build
+      - cargo build --manifest-path server/Cargo.toml --release
+    runtime: Rust binary serves static client from client/dist
+    health_check: GET /api/health
