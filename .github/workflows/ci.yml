@@ -46,8 +46,8 @@ jobs:
       - name: Build client
         run: npm --prefix client run build
 
-      - name: Install Playwright browser
-        run: npm --prefix client exec -- playwright install --with-deps chromium
+      - name: Install Playwright browsers
+        run: npm --prefix client exec -- playwright install --with-deps chromium webkit
 
       - name: Build server for e2e
         run: cargo build --manifest-path server/Cargo.toml
@@ -59,7 +59,7 @@ jobs:
 
       - name: Upload Playwright test results
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-test-results
           path: |
@@ -70,7 +70,7 @@ jobs:
 
       - name: Upload TV layout review gallery
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tv-layout-review
           path: client/artifacts/tv-review/
