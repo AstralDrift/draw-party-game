@@ -1,14 +1,15 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react';
 import type { IconNode } from 'lucide';
 import { LucideIcon } from './LucideIcon';
 
 type Variant = 'primary' | 'secondary' | 'ghost';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  ref?: Ref<HTMLButtonElement>;
   variant?: Variant;
   wide?: boolean;
   icon?: IconNode;
-  children: ReactNode;
+  children?: ReactNode;
 }
 
 export function Button({

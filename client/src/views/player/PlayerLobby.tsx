@@ -8,7 +8,6 @@ import { isSelfHost } from '../../host';
 import { Button } from '../../components/ui/Button';
 import { Field, TextInput } from '../../components/ui/Field';
 import { GlassPanel } from '../../components/ui/GlassPanel';
-import { PlayerList } from '../../components/ui/PlayerList';
 import { RoomSettingsPanel } from '../../components/ui/RoomSettingsPanel';
 import { Shell } from '../../components/ui/Shell';
 import { SpectatorBanner } from '../../components/ui/SpectatorBanner';
@@ -37,6 +36,10 @@ export function PlayerLobby(): React.JSX.Element {
   const canStartParty = connectedPlayers.length >= partyMinimum;
   const canPractice = practiceSupported && connectedPlayers.length === 1;
   const displayName = self?.name ?? 'Player';
+  const readyNote =
+    isHost && !spectating
+      ? playerLobbyReadyNote(connectedPlayers.length, partyMinimum)
+      : '';
 
   const startRename = () => {
     setNameDraft(displayName);
@@ -60,24 +63,19 @@ export function PlayerLobby(): React.JSX.Element {
       <div className="player-stack lobby-player-stack">
         <GlassPanel className={`player-lobby-card ${ready && !spectating ? 'is-ready' : ''}`}>
           {spectating ? <SpectatorBanner /> : null}
-          <p className="eyebrow">
-            {isHost ? `${displayName}, you're the host` : self ? `${displayName}, you're in` : "You're in"}
-          </p>
-          <h2>
-            {spectating
-              ? 'Watching the lobby'
-              : ready
-                ? isHost
-                  ? 'Ready when you are'
-                  : 'Party is ready'
-                : 'Waiting for players'}
-          </h2>
           {!editingName ? (
             <div className="lobby-name-row">
-              <span className="muted">Playing as {displayName}</span>
-              <Button variant="ghost" className="tool-button lobby-rename-button" onClick={startRename}>
-                Edit name
+              <Button variant="ghost" icon={Pencil} className="tool-button lobby-rename-button" aria-label="Edit name" onClick={startRename}>
+                {displayName}
               </Button>
+              <Button
+                variant="ghost"
+                icon={soundOn ? BellRing : BellOff}
+                className={`sound-toggle ${soundOn ? 'is-selected' : ''}`}
+                aria-label={soundOn ? 'Turn alerts off' : 'Turn alerts on'}
+                aria-pressed={soundOn}
+                onClick={toggleSound}
+              />
             </div>
           ) : (
             <form
@@ -106,20 +104,13 @@ export function PlayerLobby(): React.JSX.Element {
               </div>
             </form>
           )}
-          <div className="player-room-chip">
-            <span>Room</span>
-            <strong className="mini-room-code">{snapshot.roomCode}</strong>
-          </div>
-          <div className="player-ready-meter">
-            <span className="ready-count">
-              {connectedPlayers.length}/{snapshot.maxPlayers}
-            </span>
-            <span>
-              {spectating
-                ? 'You join as a player on the next drawing round.'
-                : playerLobbyReadyNote(connectedPlayers.length, partyMinimum)}
-            </span>
-          </div>
+          {isHost ? (
+            <div className="player-room-chip">
+              <span>Room</span>
+              <strong className="mini-room-code">{snapshot.roomCode}</strong>
+            </div>
+          ) : null}
+          {readyNote ? <p className="player-ready-meter">{readyNote}</p> : null}
           {isHost ? (
             <>
               <Button
@@ -131,61 +122,33 @@ export function PlayerLobby(): React.JSX.Element {
               >
                 Start Party
               </Button>
-              {practiceSupported ? (
+              {canPractice ? (
                 <Button
                   variant="secondary"
                   wide
                   icon={Pencil}
-                  disabled={!canPractice}
                   onClick={() => send({ type: 'startPractice' })}
                 >
                   Practice Drawing
                 </Button>
               ) : null}
-              <p className="muted">
-                {canStartParty
-                  ? practiceSupported
-                    ? 'Party mode is ready. Practice is a score-free drawing warm-up.'
-                    : 'Party mode is ready.'
-                  : canPractice
-                    ? `Party mode needs ${partyMinimum} players. Solo practice is ready now.`
-                    : practiceSupported
-                      ? `Party mode needs ${partyMinimum} players. Practice is for one connected phone.`
-                      : `Party mode needs ${partyMinimum} players.`}
-              </p>
             </>
-          ) : (
-            <p className="muted">
-              {spectating
-                ? 'You’re watching for now. You’ll draw next round.'
-                : practiceSupported
-                  ? 'Watch the TV. The host phone starts Party or Practice.'
-                  : 'Watch the TV. The host phone starts Party.'}
-            </p>
+          ) : spectating ? null : (
+            <p className="muted">Watch the TV.</p>
           )}
-          <Button
-            variant="ghost"
-            wide
-            icon={soundOn ? BellRing : BellOff}
-            className={`sound-toggle turn-alert ${soundOn ? 'is-selected' : ''}`}
-            aria-pressed={soundOn}
-            onClick={toggleSound}
-          >
-            {soundOn ? 'Turn alerts: On' : 'Turn alerts: Off'}
-          </Button>
-          <p className="muted fine-print">Best effort while this tab is open</p>
+          <details className="lobby-how-to">
+            <summary>How to play</summary>
+            <ol>
+              <li><strong>Draw</strong> the secret prompt on your phone. Keep it a secret!</li>
+              <li><strong>Invent</strong> a believable fake title for the drawing on the TV.</li>
+              <li><strong>Vote</strong> for the real title by tapping its letter on your phone.</li>
+            </ol>
+            <p>Earn points for finding the truth and fooling the room. After submitting, watch the TV.</p>
+          </details>
         </GlassPanel>
         {isHost ? (
-          <RoomSettingsPanel
-            settings={snapshot.settings}
-            onSave={updateSettings}
-            subtitle="Choose a pace, then pick the prompt pack."
-          />
+          <RoomSettingsPanel settings={snapshot.settings} onSave={updateSettings} />
         ) : null}
-        <GlassPanel className="players-panel" tone="soft">
-          <div className="panel-title">Players</div>
-          <PlayerList players={snapshot.players} />
-        </GlassPanel>
       </div>
     </Shell>
   );

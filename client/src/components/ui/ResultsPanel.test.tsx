@@ -85,15 +85,39 @@ function expectStageHidden(target: 'tally' | 'correct' | 'deltas', hidden: boole
 }
 
 describe('ResultsPanel staged accessibility', () => {
+  it('reveals the bluff authors only at spotlight and keeps the truth with its drawing', () => {
+    const presentation = { startedAtMs: 0, tallyAtMs: 560, spotlightAtMs: 2800,
+      truthAtMs: 5600, scoresAtMs: 9100, continueAtMs: 12600, spotlightOptionId: 'fake' };
+    const show = (stage: RevealStage) => {
+      document.body.innerHTML = renderToStaticMarkup(<ResultsPanel result={result} drawing={null}
+        stage={stage} includeDrawing presentation={presentation} />);
+    };
+    show('tally');
+    expect(document.querySelector('.show-fake-credit')).toBeNull();
+    expect(document.querySelector('.reveal-prompt')).toBeNull();
+    expect(document.querySelectorAll('.show-vote-count')).toHaveLength(2);
+    show('spotlight');
+    expect(document.querySelector('.show-fake-title')?.textContent).toBe('Soap opera in space');
+    expect(document.querySelector('.show-fake-credit')?.textContent).toContain('Cy');
+    expect(document.querySelector('.show-fooled')?.textContent).toContain('Di · Eli');
+    expect(document.querySelector('.reveal-prompt')).toBeNull();
+    show('correct');
+    expect(document.querySelector('.show-truth .result-canvas')).not.toBeNull();
+    expect(document.querySelector('.reveal-prompt')?.textContent).toBe(result.correctAnswer);
+    show('deltas');
+    expect(document.querySelectorAll('.show-score-row')).toHaveLength(3);
+    expect(document.querySelector('.show-score-total')?.textContent).toContain('450');
+    expect(document.querySelector('.reveal-prompt')).toBeNull();
+  });
   it.each<{
     stage: RevealStage;
     hidden: Record<'tally' | 'correct' | 'deltas', boolean>;
   }>([
     { stage: 'hold', hidden: { tally: true, correct: true, deltas: true } },
     { stage: 'tally', hidden: { tally: false, correct: true, deltas: true } },
-    { stage: 'correct', hidden: { tally: false, correct: false, deltas: true } },
-    { stage: 'deltas', hidden: { tally: false, correct: false, deltas: false } },
-    { stage: 'complete', hidden: { tally: false, correct: false, deltas: false } }
+    { stage: 'correct', hidden: { tally: true, correct: false, deltas: true } },
+    { stage: 'deltas', hidden: { tally: true, correct: true, deltas: false } },
+    { stage: 'complete', hidden: { tally: true, correct: true, deltas: false } }
   ])('keeps unrevealed content out of the accessibility tree at $stage', ({ stage, hidden }) => {
     renderStage(stage);
     expectStageHidden('tally', hidden.tally);
@@ -103,19 +127,62 @@ describe('ResultsPanel staged accessibility', () => {
 
   it('keeps tally labels neutral until the truth reveal', () => {
     renderStage('tally');
-    expect([...document.querySelectorAll('.breakdown-kind')].map((node) => node.textContent)).toEqual([
-      'Option A',
-      'Option B'
-    ]);
+    expect(document.querySelectorAll('.breakdown-kind')).toHaveLength(0);
     expect(document.querySelectorAll('.breakdown-row.correct')).toHaveLength(0);
     expect(document.body.textContent).not.toContain('Fake by Cy');
+    expect(document.body.textContent).not.toContain('Option A');
+    expect(document.body.textContent).not.toContain('Voted by');
+    expect(document.body.textContent).not.toContain('No votes');
+    expect(document.querySelectorAll('.vote-chip')).toHaveLength(0);
 
     renderStage('correct');
+    expect(document.querySelector('.breakdown')?.getAttribute('aria-hidden')).toBe('true');
     expect([...document.querySelectorAll('.breakdown-kind')].map((node) => node.textContent)).toEqual([
       'Correct answer',
       'Fake by Cy'
     ]);
     expect(document.querySelectorAll('.breakdown-row.correct')).toHaveLength(1);
+  });
+
+  it('lets the drawing and the prompt own their beats', () => {
+    document.body.innerHTML = renderToStaticMarkup(
+      <ResultsPanel result={result} drawing={null} stage="hold" includeDrawing />
+    );
+    expect(document.querySelector('.reveal-hold-line')).toBeNull();
+    expect(document.querySelector('.result-summary .eyebrow')).toBeNull();
+    expect(document.querySelector('.result-canvas')?.className.includes('is-visible')).toBe(true);
+    expect(document.querySelector('.reveal-prompt')?.className.includes('is-visible')).toBe(false);
+
+    document.body.innerHTML = renderToStaticMarkup(
+      <ResultsPanel result={result} drawing={null} stage="correct" includeDrawing />
+    );
+    const summary = document.querySelector('.result-summary');
+    expect(summary?.querySelector('h2')).toBeNull();
+    expect(summary?.querySelector('.eyebrow')).toBeNull();
+    expect(summary?.querySelector('.reveal-prompt')?.textContent).toBe('A moon taking a bath');
+    expect(summary?.querySelector('.round-outcome')).toBeNull();
+    expect(document.querySelector('.score-deltas')?.getAttribute('aria-hidden')).toBe('true');
+
+    document.body.innerHTML = renderToStaticMarkup(
+      <ResultsPanel result={result} drawing={null} stage="deltas" includeDrawing />
+    );
+    expect(document.querySelector('.result-summary')?.getAttribute('aria-hidden')).toBe('true');
+    expect(document.querySelector('.reveal-prompt')?.getAttribute('aria-hidden')).toBe('true');
+    expect(document.querySelector('.score-deltas')?.getAttribute('aria-hidden')).toBe('false');
+    expect(document.querySelector('.result-summary .eyebrow')).toBeNull();
+    expect(document.querySelector('.round-outcome')?.textContent).toBe('Bo cracked it');
+  });
+
+  it('shows the drawing only on the hold beat', () => {
+    const stages: RevealStage[] = ['hold', 'tally', 'correct', 'deltas', 'complete'];
+    for (const stage of stages) {
+      document.body.innerHTML = renderToStaticMarkup(
+        <ResultsPanel result={result} drawing={null} stage={stage} includeDrawing />
+      );
+      const canvas = document.querySelector('.result-canvas');
+      expect(canvas).not.toBeNull();
+      expect(canvas?.className.includes('is-visible')).toBe(stage === 'hold');
+    }
   });
 
   it('renders the intended TV columns, stable labels, stagger variables, and one announcement', () => {
@@ -170,12 +237,19 @@ describe('ResultsPanel staged accessibility', () => {
 
   it('labels practice clearly and suppresses result confetti', () => {
     document.body.innerHTML = renderToStaticMarkup(
+      <ResultsPanel result={result} drawing={null} stage="correct" includeDrawing practice />
+    );
+    expect(document.querySelector('.result-summary .eyebrow')).toBeNull();
+    expect(document.querySelector('.round-outcome')).toBeNull();
+    expect(document.body.textContent).toContain('A moon taking a bath');
+    expect(document.body.textContent).not.toContain('artist wins the room');
+
+    document.body.innerHTML = renderToStaticMarkup(
       <ResultsPanel result={result} drawing={null} stage="complete" includeDrawing practice />
     );
-    expect(document.body.textContent).toContain('Practice · scores off');
-    expect(document.body.textContent).toContain('Warm-up complete');
-    expect(document.body.textContent).not.toContain('artist wins the room');
     expect(document.body.textContent).toContain('Practice round — scores stay off.');
+    expect(document.body.textContent).not.toContain('Warm-up complete');
     expect(document.querySelector('.confetti')).toBeNull();
+    expect(document.querySelector('.result-summary .eyebrow')).toBeNull();
   });
 });

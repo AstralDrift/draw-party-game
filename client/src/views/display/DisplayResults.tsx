@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowRight, Play, RotateCcw } from 'lucide';
 import { useGame } from '../../app/GameProvider';
 import {
   finalReplayPlan,
+  shouldClearPendingAdvanceAfterReconnect,
   shouldResetPendingServerAction,
   type ReplayAction
 } from '../../controller';
 import { useRevealStage } from '../../hooks/useRevealStage';
 import { useServerTimedGate } from '../../hooks/useServerTimedGate';
-import { rematchPrompt } from '../../polish';
 import { Button } from '../../components/ui/Button';
 import { Deadline } from '../../components/ui/Deadline';
 import { GlassPanel } from '../../components/ui/GlassPanel';
@@ -18,16 +19,24 @@ import { ScoresPanel } from '../../components/ui/ScoresPanel';
 export function DisplayResults(): React.JSX.Element {
   const { snapshot, status, errorMessage, clearError, send } = useGame();
   const [advancePending, setAdvancePending] = useState(false);
+  const priorStatusRef = useRef(status);
   const result = snapshot?.roundResult;
   const { stage, complete } = useRevealStage(
     result,
     snapshot?.turnToken ?? 0,
     snapshot?.deadlineMs,
-    snapshot?.settings.resultsSeconds
+    snapshot?.settings.resultsSeconds,
+    snapshot?.resultPresentation
   );
 
   useEffect(() => {
+    const priorStatus = priorStatusRef.current;
+    priorStatusRef.current = status;
     if (shouldResetPendingServerAction(advancePending, status, errorMessage)) {
+      setAdvancePending(false);
+      return;
+    }
+    if (shouldClearPendingAdvanceAfterReconnect(advancePending, priorStatus, status, errorMessage)) {
       setAdvancePending(false);
     }
   }, [advancePending, errorMessage, status]);
@@ -45,25 +54,31 @@ export function DisplayResults(): React.JSX.Element {
             drawing={snapshot.currentDrawing}
             stage={stage}
             includeDrawing
+            presentation={snapshot.resultPresentation}
+            scores={snapshot.finalScores}
+            playerIds={snapshot.players.map((player) => player.id)}
             practice={(snapshot.gameMode ?? 'party') === 'practice'}
             controls={
-              <div className="advance-panel result-advance">
-                <p className="eyebrow">Next drawing in</p>
-                <Deadline />
-                <Button
-                  id="advance-button"
-                  className="tv-action-fallback"
-                  variant="ghost"
-                  disabled={!complete || advancePending}
-                  onClick={() => {
-                    clearError();
-                    if (send({ type: 'startGame' })) setAdvancePending(true);
-                  }}
-                >
-                  {advancePending ? 'Continuing from TV…' : 'Continue from TV (fallback)'}
-                </Button>
-                <p className="muted">Use the host phone to continue early. The game moves on at zero.</p>
-              </div>
+              stage === 'deltas' || stage === 'complete' ? (
+                <div className="advance-panel result-advance">
+                  <Deadline />
+                  {complete ? (
+                    <Button
+                      id="advance-button"
+                      className="tv-action-fallback tv-icon-fallback"
+                      variant="ghost"
+                      icon={ArrowRight}
+                      aria-label="Continue from TV (fallback)"
+                      aria-busy={advancePending || undefined}
+                      disabled={advancePending}
+                      onClick={() => {
+                        clearError();
+                        if (send({ type: 'startGame' })) setAdvancePending(true);
+                      }}
+                    />
+                  ) : null}
+                </div>
+              ) : undefined
             }
           />
         ) : (
@@ -78,6 +93,7 @@ export function DisplayResults(): React.JSX.Element {
 export function DisplayFinal(): React.JSX.Element {
   const { snapshot, status, errorMessage, clearError, send, setErrorMessage } = useGame();
   const [advancePending, setAdvancePending] = useState<ReplayAction | null>(null);
+  const priorStatusRef = useRef(status);
   const replay = snapshot ? finalReplayPlan(snapshot) : null;
   const replayReady = useServerTimedGate(
     snapshot?.phase === 'finalScores'
@@ -88,12 +104,26 @@ export function DisplayFinal(): React.JSX.Element {
   );
 
   useEffect(() => {
+    const priorStatus = priorStatusRef.current;
+    priorStatusRef.current = status;
     if (
       shouldResetPendingServerAction(
         Boolean(advancePending),
         status,
         errorMessage,
         replay?.action === advancePending
+      )
+    ) {
+      setAdvancePending(null);
+      return;
+    }
+    if (
+      advancePending &&
+      shouldClearPendingAdvanceAfterReconnect(
+        true,
+        priorStatus,
+        status,
+        errorMessage
       )
     ) {
       setAdvancePending(null);
@@ -114,39 +144,33 @@ export function DisplayFinal(): React.JSX.Element {
           podium
           role="display"
           practice={practice}
+          shareReady={replayReady}
+          awards={replayReady ? snapshot.gameAwards : undefined}
           onShareFailed={() => setErrorMessage('Could not export the podium card.')}
+          actions={
+            replay?.action && replayReady ? (
+              <Button
+                id="advance-button"
+                className="tv-action-fallback tv-icon-fallback"
+                variant="ghost"
+                icon={replay.label === 'Start Party' ? Play : RotateCcw}
+                aria-label={`${replay.label} from TV (fallback)`}
+                aria-busy={Boolean(advancePending) || undefined}
+                disabled={Boolean(advancePending)}
+                onClick={() => {
+                  const action = replay.action;
+                  if (!action) return;
+                  clearError();
+                  const sent =
+                    action === 'practice'
+                      ? send({ type: 'startPractice' })
+                      : send({ type: 'startGame' });
+                  if (sent) setAdvancePending(action);
+                }}
+              />
+            ) : null
+          }
         />
-        <GlassPanel className="advance-panel encore-panel" tone="soft">
-          <p className="eyebrow">TV fallback</p>
-          <h2 className="encore-title">{rematchPrompt(snapshot.finalScores)}</h2>
-          <Button
-            id="advance-button"
-            className="tv-action-fallback"
-            variant="ghost"
-            disabled={!replay?.action || !replayReady || Boolean(advancePending)}
-            onClick={() => {
-              const action = replay?.action;
-              if (!action) return;
-              clearError();
-              const sent =
-                action === 'practice'
-                  ? send({ type: 'startPractice' })
-                  : send({ type: 'startGame' });
-              if (sent) setAdvancePending(action);
-            }}
-          >
-            {advancePending
-              ? 'Starting from TV…'
-              : !replayReady && replay?.action
-                ? 'Podium first…'
-                : `${replay?.label ?? 'Play Again'} from TV (fallback)`}
-          </Button>
-          <p className="muted">
-            {replayReady
-              ? `Use the host phone to start. ${replay?.guidance}`
-              : 'Give the podium its moment. Replay unlocks shortly.'}
-          </p>
-        </GlassPanel>
       </div>
       <ReactionBursts />
     </>

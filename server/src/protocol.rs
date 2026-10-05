@@ -21,7 +21,7 @@ pub const DEFAULT_VOTE_SECONDS: u64 = 20;
 pub const VOTE_SECONDS: u64 = DEFAULT_VOTE_SECONDS;
 pub const MIN_VOTE_SECONDS: u64 = 15;
 pub const MAX_VOTE_SECONDS: u64 = 40;
-pub const DEFAULT_RESULTS_SECONDS: u64 = 10;
+pub const DEFAULT_RESULTS_SECONDS: u64 = 14;
 pub const MIN_RESULTS_SECONDS: u64 = 10;
 pub const MAX_RESULTS_SECONDS: u64 = 15;
 pub const DEADLINE_EXTENSION_SECONDS: u64 = 30;
@@ -193,6 +193,42 @@ pub struct ScoreEntry {
     pub score: i32,
 }
 
+/// Absolute server times keep every screen on the same punchline after reconnect.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ResultPresentation {
+    pub started_at_ms: u64,
+    pub tally_at_ms: u64,
+    pub spotlight_at_ms: u64,
+    pub truth_at_ms: u64,
+    pub scores_at_ms: u64,
+    pub continue_at_ms: u64,
+    pub spotlight_option_id: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AwardKind {
+    MasterBluffer,
+    TruthDetective,
+    PicturePerfect,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AwardWinner {
+    pub player_id: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameAward {
+    pub kind: AwardKind,
+    pub value: u32,
+    pub winners: Vec<AwardWinner>,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ReactionBurst {
@@ -227,6 +263,10 @@ pub struct RoomSnapshot {
     #[serde(default)]
     pub nailed_it: bool,
     pub round_result: Option<RoundResult>,
+    #[serde(default)]
+    pub result_presentation: Option<ResultPresentation>,
+    #[serde(default)]
+    pub game_awards: Vec<GameAward>,
     pub final_scores: Vec<ScoreEntry>,
     pub drawing_submitted_ids: Vec<String>,
     pub guess_submitted_ids: Vec<String>,
