@@ -19,7 +19,7 @@ export const SETTINGS_PRESETS: ReadonlyArray<{
       drawSeconds: 60,
       guessSeconds: 25,
       voteSeconds: 15,
-      resultsSeconds: 10
+      resultsSeconds: 12
     }
   },
   {
@@ -31,7 +31,7 @@ export const SETTINGS_PRESETS: ReadonlyArray<{
       drawSeconds: 75,
       guessSeconds: 30,
       voteSeconds: 20,
-      resultsSeconds: 10
+      resultsSeconds: 14
     }
   },
   {
@@ -43,7 +43,7 @@ export const SETTINGS_PRESETS: ReadonlyArray<{
       drawSeconds: 120,
       guessSeconds: 45,
       voteSeconds: 30,
-      resultsSeconds: 12
+      resultsSeconds: 15
     }
   }
 ];
@@ -66,4 +66,13 @@ export function activeSettingsPreset(settings: RoomSettings): SettingsPresetId |
     )
   );
   return preset?.id ?? null;
+}
+
+export function settingsPaceLabel(settings: RoomSettings): string {
+  const presetId = activeSettingsPreset(settings);
+  if (!presetId) {
+    return 'Custom';
+  }
+  const preset = SETTINGS_PRESETS.find((candidate) => candidate.id === presetId);
+  return preset?.label ?? 'Custom';
 }
