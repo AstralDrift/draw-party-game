@@ -84,6 +84,23 @@ export interface ScoreEntry {
   score: number;
 }
 
+export interface ResultPresentation {
+  startedAtMs: number;
+  tallyAtMs: number;
+  spotlightAtMs: number;
+  truthAtMs: number;
+  scoresAtMs: number;
+  continueAtMs: number;
+  spotlightOptionId: string | null;
+}
+
+export type AwardKind = 'masterBluffer' | 'truthDetective' | 'picturePerfect';
+export interface GameAward {
+  kind: AwardKind;
+  value: number;
+  winners: Array<{ playerId: string; name: string }>;
+}
+
 export interface ScoreDelta {
   playerId: string;
   name: string;
@@ -130,6 +147,8 @@ export interface RoomSnapshot {
   /** Per-recipient marker for a truth-matching guess whose correct vote is server-locked. */
   nailedIt?: boolean;
   roundResult?: RoundResult | null;
+  resultPresentation?: ResultPresentation | null;
+  gameAwards?: GameAward[];
   finalScores: ScoreEntry[];
   drawingSubmittedIds: string[];
   guessSubmittedIds: string[];
@@ -238,7 +257,7 @@ export function defaultRoomSettings(): RoomSettings {
     drawSeconds: 75,
     guessSeconds: 30,
     voteSeconds: 20,
-    resultsSeconds: 10,
+    resultsSeconds: 14,
     promptPackId: 'safe-party'
   };
 }
@@ -460,6 +479,44 @@ function isRoundResult(value: unknown): value is RoundResult {
   );
 }
 
+function isResultPresentation(value: unknown): value is ResultPresentation {
+  if (!isRecord(value)) return false;
+  const times = [value.startedAtMs, value.tallyAtMs, value.spotlightAtMs,
+    value.truthAtMs, value.scoresAtMs, value.continueAtMs];
+  return times.every((time, index) =>
+    typeof time === 'number' && Number.isSafeInteger(time) && time >= 0 &&
+    (index === 0 || time >= (times[index - 1] as number))) &&
+    (value.spotlightOptionId === null || typeof value.spotlightOptionId === 'string');
+}
+
+function isGameAwards(value: unknown): value is GameAward[] {
+  if (!Array.isArray(value) || value.length > 3) return false;
+  const kinds = new Set<string>();
+  return value.every((award) => {
+    if (!isRecord(award) ||
+      !['masterBluffer', 'truthDetective', 'picturePerfect'].includes(award.kind as string) ||
+      kinds.has(award.kind as string) || !Number.isSafeInteger(award.value) ||
+      (award.value as number) <= 0 || !Array.isArray(award.winners) || !award.winners.length) return false;
+    kinds.add(award.kind as string);
+    const winners = new Set<string>();
+    return award.winners.every((winner) => {
+      if (!isRecord(winner) || typeof winner.playerId !== 'string' ||
+        typeof winner.name !== 'string' || winners.has(winner.playerId)) return false;
+      winners.add(winner.playerId);
+      return true;
+    });
+  });
+}
+
+function validPresentationInSnapshot(value: Record<string, unknown>): boolean {
+  const show = value.resultPresentation;
+  if (show === undefined || show === null) return true;
+  if (!isResultPresentation(show) || value.phase !== 'results' || !isRoundResult(value.roundResult)) return false;
+  if (typeof value.deadlineMs === 'number' && show.continueAtMs > value.deadlineMs) return false;
+  return show.spotlightOptionId === null || value.roundResult.breakdown.some((option) =>
+    option.optionId === show.spotlightOptionId && !option.isCorrect && option.voterNames.length > 0);
+}
+
 function isReactionBurst(value: unknown): boolean {
   if (!isRecord(value)) {
     return false;
@@ -499,6 +556,8 @@ function isRoomSnapshot(value: unknown): value is RoomSnapshot {
     isVotingOptions(value.votingOptions) &&
     (value.nailedIt === undefined || typeof value.nailedIt === 'boolean') &&
     (value.roundResult === undefined || value.roundResult === null || isRoundResult(value.roundResult)) &&
+    validPresentationInSnapshot(value) &&
+    (value.gameAwards === undefined || isGameAwards(value.gameAwards)) &&
     isScoreEntries(value.finalScores) &&
     isStringArray(value.drawingSubmittedIds) &&
     isStringArray(value.guessSubmittedIds) &&

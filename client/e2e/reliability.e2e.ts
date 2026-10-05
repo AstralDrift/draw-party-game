@@ -3,13 +3,18 @@ import {
   configureSubmissionHarness,
   createPlayers,
   drawStroke,
+  expectTvDrawingStage,
+  expectTvGuessingStage,
+  expectTvVotingStage,
+  expectWithinViewportHeight,
   hostSaveRounds,
   installSubmissionHarness,
   makeAppUrl,
   releaseDeferredSubmission,
   startParty,
   submissionSendCount,
-  waitForGuessers
+  waitForGuessers,
+  waitForPagesWithVisibleLocatorCount
 } from './helpers';
 
 const TURN_DRAFT_STORAGE_KEY = 'draw-party-turn-draft';
@@ -51,12 +56,12 @@ test('display refresh reattaches to the active game', async ({ baseURL, browser 
 
     const players = await createPlayers(browser, contexts, appUrl, roomCode, ['Ava', 'Bo', 'Cy']);
     await startParty(players[0]);
-    await expect(tv.getByText('Phones are drawing')).toBeVisible();
+    await expectTvDrawingStage(tv);
     await expect(players[0].locator('canvas.draw-canvas')).toBeVisible();
 
     await tv.reload();
 
-    await expect(tv.getByText('Phones are drawing')).toBeVisible();
+    await expectTvDrawingStage(tv);
     await expect(players[0].locator('canvas.draw-canvas')).toBeVisible();
   } finally {
     await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
@@ -162,7 +167,7 @@ test('an unfinished drawing survives full refresh and clears only after acceptan
     await recovering.reload();
     await expect(recovering.locator('.draw-status')).toHaveText('1 stroke');
     await recovering.getByRole('button', { name: 'Submit Drawing' }).click();
-    await expect(recovering.locator('.submission-state.is-accepted')).toContainText('Drawing locked in!');
+    await expect(recovering.locator('.submission-state.is-accepted')).toContainText('Watch the TV.');
     await expect.poll(() => turnDraftStored(recovering)).toBe(false);
   } finally {
     await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
@@ -199,7 +204,7 @@ test('manual join canonicalizes the room and survives refresh', async ({ baseURL
     await player.reload();
 
     await expect(player.locator('.app-shell.player .brand')).toHaveText('Lobby');
-    await expect(player.getByText('Playing as Manual Mia')).toBeVisible();
+    await expect(player.getByRole('button', { name: 'Edit name' })).toHaveText('Manual Mia');
 
     const duplicatePromise = playerContext.waitForEvent('page');
     await player.evaluate(() => window.open(window.location.href, '_blank'));
@@ -243,7 +248,7 @@ test('an interrupted rename is replayed after reconnect and reaches the TV', asy
 
     await expect(player.locator('#connection-text')).not.toHaveText('Connected');
     await expect(player.locator('#connection-text')).toHaveText('Connected', { timeout: 5000 });
-    await expect(player.getByText("Avery, you're the host")).toBeVisible();
+    await expect(player.getByRole('button', { name: 'Edit name' })).toHaveText('Avery');
     await expect(tv.locator('.player-name-text')).toHaveText('Avery');
     await expect.poll(() => submissionSendCount(player, 'setName')).toBe(2);
   } finally {
@@ -284,7 +289,7 @@ test('an offline rename survives full refresh and is replayed after authoritativ
     await player.reload();
 
     await expect(player.locator('#connection-text')).toHaveText('Connected', { timeout: 5000 });
-    await expect(player.getByText("Avery, you're the host")).toBeVisible();
+    await expect(player.getByRole('button', { name: 'Edit name' })).toHaveText('Avery');
     await expect(tv.locator('.player-name-text')).toHaveText('Avery');
     await expect.poll(() => submissionSendCount(player, 'setName')).toBe(1);
     await expect.poll(() => pendingRenameStored(player)).toBe(false);
@@ -330,7 +335,7 @@ test('rapid renames serialize before the latest name reconnects after an interru
 
     await expect(player.locator('#connection-text')).not.toHaveText('Connected');
     await expect(player.locator('#connection-text')).toHaveText('Connected', { timeout: 5000 });
-    await expect(player.getByText("Carol, you're the host")).toBeVisible();
+    await expect(player.getByRole('button', { name: 'Edit name' })).toHaveText('Carol');
     await expect(tv.locator('.player-name-text')).toHaveText('Carol');
     await expect.poll(() => submissionSendCount(player, 'setName')).toBe(3);
     await expect.poll(() => pendingRenameStored(player)).toBe(false);
@@ -386,7 +391,7 @@ test('a drawing interrupted by reconnect stays retryable', async ({ baseURL, bro
     await expect(players[0].locator('.submission-state.is-pending')).toContainText('Sending');
     await expect.poll(() => submissionSendCount(players[0], 'submitDrawing')).toBe(1);
     await releaseDeferredSubmission(players[0]);
-    await expect(players[0].locator('.submission-state.is-accepted')).toContainText('Drawing locked in!');
+    await expect(players[0].locator('.submission-state.is-accepted')).toContainText('Watch the TV.');
 
     const interrupted = players[1];
     await drawStroke(interrupted);
@@ -395,17 +400,19 @@ test('a drawing interrupted by reconnect stays retryable', async ({ baseURL, bro
     await configureSubmissionHarness(interrupted, 'submitDrawing', 'drop');
     await interrupted.getByRole('button', { name: 'Submit Drawing' }).click();
     await expect(interrupted.locator('#connection-text')).not.toHaveText('Connected');
+    await expect(interrupted.locator('.connection-banner')).toBeVisible();
     await expect(interrupted.locator('#connection-text')).toHaveText('Connected', { timeout: 5000 });
+    await expect(interrupted.locator('.connection-banner')).toHaveCount(0);
     await expect(interrupted.locator('.draw-status')).toHaveText('1 stroke');
     const drawingHostDuringRetry = await interrupted.locator('.drawing-pad-host').boundingBox();
     if (!drawingHostDuringRetry) throw new Error('retry must preserve the drawing host');
     expect(Math.abs(drawingHostDuringRetry.height - drawingHostBeforeRetry.height)).toBeLessThan(2);
     await interrupted.getByRole('button', { name: 'Try Submit Again' }).click();
-    await expect(interrupted.locator('.submission-state.is-accepted')).toContainText('Drawing locked in!');
+    await expect(interrupted.locator('.submission-state.is-accepted')).toContainText('Watch the TV.');
 
     await drawStroke(players[2]);
     await players[2].getByRole('button', { name: 'Submit Drawing' }).click();
-    await expect(tv.getByText('What did they draw?')).toBeVisible();
+    await expectTvGuessingStage(tv);
   } finally {
     await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
   }
@@ -440,7 +447,7 @@ test('a fake title is accepted once and survives an interrupted retry with its t
 
     const guessers = await waitForGuessers(players);
     const accepted = guessers[0];
-    const acceptedInput = accepted.getByPlaceholder('Something that sounds legit…');
+    const acceptedInput = accepted.getByPlaceholder('Invent a title…');
     await acceptedInput.fill('deferred fake title');
     await configureSubmissionHarness(accepted, 'submitGuess', 'defer');
     await accepted.getByRole('button', { name: 'Submit Fake Title' }).evaluate((button: HTMLButtonElement) => {
@@ -450,22 +457,25 @@ test('a fake title is accepted once and survives an interrupted retry with its t
     await expect(accepted.locator('.submission-state.is-pending')).toContainText('Sending');
     await expect.poll(() => submissionSendCount(accepted, 'submitGuess')).toBe(1);
     await releaseDeferredSubmission(accepted);
-    await expect(accepted.locator('.submission-state.is-accepted')).toContainText('Title sent!');
+    await expect(accepted.locator('.submission-state.is-accepted')).toContainText('Watch the TV.');
 
     const interrupted = guessers[1];
-    const interruptedInput = interrupted.getByPlaceholder('Something that sounds legit…');
+    const interruptedInput = interrupted.getByPlaceholder('Invent a title…');
     await interruptedInput.fill('keep this exact fake');
     await configureSubmissionHarness(interrupted, 'submitGuess', 'drop');
     await interrupted.getByRole('button', { name: 'Submit Fake Title' }).click();
     await expect(interrupted.locator('#connection-text')).not.toHaveText('Connected');
+    await expect(interrupted.locator('.connection-banner')).toBeVisible();
+    await expect(interrupted.getByRole('button', { name: 'Try Again' })).toBeVisible();
     await expect(interrupted.locator('#connection-text')).toHaveText('Connected', { timeout: 5000 });
+    await expect(interrupted.locator('.connection-banner')).toHaveCount(0);
     await expect(interruptedInput).toHaveValue('keep this exact fake');
     await interrupted.getByRole('button', { name: 'Try Again' }).click();
-    await expect(interrupted.locator('.submission-state.is-accepted')).toContainText('Title sent!');
+    await expect(interrupted.locator('.submission-state.is-accepted')).toContainText('Watch the TV.');
 
-    await guessers[2].getByPlaceholder('Something that sounds legit…').fill('last fake');
+    await guessers[2].getByPlaceholder('Invent a title…').fill('last fake');
     await guessers[2].getByRole('button', { name: 'Submit Fake Title' }).click();
-    await expect(tv.getByText('Which title is real?')).toBeVisible();
+    await expectTvVotingStage(tv);
   } finally {
     await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
   }
@@ -493,18 +503,18 @@ test('an unfinished fake title survives full refresh without becoming a pending 
 
     const guessers = await waitForGuessers(players);
     const recovering = guessers[0];
-    const input = recovering.getByPlaceholder('Something that sounds legit…');
+    const input = recovering.getByPlaceholder('Invent a title…');
     await input.fill('the exact reload fake');
     await expect.poll(() => turnDraftStored(recovering)).toBe(true);
 
     await recovering.reload();
 
-    const restoredInput = recovering.getByPlaceholder('Something that sounds legit…');
+    const restoredInput = recovering.getByPlaceholder('Invent a title…');
     await expect(restoredInput).toHaveValue('the exact reload fake');
     await expect(recovering.locator('.submission-state.is-pending')).toHaveCount(0);
     await expect(recovering.getByRole('button', { name: 'Submit Fake Title' })).toBeEnabled();
     await recovering.getByRole('button', { name: 'Submit Fake Title' }).click();
-    await expect(recovering.locator('.submission-state.is-accepted')).toContainText('Title sent!');
+    await expect(recovering.locator('.submission-state.is-accepted')).toContainText('Watch the TV.');
     await expect.poll(() => turnDraftStored(recovering)).toBe(false);
   } finally {
     await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
@@ -526,10 +536,11 @@ test('late join mid-drawing becomes spectator and promotes next round', async ({
     const players = await createPlayers(browser, contexts, appUrl, roomCode, ['Ava', 'Bo', 'Cy']);
     await hostSaveRounds(players[0], '2');
     await startParty(players[0]);
-    await expect(tv.getByText('Phones are drawing')).toBeVisible();
+    await expectTvDrawingStage(tv);
 
     for (const player of players) {
-      await expect(player.locator('#prompt-text')).toContainText(/^Draw:/);
+      await expect(player.locator('#prompt-text')).not.toContainText(/^Draw:/);
+      await expect(player.locator('#prompt-text')).not.toHaveText('Waiting for prompt...');
     }
 
     const lateContext = await browser.newContext({
@@ -543,11 +554,23 @@ test('late join mid-drawing becomes spectator and promotes next round', async ({
     await late.getByPlaceholder('Your name').fill('Late');
     await late.getByRole('button', { name: 'Join the Party' }).click();
 
-    await expect(late.getByText('Spectating', { exact: false })).toBeVisible({ timeout: 5000 });
-    await expect(late.getByText(/Watching|join as a player|next drawing round/i).first()).toBeVisible();
+    await expect(late.getByText('Look up')).toBeVisible({ timeout: 5000 });
+    await expect(late.locator('.prompt.small')).toHaveAttribute(
+      'aria-label',
+      'Spectating. Look up. You play next round.'
+    );
+    await expect(late.locator('.spectator-banner')).toHaveCount(0);
+    await expect(late.locator('.spectator-pill')).toHaveCount(0);
+    expect((await late.locator('.spectator-turn').innerText()).toLowerCase()).not.toContain(
+      'you play next round'
+    );
+    await expect(late.locator('.action-hint')).toHaveCount(0);
     await expect(late.locator('canvas.draw-canvas')).toHaveCount(0);
-    await expect(tv.locator('.spectator-watchers').getByText('Late')).toBeVisible();
-    await expect(tv.locator('.spectator-watchers .spectator-pill').first()).toBeVisible();
+    await expect(late.locator('.phone-canvas')).toHaveCount(0);
+    await expect(tv.locator('.spectator-watchers')).toContainText('Late');
+    await expect(tv.locator('.spectator-watchers')).toHaveAttribute('aria-label', /spectating/i);
+    expect((await tv.locator('.spectator-watchers').innerText()).toLowerCase()).not.toContain('spectating');
+    await expect(tv.locator('.spectator-watchers .spectator-pill')).toHaveCount(0);
 
     for (const player of players) {
       await drawStroke(player);
@@ -556,17 +579,23 @@ test('late join mid-drawing becomes spectator and promotes next round', async ({
 
     // Burn through the first round of reveals so the room advances to round 2 drawing.
     for (let turn = 0; turn < players.length; turn += 1) {
-      await expect(tv.getByText('What did they draw?')).toBeVisible();
+      await expectTvGuessingStage(tv);
+      await expect(late.locator('.phone-canvas')).toHaveCount(0);
+      await expect(late.getByText('Look up')).toBeVisible();
       const guessers = await waitForGuessers(players);
       for (const [index, guesser] of guessers.entries()) {
-        await guesser.getByPlaceholder('Something that sounds legit…').fill(`late fake ${turn} ${index}`);
+        await guesser.getByPlaceholder('Invent a title…').fill(`late fake ${turn} ${index}`);
         await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
       }
-      await expect(tv.getByText('Which title is real?')).toBeVisible();
+      await expectTvVotingStage(tv);
+      await expect(late.locator('.action-hint')).toHaveCount(0);
+      await expect(late.locator('.player-vote-list')).toHaveCount(0);
+      await expect(late.locator('.phone-canvas')).toHaveCount(0);
+      await expect(late.getByText('Look up')).toBeVisible();
       for (const voter of guessers) {
         await voter.locator('button.vote-option:not([disabled])').first().click();
       }
-      await expect(tv.getByText('The real prompt was')).toBeVisible();
+      await expect(tv.locator('.reveal-prompt')).toBeVisible();
       const tvContinue = tv.getByRole('button', {
         name: 'Continue from TV (fallback)',
         exact: true
@@ -575,9 +604,13 @@ test('late join mid-drawing becomes spectator and promotes next round', async ({
       await tvContinue.click();
     }
 
-    await expect(tv.getByText('Phones are drawing')).toBeVisible();
+    await expectTvDrawingStage(tv);
     await expect(tv.getByText(/Round 2 of \d+/)).toBeVisible();
-    await expect(late.locator('#prompt-text')).toContainText(/^Draw:/, { timeout: 5000 });
+    await expect(late.locator('#prompt-text')).not.toHaveText('Waiting for prompt...', { timeout: 5000 });
+    await expect(late.locator('#prompt-text')).not.toContainText(/^Draw:/);
+    await expect(late.locator('canvas.draw-canvas')).toBeVisible();
+    await expect(late.getByRole('button', { name: 'Submit Drawing' })).toHaveCount(0);
+    await drawStroke(late);
     await expect(late.getByRole('button', { name: 'Submit Drawing' })).toBeVisible();
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
@@ -598,7 +631,7 @@ test('disconnected drawer does not stall drawing phase', async ({ baseURL, brows
 
     const players = await createPlayers(browser, contexts, appUrl, roomCode, ['Ava', 'Bo', 'Cy']);
     await startParty(players[0]);
-    await expect(tv.getByText('Phones are drawing')).toBeVisible();
+    await expectTvDrawingStage(tv);
 
     const dropout = players[2];
     await dropout.context().close();
@@ -609,7 +642,7 @@ test('disconnected drawer does not stall drawing phase', async ({ baseURL, brows
       await player.getByRole('button', { name: 'Submit Drawing' }).click();
     }
 
-    await expect(tv.getByText('What did they draw?')).toBeVisible({ timeout: 10000 });
+    await expectTvGuessingStage(tv);
   } finally {
     await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
   }
@@ -643,13 +676,13 @@ test('a vote is accepted once and an interrupted choice remains retryable', asyn
       await player.getByRole('button', { name: 'Submit Drawing' }).click();
     }
 
-    await expect(tv.getByText('What did they draw?')).toBeVisible();
+    await expectTvGuessingStage(tv);
     const guessers = await waitForGuessers(players);
     for (const [index, guesser] of guessers.entries()) {
-      await guesser.getByPlaceholder('Something that sounds legit…').fill(`reconnect fake ${index}`);
+      await guesser.getByPlaceholder('Invent a title…').fill(`reconnect fake ${index}`);
       await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
     }
-    await expect(tv.getByText('Which title is real?')).toBeVisible();
+    await expectTvVotingStage(tv);
 
     const acceptedVoter = guessers[0];
     const acceptedOption = acceptedVoter.locator('button.vote-option:not([disabled])').first();
@@ -661,22 +694,294 @@ test('a vote is accepted once and an interrupted choice remains retryable', asyn
     await expect(acceptedVoter.locator('.submission-state.is-pending')).toContainText('Sending');
     await expect.poll(() => submissionSendCount(acceptedVoter, 'submitVote')).toBe(1);
     await releaseDeferredSubmission(acceptedVoter);
-    await expect(acceptedVoter.locator('.submission-state.is-accepted')).toContainText('Vote locked!');
+    await expect(acceptedVoter.locator('.submission-state.is-accepted')).toContainText('Watch the TV.');
+    await expect(acceptedVoter.locator('.player-vote-list')).toHaveCount(0);
 
     const interruptedVoter = guessers[1];
     const interruptedOption = interruptedVoter.locator('button.vote-option:not([disabled])').first();
-    const chosenText = (await interruptedOption.locator('.vote-answer').innerText()).trim();
+    const chosenText = (
+      await interruptedOption.locator('.vote-answer').evaluate((element) => element.textContent?.trim() ?? '')
+    ).trim();
     await configureSubmissionHarness(interruptedVoter, 'submitVote', 'drop');
     await interruptedOption.click();
     await expect(interruptedVoter.locator('#connection-text')).not.toHaveText('Connected');
+    await expect(interruptedVoter.locator('.connection-banner')).toBeVisible();
+    await expect(interruptedVoter.locator('.player-vote-list')).toBeVisible();
     await expect(interruptedVoter.locator('#connection-text')).toHaveText('Connected', { timeout: 5000 });
+    await expect(interruptedVoter.locator('.connection-banner')).toHaveCount(0);
     const retryOption = interruptedVoter.locator('button.vote-option', { hasText: chosenText });
     await expect(retryOption).toContainText('Tap again to retry');
     await retryOption.click();
-    await expect(interruptedVoter.locator('.submission-state.is-accepted')).toContainText('Vote locked!');
+    await expect(interruptedVoter.locator('.submission-state.is-accepted')).toContainText('Watch the TV.');
 
     await guessers[2].locator('button.vote-option:not([disabled])').first().click();
-    await expect(tv.getByText('The real prompt was')).toBeVisible();
+    await expect(tv.locator('.reveal-prompt')).toBeVisible();
+  } finally {
+    await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
+  }
+});
+
+const sePhone = { width: 375, height: 667, isMobile: true };
+
+test('drawing reconnect overlay keeps the pad on iPhone SE', async ({ baseURL, browser }) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const players = await createPlayers(
+      browser,
+      contexts,
+      appUrl,
+      roomCode,
+      ['Ava', 'Bo', 'Cy'],
+      [sePhone, sePhone, sePhone],
+      (context) => installSubmissionHarness(context)
+    );
+    await startParty(players[0]);
+
+    await drawStroke(players[0]);
+    await players[0].getByRole('button', { name: 'Submit Drawing' }).click();
+
+    const interrupted = players[1];
+    await drawStroke(interrupted);
+    const padBefore = await interrupted.locator('.drawing-pad-host').boundingBox();
+    if (!padBefore) {
+      throw new Error('Drawing pad must have a layout box.');
+    }
+
+    await configureSubmissionHarness(interrupted, 'submitDrawing', 'drop');
+    await interrupted.getByRole('button', { name: 'Submit Drawing' }).click();
+    await expect(interrupted.locator('.connection-banner')).toBeVisible();
+    await expectWithinViewportHeight(interrupted, 'canvas.draw-canvas', sePhone.height);
+    await expectWithinViewportHeight(interrupted, 'button:has-text("Try Submit Again")', sePhone.height);
+    const padDuring = await interrupted.locator('.drawing-pad-host').boundingBox();
+    if (!padDuring) {
+      throw new Error('Drawing pad must stay laid out during reconnect.');
+    }
+    expect(Math.abs(padDuring.height - padBefore.height)).toBeLessThan(2);
+
+    await expect(interrupted.locator('#connection-text')).toHaveText('Connected', { timeout: 5000 });
+    await interrupted.getByRole('button', { name: 'Try Submit Again' }).click();
+    await expect(interrupted.locator('.submission-state.is-accepted')).toContainText('Watch the TV.');
+
+    await drawStroke(players[2]);
+    await players[2].getByRole('button', { name: 'Submit Drawing' }).click();
+    await expectTvGuessingStage(tv);
+  } finally {
+    await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
+  }
+});
+
+test('guess reconnect overlay keeps fake title controls on iPhone SE', async ({ baseURL, browser }) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const players = await createPlayers(
+      browser,
+      contexts,
+      appUrl,
+      roomCode,
+      ['Ava', 'Bo', 'Cy'],
+      [sePhone, sePhone, sePhone],
+      (context) => installSubmissionHarness(context)
+    );
+    await startParty(players[0]);
+    for (const player of players) {
+      await drawStroke(player);
+      await player.getByRole('button', { name: 'Submit Drawing' }).click();
+    }
+
+    await expectTvGuessingStage(tv);
+    const guessers = await waitForGuessers(players);
+    const interrupted = guessers[0];
+    const titleInput = interrupted.getByPlaceholder('Invent a title…');
+    await titleInput.fill('overlay couch fake');
+    const inputBefore = await titleInput.boundingBox();
+    if (!inputBefore) {
+      throw new Error('Fake title field must have a layout box.');
+    }
+
+    await configureSubmissionHarness(interrupted, 'submitGuess', 'drop');
+    await interrupted.getByRole('button', { name: 'Submit Fake Title' }).click();
+    await expect(interrupted.locator('.connection-banner')).toBeVisible();
+    await expectWithinViewportHeight(interrupted, 'input[placeholder="Invent a title…"]', sePhone.height);
+    await expectWithinViewportHeight(interrupted, 'button:has-text("Try Again")', sePhone.height);
+    const inputDuring = await titleInput.boundingBox();
+    if (!inputDuring) {
+      throw new Error('Fake title field must stay laid out during reconnect.');
+    }
+    expect(Math.abs(inputDuring.y - inputBefore.y)).toBeLessThan(2);
+
+    await expect(interrupted.locator('#connection-text')).toHaveText('Connected', { timeout: 5000 });
+    await interrupted.getByRole('button', { name: 'Try Again' }).click();
+    await expect(interrupted.locator('.submission-state.is-accepted')).toContainText('Watch the TV.');
+
+    for (const [index, guesser] of guessers.slice(1).entries()) {
+      await guesser.getByPlaceholder('Invent a title…').fill(`se fake ${index}`);
+      await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
+    }
+    await expectTvVotingStage(tv);
+  } finally {
+    await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
+  }
+});
+
+test('vote reconnect overlay keeps the letter grid on iPhone SE', async ({ baseURL, browser }) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const players = await createPlayers(
+      browser,
+      contexts,
+      appUrl,
+      roomCode,
+      ['Ava', 'Bo', 'Cy'],
+      [sePhone, sePhone, sePhone],
+      (context) => installSubmissionHarness(context)
+    );
+    await startParty(players[0]);
+    for (const player of players) {
+      await drawStroke(player);
+      await player.getByRole('button', { name: 'Submit Drawing' }).click();
+    }
+
+    await expectTvGuessingStage(tv);
+    const guessers = await waitForGuessers(players);
+    for (const [index, guesser] of guessers.entries()) {
+      await guesser.getByPlaceholder('Invent a title…').fill(`vote overlay ${index}`);
+      await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
+    }
+    await expectTvVotingStage(tv);
+
+    const interruptedVoter = guessers[0];
+    const voteListBefore = await interruptedVoter.locator('.player-vote-list').boundingBox();
+    if (!voteListBefore) {
+      throw new Error('Vote grid must have a layout box.');
+    }
+    const voteOption = interruptedVoter.locator('button.vote-option:not([disabled])').first();
+    const chosenText = (
+      await voteOption.locator('.vote-answer').evaluate((element) => element.textContent?.trim() ?? '')
+    ).trim();
+
+    await configureSubmissionHarness(interruptedVoter, 'submitVote', 'drop');
+    await voteOption.click();
+    await expect(interruptedVoter.locator('.connection-banner')).toBeVisible();
+    await expectWithinViewportHeight(interruptedVoter, '.player-vote-list', sePhone.height);
+    await expectWithinViewportHeight(
+      interruptedVoter,
+      '.player-vote-list button.vote-option',
+      sePhone.height
+    );
+    const voteListDuring = await interruptedVoter.locator('.player-vote-list').boundingBox();
+    if (!voteListDuring) {
+      throw new Error('Vote grid must stay laid out during reconnect.');
+    }
+    expect(Math.abs(voteListDuring.height - voteListBefore.height)).toBeLessThan(2);
+
+    await expect(interruptedVoter.locator('#connection-text')).toHaveText('Connected', { timeout: 5000 });
+    await interruptedVoter.locator('button.vote-option', { hasText: chosenText }).click();
+    await expect(interruptedVoter.locator('.submission-state.is-accepted')).toContainText('Watch the TV.');
+
+    await guessers[1].locator('button.vote-option:not([disabled])').first().click();
+    await expect(tv.locator('.reveal-prompt')).toBeVisible();
+  } finally {
+    await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
+  }
+});
+
+test('results reconnect overlay keeps host Continue on iPhone SE', async ({ baseURL, browser }) => {
+  const contexts: BrowserContext[] = [];
+  const appUrl = makeAppUrl(baseURL);
+
+  try {
+    const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    contexts.push(tvContext);
+    const tv = await tvContext.newPage();
+    await tv.goto(appUrl('/'));
+    const roomCode = (await tv.locator('.room-code').innerText()).trim();
+
+    const players = await createPlayers(
+      browser,
+      contexts,
+      appUrl,
+      roomCode,
+      ['Ava', 'Bo', 'Cy'],
+      [sePhone, sePhone, sePhone],
+      (context) => installSubmissionHarness(context)
+    );
+    const host = players[0];
+    await host.getByRole('button', { name: 'Relaxed: More time to draw' }).click();
+    await startParty(host);
+    for (const player of players) {
+      await drawStroke(player);
+      await player.getByRole('button', { name: 'Submit Drawing' }).click();
+    }
+
+    await expectTvGuessingStage(tv);
+    const guessers = await waitForGuessers(players);
+    for (const [index, guesser] of guessers.entries()) {
+      await guesser.getByPlaceholder('Invent a title…').fill(`results overlay ${index}`);
+      await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
+    }
+
+    await expectTvVotingStage(tv);
+    const voters = await waitForPagesWithVisibleLocatorCount(
+      players,
+      'button.vote-option:not([disabled])',
+      Math.max(0, players.length - 1)
+    );
+    for (const voter of voters) {
+      await voter.locator('button.vote-option:not([disabled])').first().click();
+    }
+
+    await expect(tv.locator('.results-panel.display-results')).toHaveAttribute('data-reveal-stage', 'complete', {
+      timeout: 18_000
+    });
+    const hostContinue = host.getByRole('button', { name: 'Continue' });
+    await expect(hostContinue).toBeEnabled({ timeout: 18_000 });
+    const continueBefore = await host.locator('.result-phone-advance').boundingBox();
+    if (!continueBefore) {
+      throw new Error('Host Continue panel must have a layout box.');
+    }
+
+    await configureSubmissionHarness(host, 'startGame', 'drop');
+    await hostContinue.click();
+    await expect(host.locator('.connection-banner')).toBeVisible();
+    await expectWithinViewportHeight(host, '.result-phone-advance', sePhone.height);
+    await expectWithinViewportHeight(host, 'button:has-text("Continue")', sePhone.height);
+    const continueDuring = await host.locator('.result-phone-advance').boundingBox();
+    if (!continueDuring) {
+      throw new Error('Host Continue panel must stay laid out during reconnect.');
+    }
+    expect(Math.abs(continueDuring.y - continueBefore.y)).toBeLessThan(2);
+
+    await expect(host.locator('#connection-text')).toHaveText('Connected', { timeout: 5000 });
+    await expect(host.getByRole('button', { name: 'Continuing…' })).toHaveCount(0);
+    const continueButton = host.getByRole('button', { name: 'Continue' });
+    if ((await continueButton.count()) > 0 && (await continueButton.isEnabled())) {
+      await continueButton.click({ timeout: 3000 }).catch(() => undefined);
+    }
+    await expectTvGuessingStage(tv);
   } finally {
     await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
   }

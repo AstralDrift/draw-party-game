@@ -11,7 +11,7 @@ fn snapshot_includes_settings_and_server_clock() {
     assert_eq!(snapshot.settings.draw_seconds, 75);
     assert_eq!(snapshot.settings.guess_seconds, 30);
     assert_eq!(snapshot.settings.vote_seconds, 20);
-    assert_eq!(snapshot.settings.results_seconds, 10);
+    assert_eq!(snapshot.settings.results_seconds, 14);
     assert_eq!(snapshot.game_mode, GameMode::Party);
     assert!(!snapshot.deadline_extension_available);
     assert_eq!(snapshot.server_now_ms, 12345);

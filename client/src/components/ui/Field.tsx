@@ -3,12 +3,13 @@ import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react
 interface FieldProps {
   label: string;
   children: ReactNode;
+  hideLabel?: boolean;
 }
 
-export function Field({ label, children }: FieldProps): React.JSX.Element {
+export function Field({ label, children, hideLabel = false }: FieldProps): React.JSX.Element {
   return (
     <label className="field">
-      <span className="field-label">{label}</span>
+      <span className={hideLabel ? 'field-label visually-hidden' : 'field-label'}>{label}</span>
       {children}
     </label>
   );
