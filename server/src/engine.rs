@@ -9,7 +9,7 @@ use crate::protocol::{
     MIN_ROUNDS, MIN_VOTE_SECONDS, PRACTICE_PLAYERS, REACTION_COOLDOWN_MS, ROOM_TTL_MS,
 };
 use crate::show::{game_awards, presentation, record_awards, AwardStats};
-use rand::{seq::SliceRandom, Rng};
+use rand::{seq::SliceRandom, RngExt};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use unicode_normalization::UnicodeNormalization;
@@ -1002,7 +1002,7 @@ impl Room {
             .active_players()
             .map(|player| player.id.clone())
             .collect();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         player_ids.shuffle(&mut rng);
         self.round.order = player_ids.clone();
         self.current_round_prompt_viewers = player_ids.iter().cloned().collect();
@@ -1182,7 +1182,7 @@ impl Room {
             });
         }
 
-        options.shuffle(&mut rand::thread_rng());
+        options.shuffle(&mut rand::rng());
         for (index, option) in options.iter_mut().enumerate() {
             option.id = format!("option-{index}");
         }
@@ -1660,10 +1660,10 @@ fn is_active(player: &Player) -> bool {
 }
 
 pub fn generate_room_code(existing: &BTreeSet<String>) -> String {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     loop {
         let code: String = (0..4)
-            .map(|_| char::from(b'A' + rng.gen_range(0..26)))
+            .map(|_| char::from(b'A' + rng.random_range(0..26)))
             .collect();
         if !existing.contains(&code) {
             return code;
