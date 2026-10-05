@@ -1,5 +1,9 @@
+import type { GamePhase } from './protocol';
+import { musicSceneForPhase, PartyMusic } from './music';
+
 type CueName = 'join' | 'phase' | 'submit' | 'results' | 'correct' | 'fooled' | 'podium' | 'tick';
 export type SoundScope = 'display' | 'controller';
+export type SoundMode = 'off' | 'effects' | 'full';
 
 interface CueStep {
   frequency: number;
@@ -48,61 +52,131 @@ const CUE_PATTERNS: Record<CueName, CueStep[]> = {
 };
 
 let audioContext: AudioContext | null = null;
-let enabled = readSoundPreference();
+let mode = readSoundPreference();
 let scope: SoundScope = 'display';
+let music: PartyMusic | null = null;
+let phase: GamePhase | null = null;
+let unlocked = false;
+const activeCues = new Map<OscillatorNode, GainNode>();
+const playedKeys = new Set<string>();
 
-function readSoundPreference(): boolean {
+function readSoundPreference(): SoundMode {
   try {
-    return localStorage.getItem('draw-party-sound') === 'on';
+    const stored = localStorage.getItem('draw-party-audio');
+    if (stored === 'off' || stored === 'effects' || stored === 'full') return stored;
+    return localStorage.getItem('draw-party-sound') === 'on' ? 'effects' : 'off';
   } catch {
-    return false;
+    return 'off';
   }
 }
 
-function persistSoundPreference(value: boolean): void {
+function persistSoundPreference(value: SoundMode): void {
   try {
-    localStorage.setItem('draw-party-sound', value ? 'on' : 'off');
+    localStorage.setItem('draw-party-audio', value);
+    localStorage.setItem('draw-party-sound', value === 'off' ? 'off' : 'on');
   } catch {
     // Sound remains available for this session when storage is unavailable.
   }
 }
 
 export function soundEnabled(): boolean {
-  return enabled;
+  return mode !== 'off';
+}
+
+export function soundMode(): SoundMode { return mode; }
+
+function syncMusic(): void {
+  music?.setScene(mode === 'full' && scope === 'display' && unlocked &&
+    audioContext?.state === 'running' && !document.hidden ? musicSceneForPhase(phase) : null);
+}
+
+/** Call from a gesture. Blocked or missing audio is an optional enhancement failure. */
+export function unlockSound(): void {
+  if (!soundEnabled() || typeof AudioContext === 'undefined') return;
+  if (unlocked && audioContext?.state === 'running') return;
+  try {
+    if (!audioContext || audioContext.state === 'closed') {
+      audioContext = new AudioContext();
+      music = new PartyMusic(audioContext);
+    }
+    unlocked = true;
+    void audioContext.resume().then(syncMusic).catch(() => { unlocked = false; music?.stop(); });
+  } catch {
+    unlocked = false;
+  }
+}
+
+export function setSoundMode(next: SoundMode): void {
+  mode = next;
+  persistSoundPreference(mode);
+  if (mode === 'off') {
+    stopSound();
+  } else {
+    unlockSound();
+    syncMusic();
+  }
 }
 
 export function setSoundEnabled(nextEnabled: boolean): void {
-  enabled = nextEnabled;
-  persistSoundPreference(enabled);
-  if (enabled) {
-    audioContext = audioContext ?? new AudioContext();
-    void audioContext.resume();
-  }
+  setSoundMode(nextEnabled ? 'effects' : 'off');
 }
 
 export function setSoundScope(nextScope: SoundScope): void {
   scope = nextScope;
+  syncMusic();
 }
 
-export function playCue(name: CueName): void {
-  if (!enabled || (scope === 'controller' && name !== 'phase' && name !== 'submit')) {
+export function setSoundPhase(next: GamePhase | null): void {
+  phase = next;
+  syncMusic();
+}
+
+export function stopSound(): void {
+  music?.stop();
+  for (const [oscillator, envelope] of activeCues) {
+    oscillator.onended = null;
+    try { oscillator.stop(); } catch { /* A browser may reject a note before it starts. */ }
+    oscillator.disconnect();
+    envelope.disconnect();
+  }
+  activeCues.clear();
+}
+
+export function playCue(name: CueName, key?: string): void {
+  if (!soundEnabled() || !unlocked || phase === null || document.hidden ||
+    (scope === 'controller' && name !== 'phase' && name !== 'submit') ||
+    (key && playedKeys.has(key))) {
     return;
   }
-  audioContext = audioContext ?? new AudioContext();
   const context = audioContext;
-  void context.resume();
+  if (!context || context.state !== 'running') return;
+  if (key) {
+    playedKeys.add(key);
+    if (playedKeys.size > 64) playedKeys.delete(playedKeys.values().next().value!);
+  }
+  music?.duck();
   const start = context.currentTime;
-  CUE_PATTERNS[name].forEach((step) => {
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-    const noteStart = start + step.offset;
-    oscillator.type = step.type;
-    oscillator.frequency.value = step.frequency;
-    gain.gain.setValueAtTime(0, noteStart);
-    gain.gain.linearRampToValueAtTime(step.gain, noteStart + 0.012);
-    gain.gain.exponentialRampToValueAtTime(0.001, noteStart + step.duration);
-    oscillator.connect(gain).connect(context.destination);
-    oscillator.start(noteStart);
-    oscillator.stop(noteStart + step.duration + 0.02);
-  });
+  try {
+    CUE_PATTERNS[name].forEach((step) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const noteStart = start + step.offset;
+      oscillator.type = step.type;
+      oscillator.frequency.value = step.frequency;
+      gain.gain.setValueAtTime(0, noteStart);
+      gain.gain.linearRampToValueAtTime(step.gain, noteStart + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.001, noteStart + step.duration);
+      oscillator.connect(gain).connect(context.destination);
+      activeCues.set(oscillator, gain);
+      oscillator.onended = () => {
+        activeCues.delete(oscillator);
+        oscillator.disconnect();
+        gain.disconnect();
+      };
+      oscillator.start(noteStart);
+      oscillator.stop(noteStart + step.duration + 0.02);
+    });
+  } catch {
+    stopSound();
+  }
 }

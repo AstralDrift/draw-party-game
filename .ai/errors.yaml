@@ -1,0 +1,100 @@
+version: '2.0'
+summary: Common errors and troubleshooting for Draw Party — port conflicts, WebSocket failures, protocol mismatches, room not found.
+errors:
+  err_port_in_use:
+    symptom: Server fails to start with "Address already in use" error on port 3000
+    context: Port 3000 is occupied by another process
+    common_causes:
+      - Previous server instance still running
+      - Another application using port 3000
+      - Zombie process holding the port
+    solutions:
+      - description: Find and kill the process using port 3000
+        command: lsof -i :3000 && kill -9 <PID>
+      - description: Use a different port with PORT environment variable
+        command: PORT=3001 cargo run --manifest-path server/Cargo.toml
+  err_websocket_failed:
+    symptom: Client cannot establish WebSocket connection; players cannot join room
+    context: WebSocket connection to server fails during client initialization
+    common_causes:
+      - Server not running on expected port
+      - Firewall or proxy blocking WebSocket traffic
+      - Service worker caching /ws route
+      - Network connectivity issues
+    solutions:
+      - description: Verify server is running and healthy
+        command: curl http://localhost:3000/api/health
+      - description: Clear browser cache and unregister service worker
+        command: Open DevTools → Application → Service Workers → Unregister
+      - Check firewall/proxy settings to allow WebSocket connections
+      - Ensure /ws route is not cached by service worker
+  err_room_not_found:
+    symptom: Client shows "room_not_found" error or "Room expired" message
+    context: Client tries to join or reconnect to a room that no longer exists on the server
+    common_causes:
+      - Room expired after 3 hours of inactivity
+      - Server restarted (rooms are in-memory only)
+      - Invalid or mistyped room code
+    solutions:
+      - description: Create a new room from display
+        command: Open display browser to / to create fresh lobby
+      - Verify room code matches current active room
+      - Check server logs for room cleanup events
+  err_protocol_mismatch:
+    symptom: Client shows blank state, wrong phase, or messages silently dropped
+    context: Client and server have incompatible protocol definitions
+    common_causes:
+      - Client built against old server protocol
+      - Protocol changes not mirrored in both Rust and TypeScript
+      - Stale browser cache
+    solutions:
+      - description: Rebuild client after protocol changes
+        command: npm --prefix client run build
+      - description: Verify protocol alignment
+        command: npm --prefix client run typecheck && cargo test --manifest-path server/Cargo.toml
+      - Clear browser cache and reload
+      - Check server/src/protocol.rs and client/src/protocol.ts are in sync
+  err_drawing_not_submitting:
+    symptom: Submit button stays disabled or drawing not advancing to next phase
+    context: Player cannot submit their drawing despite attempting to
+    common_causes:
+      - Drawing has no strokes (user must draw something)
+      - MAX_STROKES (220) or MAX_POINTS_PER_STROKE (180) exceeded
+      - WebSocket connection lost
+      - Client-side validation error
+    solutions:
+      - Ensure drawing has at least one stroke
+      - description: Check stroke count in browser console
+        command: Open DevTools console and check drawing.strokes.length
+      - Verify WebSocket connection is active (check console for errors)
+      - Check browser console for validation errors
+  err_e2e_timeout:
+    symptom: Playwright e2e tests timeout waiting for expected state
+    context: E2E tests hang or timeout after 30 seconds
+    common_causes:
+      - Server not bound to correct address (should be 127.0.0.1 not 0.0.0.0)
+      - E2E_PORT (3100) already in use
+      - Client not built before e2e run
+      - Server panic or error during test
+    solutions:
+      - description: Check e2e server port availability
+        command: lsof -i :3100
+      - description: Rebuild client first then run e2e
+        command: npm --prefix client run build && npm run e2e
+      - description: Run e2e with debug output
+        command: DEBUG=pw:api npm run e2e
+      - Verify e2e server binds to 127.0.0.1
+  err_tv_layout_scroll:
+    symptom: TV display shows scrollbar or content cut off (QR code, players list)
+    context: TV display content overflows viewport requiring scrolling
+    common_causes:
+      - Design tokens sized incorrectly for TV viewport
+      - Glass component sizing issues
+      - Viewport height constraints violated
+    solutions:
+      - description: Run TV layout geometric tests
+        command: npm run e2e:tv
+      - description: Review TV Bro WebView preview
+        command: npm run e2e:tvbro
+      - Review design tokens and glass component sizing
+      - Test at both 1080p and 4K resolutions

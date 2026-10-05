@@ -5,7 +5,18 @@ import {
   expectNoVerticalOverflow,
   TV_VIEWPORTS
 } from './tv-layout';
-import { startPractice } from './helpers';
+import {
+  completeCurrentReveal,
+  createPlayers,
+  expectTvGuessingStage,
+  expectTvVotingStage,
+  expectWithinViewportHeight,
+  makeAppUrl,
+  startParty,
+  startPractice,
+  waitForGuessers,
+  waitForPagesWithVisibleLocatorCount
+} from './helpers';
 
 type Viewport = {
   width: number;
@@ -161,7 +172,8 @@ test('TV remote focus stays visible for liquid glass living-room navigation', as
         innerHeight: window.innerHeight
       };
     });
-    expect(focus.text).toContain('Start from TV');
+    expect(focus.text).toBe('');
+    expect(await startButton.getAttribute('aria-label')).toBe('Start from TV (fallback)');
     expect(focus.outline).not.toBe('none');
     expect(focus.top).toBeGreaterThanOrEqual(0);
     expect(focus.bottom).toBeLessThanOrEqual(focus.innerHeight + 4);
@@ -209,7 +221,7 @@ test('TV guessing phase fits 720p without page scroll', async ({ baseURL, browse
       await player.getByRole('button', { name: 'Submit Drawing' }).click();
     }
 
-    await expect(tv.getByText('What did they draw?')).toBeVisible();
+    await expectTvGuessingStage(tv);
     await expectNoHorizontalOverflow(tv);
     await expectNoVerticalOverflow(tv);
     const revealBottom = await tv.evaluate(() => {
@@ -232,6 +244,8 @@ test('phone, Fire tablet, and iPad drawing layouts keep canvas and submit reacha
     const contexts: BrowserContext[] = [];
     try {
       const { player } = await startSoloDrawing(browser, contexts, appUrl, target);
+      await expect(player.getByRole('button', { name: 'Submit Drawing' })).toHaveCount(0);
+      await drawStroke(player);
       const metrics = await playerMetrics(player);
 
       expect(metrics.scrollWidth).toBeLessThanOrEqual(target.viewport.width + 1);
@@ -245,6 +259,10 @@ test('phone, Fire tablet, and iPad drawing layouts keep canvas and submit reacha
       } else {
         expect(Math.abs(metrics.canvas.top - metrics.submit.top)).toBeLessThanOrEqual(4);
       }
+      expect(
+        metrics.promptFontSize,
+        `${target.name}: prompt must outrank the clock`
+      ).toBeGreaterThanOrEqual(metrics.deadlineFontSize);
       expect(metrics.submit.bottom).toBeLessThanOrEqual(target.viewport.height + 4);
       expect(metrics.tools.bottom).toBeLessThanOrEqual(target.viewport.height + 4);
       expect(metrics.interactiveTargets.length).toBeGreaterThan(0);
@@ -267,12 +285,103 @@ test('phone, Fire tablet, and iPad drawing layouts keep canvas and submit reacha
   }
 });
 
-function makeAppUrl(baseURL: string | undefined): (path: string) => string {
-  if (!baseURL) {
-    throw new Error('Playwright baseURL is required for Draw Party e2e tests.');
+test('Fire tablet and iPad keep fake title and vote grids within the viewport', async ({ baseURL, browser }) => {
+  const appUrl = makeAppUrl(baseURL);
+  const tabletTargets = [
+    { label: 'fire-hd-8-portrait', viewport: { width: 800, height: 1280 } },
+    { label: 'ipad-portrait', viewport: { width: 768, height: 1024 } }
+  ] as const;
+
+  for (const target of tabletTargets) {
+    const contexts: BrowserContext[] = [];
+    try {
+      const tvContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+      contexts.push(tvContext);
+      const tv = await tvContext.newPage();
+      await tv.goto(appUrl('/'));
+      const roomCode = (await tv.locator('.room-code').innerText()).trim();
+      const phone = { width: 390, height: 844, isMobile: true as const };
+      const players = await createPlayers(
+        browser,
+        contexts,
+        appUrl,
+        roomCode,
+        ['Ava', 'Bo', 'Cy', 'Dee'],
+        [phone, target.viewport, phone, phone]
+      );
+      const tablet = players[1];
+      await startParty(players[0]);
+      for (const player of players) {
+        await drawStroke(player);
+        await player.getByRole('button', { name: 'Submit Drawing' }).click();
+      }
+
+      let tabletChecked = false;
+      for (let reveal = 0; reveal < players.length; reveal += 1) {
+        await expectTvGuessingStage(tv);
+        const guessers = await waitForGuessers(players);
+        if (guessers.includes(tablet)) {
+          const titleField = tablet.getByPlaceholder('Invent a title…');
+          await expect(titleField).toBeFocused();
+          await expectWithinViewportHeight(
+            tablet,
+            'input[placeholder="Invent a title…"]',
+            target.viewport.height
+          );
+          await titleField.fill(`${target.label} couch fake`);
+          await expectWithinViewportHeight(
+            tablet,
+            'button:has-text("Submit Fake Title")',
+            target.viewport.height
+          );
+          await tablet.getByRole('button', { name: 'Submit Fake Title' }).click();
+          tabletChecked = true;
+        } else {
+          await completeCurrentReveal(tv, players, `${target.label}-skip-${reveal}`);
+          continue;
+        }
+
+        for (const guesser of guessers) {
+          if (guesser === tablet) {
+            continue;
+          }
+          await guesser.getByPlaceholder('Invent a title…').fill(`${target.label}-other`);
+          await guesser.getByRole('button', { name: 'Submit Fake Title' }).click();
+        }
+
+        await expectTvVotingStage(tv);
+        const voters = await waitForPagesWithVisibleLocatorCount(
+          players,
+          'button.vote-option:not([disabled])',
+          Math.max(0, players.length - 1)
+        );
+        if (voters.includes(tablet)) {
+          await expectWithinViewportHeight(tablet, '.player-vote-list', target.viewport.height);
+          await expectWithinViewportHeight(
+            tablet,
+            'button.vote-option:not([disabled])',
+            target.viewport.height
+          );
+          await tablet.locator('button.vote-option:not([disabled])').first().click();
+        }
+        for (const voter of voters) {
+          if (voter === tablet) {
+            continue;
+          }
+          await voter.locator('button.vote-option:not([disabled])').first().click();
+        }
+        await expect(tv.locator('.results-panel.display-results')).toHaveAttribute('data-reveal-stage', 'complete', {
+          timeout: 18_000
+        });
+        break;
+      }
+
+      expect(tabletChecked, `${target.label} must act as a guesser in a four-phone party`).toBe(true);
+    } finally {
+      await Promise.all(contexts.map((context) => context.close()));
+    }
   }
-  return (path: string) => new URL(path, baseURL).toString();
-}
+});
 
 async function startSoloDrawing(
   browser: Browser,
@@ -306,7 +415,9 @@ async function startSoloDrawing(
 async function playerMetrics(page: Page): Promise<{
   backingRatio: number;
   canvas: DOMRect;
+  deadlineFontSize: number;
   interactiveTargets: Array<{ height: number; label: string; width: number }>;
+  promptFontSize: number;
   scrollWidth: number;
   submit: DOMRect;
   tools: DOMRect;
@@ -320,13 +431,19 @@ async function playerMetrics(page: Page): Promise<{
       return element.getBoundingClientRect().toJSON();
     };
     const canvas = document.querySelector('canvas.draw-canvas') as HTMLCanvasElement | null;
+    const prompt = document.querySelector('#prompt-text');
+    const deadline = document.querySelector('#deadline-text');
     if (!canvas) {
       throw new Error('Missing drawing canvas');
+    }
+    if (!prompt || !deadline) {
+      throw new Error('Missing drawing prompt or deadline');
     }
     const canvasRect = canvas.getBoundingClientRect().toJSON();
     return {
       backingRatio: canvas.width / canvasRect.width,
       canvas: canvasRect,
+      deadlineFontSize: parseFloat(getComputedStyle(deadline).fontSize),
       interactiveTargets: Array.from(document.querySelectorAll<HTMLElement>('.drawing-turn button, .drawing-turn summary'))
         .map((element) => ({ element, target: element.getBoundingClientRect() }))
         .filter(({ target }) => target.width > 0 && target.height > 0)
@@ -335,6 +452,7 @@ async function playerMetrics(page: Page): Promise<{
           label: `${element.tagName.toLowerCase()}.${element.className}`,
           width: target.width
         })),
+      promptFontSize: parseFloat(getComputedStyle(prompt).fontSize),
       scrollWidth: document.documentElement.scrollWidth,
       submit: rect('.submit-dock'),
       tools: rect('.tools-drawer')

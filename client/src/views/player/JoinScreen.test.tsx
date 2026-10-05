@@ -36,11 +36,14 @@ interface JoinGameMockOverrides {
   initialRoomCode?: string;
   playerName?: string;
   roomCodeDraft?: string;
+  pendingJoin?: { roomCode: string; name: string } | null;
+  status?: string;
 }
 
 function renderJoinScreen(overrides: JoinGameMockOverrides = {}) {
   const joinRoom = vi.fn();
   const setErrorMessage = vi.fn();
+  const cancelJoin = vi.fn();
   useGameMock.mockReturnValue({
     role: 'player',
     snapshot: null,
@@ -54,7 +57,7 @@ function renderJoinScreen(overrides: JoinGameMockOverrides = {}) {
     setRoomCodeDraft: vi.fn(),
     setErrorMessage,
     joinRoom,
-    cancelJoin: vi.fn(),
+    cancelJoin,
     clearError: vi.fn(),
     ...overrides
   });
@@ -68,6 +71,7 @@ function renderJoinScreen(overrides: JoinGameMockOverrides = {}) {
     container,
     joinRoom,
     setErrorMessage,
+    cancelJoin,
     unmount: () => {
       act(() => root.unmount());
       container.remove();
@@ -123,8 +127,18 @@ describe('JoinScreen keyboard flow', () => {
     try {
       const name = requiredElement<HTMLInputElement>(screen.container, 'input[name="name"]');
       expect(screen.container.querySelector('input[name="roomCode"]')).toBeNull();
+      expect(screen.container.querySelector('.player-room-chip')).toBeNull();
+      expect(screen.container.querySelector('.eyebrow')?.textContent).toBe('ABCD');
       expect(document.activeElement).toBe(name);
       expect(name.labels?.[0]?.textContent).toContain('Name');
+      const changeRoom = requiredElement<HTMLButtonElement>(
+        screen.container,
+        'button.join-change-room'
+      );
+      expect(changeRoom.textContent).toContain('Change room');
+      expect(changeRoom.className).toContain('btn--ghost');
+      expect(changeRoom.className).not.toContain('btn--wide');
+      expect(changeRoom.className).not.toContain('btn--secondary');
     } finally {
       screen.unmount();
     }
@@ -197,6 +211,32 @@ describe('JoinScreen keyboard flow', () => {
         'Enter the four-letter room code from the TV.'
       );
       expect(document.activeElement).toBe(roomCode);
+    } finally {
+      screen.unmount();
+    }
+  });
+
+  it.each(['Connecting', 'Disconnected', 'Connection error'])('keeps Change room usable while seating or retrying (%s)', (status) => {
+    const screen = renderJoinScreen({
+      initialRoomCode: 'ABCD',
+      pendingJoin: { roomCode: 'ABCD', name: 'Ada' },
+      status
+    });
+
+    try {
+      expect(screen.container.querySelector('h2')).toBeNull();
+      expect(screen.container.textContent).not.toContain('Almost in');
+      expect(screen.container.textContent).not.toContain('Seating you');
+      expect(screen.container.querySelector('.eyebrow')?.textContent).toBe('ABCD');
+      const name = requiredElement<HTMLInputElement>(screen.container, 'input[name="name"]');
+      expect(name.disabled).toBe(true);
+      const submit = requiredElement<HTMLButtonElement>(screen.container, 'button[type="submit"]');
+      expect(submit.disabled).toBe(true);
+      expect(submit.textContent).toContain(status === 'Connecting' ? 'Joining' : 'Retrying');
+      const changeRoom = requiredElement<HTMLButtonElement>(screen.container, 'button.join-change-room');
+      expect(changeRoom.disabled).toBe(false);
+      act(() => changeRoom.click());
+      expect(screen.cancelJoin).toHaveBeenCalledOnce();
     } finally {
       screen.unmount();
     }

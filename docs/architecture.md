@@ -15,7 +15,7 @@ See also: [protocol.md](protocol.md) for the wire contract.
 | WebSocket auth, static serving, `/api/health` | Server (`server/src/main.rs`) |
 | TV/phone rendering and drawing input | Client |
 | Protocol guards (reject unknown/malformed) | Client (`client/src/protocol.ts`) |
-| Results reveal staging (hold → tally → correct → deltas → complete) | Client (`client/src/hooks/useRevealStage.ts`) |
+| Results schedule and Continue unlock | Server (`server/src/show.rs`); client renders the current server-timed beat |
 | PWA shell cache (not `/api/*` or `/ws`) | Client (`client/public/sw.js`) |
 
 Do not reintroduce peer-to-peer room authority or client-owned phase transitions. The display may request Continue early during Results; the engine still owns whether and when the phase advances.
@@ -35,12 +35,12 @@ stateDiagram-v2
   FinalScores --> Drawing: Party / Practice replay
 ```
 
-1. **Lobby** — display creates room + QR/code; phones join; display adjusts timers/rounds/prompt pack. Party requires three connected phones; one phone can explicitly start unscored Practice.
+1. **Lobby** — display creates room + QR/code; phones join; the host phone picks a pace and prompt pack. Party requires three connected phones; one phone can explicitly start unscored Practice.
 2. **Drawing** — each connected non-spectator draws an assigned prompt and submits once they have ink.
 3. **Guessing** — one drawing at a time; non-artist players submit titles; reactions allowed. The server accepts every sanitized title without revealing whether it matches the truth or another player's title.
 4. **Voting** — non-artists pick the real prompt; artist watches; reactions allowed. A normalized truth match is omitted from the fake list and becomes that player's locked correct vote. Normalized duplicate fakes share one option, and every coauthor is blocked from voting for it. If no fake remains, the server skips the trivial truth-only ballot: truth matchers keep their locked correct votes, non-submitters receive no vote, and a turn with no guesses awards nothing.
-5. **Results** — server publishes `RoundResult`; client stages reveal; engine auto-advances after `resultsSeconds` unless display Continues early.
-6. **FinalScores** — podium after configured rounds; display can restart or export a share card after a server-enforced three-second celebration window. Practice always finishes after one drawing round and must be explicitly replayed as Practice.
+5. **Results** — server publishes `RoundResult` and the snapshot's `resultPresentation`. Clients render hold → tally → best-fake spotlight → truth with drawing → standings → complete. Without a voted-for fake, the spotlight is skipped and the actual duration shortens by 20%. The engine rejects Continue until the score beat finishes and auto-advances at `deadlineMs`.
+6. **FinalScores** — podium after configured rounds; host phone restarts after a server-enforced three-second celebration window; display can export a share card as a TV remote fallback after that window. Practice always finishes after one drawing round and must be explicitly replayed as Practice.
 
 During Drawing, Guessing, or Voting, the display or host phone may extend the current server deadline by 30 seconds once. Extension is rejected after expiry and resets only when the engine begins the next timed turn.
 
@@ -59,13 +59,17 @@ Spectators are not eligible voters. The artist is never an eligible voter for th
 
 When normalized duplicate fakes are merged, Results names every coauthor. Each fooled voter's +50 award is split once across those coauthors: player IDs are sorted, integer division supplies the base share, and any remainder is assigned in that order. The related `fooledPlayer` events therefore total exactly 50 for each fooled voter.
 
+Answer matching folds straight and smart apostrophes (`'`, `‘`, `’`) together before the existing Unicode, whitespace, and case normalization. Truth matches, fake grouping, authorship, and scoring use this same comparison; original answer wording is preserved for the reveal. Player-name comparisons and prompt-freshness keys keep their existing normalization.
+
 Every award also produces a typed causal score event. Per-player event sums equal `ScoreDelta.delta`, and `ScoreDelta.scoreAfter` is the authoritative post-award total.
 
 ## Reconnect and dropout
 
 - Disconnected players remain on the roster with `connected: false`.
-- Progress does not wait forever on disconnected players: once all **connected** eligible players have submitted (draw / guess / vote), the engine can advance.
+- Progress does not wait forever on disconnected players: once all **connected** eligible players have submitted (draw / guess / vote), the engine can advance. Deadline transitions and manual or automatic Results transitions apply the same readiness check, so turns with no connected guessers or voters go directly to their timed Results reveal.
 - Player re-join sets `connected: true`; display re-attach re-registers the display via host token. Heartbeats are keepalive only (`Pong`); they do not flip `connected`.
+- While visible, clients reconnect after 45 seconds without valid inbound traffic, including a stalled connection handshake. Hidden tabs pause this watchdog. Returning to the foreground or coming online sends an immediate heartbeat with a five-second reply window; repeated events share one probe. Recovery uses the existing reconnect backoff, identity, and turn drafts without auto-submitting.
+- During a pending join or retry, **Change room** cancels the socket and retry and returns the editable form with the name retained. Terminal session errors settle the attempt, clear the pending room and drafts, and show the appropriate other-tab or original-device guidance. They preserve the device identity and session token.
 - The first connected phone is the room host (`players[].isHost`) and may change lobby settings, start the game, add 30 seconds to a timed turn, Continue results, or Play Again. Host is sticky while that player stays connected; if they disconnect, the engine promotes the earliest-joined connected non-spectator, otherwise the earliest-joined connected player. The client renders the +30 control only on the host phone. The TV display remains server-authorized as an optional remote / e2e fallback, but party play should not require a TV remote after the room code appears.
 - If a display reconnects to an expired room (`room_not_found`), the client clears the stale host token and creates a fresh lobby.
 - A between-round Results deadline that cannot advance because every player is disconnected becomes quiescent instead of retrying and logging every maintenance tick. A returning player re-arms the transition deadline; without one, failed deadline work does not refresh activity and the fully disconnected room remains eligible for normal TTL cleanup.
@@ -76,6 +80,7 @@ Every award also produces a typed causal score event. Per-player event sums equa
 ## Spectators and seat limits
 
 - `MAX_PLAYERS` (8) includes spectators. Late joiners still consume a seat.
+- A new identity joining a full fresh lobby (round zero, no suspended drawing retry) may reclaim one seat whose player has been disconnected for at least 60 seconds. The longest-disconnected player is replaced first, with join time then player ID breaking ties. Reconnects clear that private disconnect timestamp; repeat disconnect notifications do not restart it. Available-capacity lobbies and active games retain their seats, and suspended retries keep their existing assignment-replacement rules.
 - Mid-game joiners arrive as `PlayerPublic.spectator: true` until the next drawing round, when the engine promotes them. A replacement waiting on a suspended blank-drawing retry remains a spectator only while that retry is preserved; abandoning it promotes connected replacements in the resulting fresh lobby.
 - Practice never promotes a late joiner during that game; it remains a one-player drawing round.
 - Lobby readiness and progress panels should count **active** (non-spectator) players only. Client helpers live in `client/src/spectator.ts`.
@@ -84,21 +89,30 @@ Every award also produces a typed causal score event. Per-player event sums equa
 
 The server decides scores and when Results ends. The client only stages presentation:
 
-- Hold → tally (votes) → correct answer → score deltas → complete via `client/src/hooks/useRevealStage.ts`
+- Hold → tally (vote counts) → best fake and its authors/voters → truth with drawing → standings → complete via `client/src/hooks/useRevealStage.ts`. Server boundaries use 4%, 20%, 40%, 65%, and 90% of the configured duration. Missing spotlight removes its 20% allocation. Reduced motion changes movement, never information timing. Refresh resumes the active beat without replaying missed audio. Results displays current room participants while computing their ranks from all authoritative scores; departed players keep their scores for the finale.
 - Outcome copy, podium titles, and action hints live in `client/src/polish.ts` (not reveal timing)
 
 Changing reveal theater does not change scoring; changing scoring requires engine + tests updates and usually a docs touch here.
 
 ## Prompt freshness
 
+Each pack has 240 unique, family-friendly prompts, all short enough to fit a submitted title. Party Safe favors familiar visual situations; Party Chaos uses more surreal combinations.
+
 Prompt keys remain used across Play Again so consecutive games do not immediately repeat prompts. When the selected pack has fewer unused prompts than the next complete assignment needs, the engine clears that history and draws a unique full round from the complete pack. A suspended empty-drawing retry keeps its original assignments and never consumes a second set. If the host abandons that retry by switching between Party and Practice or selecting another prompt pack, those already-seen prompt keys remain used while the fresh game receives new assignments.
+
+## Earned awards and audio
+
+The engine accumulates only per-player award counters from accepted score events: bluff points, correct answers, and correct votes attracted as artist. Final Scores exposes positive leaders, including ties and retired players on the game's scoreboard. Shared fakes count their existing split points. A fresh game clears counters; between-round retries retain them. Awards never add points and Practice earns none.
+
+Display audio uses locally authored Web Audio arrangements and short effects. Browser-local `draw-party-audio` stores off/effects/full; the old sound preference maps to effects. Phones never play music. Audio starts after a gesture, stops on mute/disconnect/hidden tabs, and resumes the current scene without queuing old effects. It has no game authority or network dependency.
 
 ## Key source map
 
 | Area | Path |
 |------|------|
 | Room/phase/scoring | `server/src/engine.rs` |
-| Engine unit tests | `server/src/engine/tests.rs` |
+| Engine unit tests | `server/src/engine/tests/` |
+| Reveal schedule / awards | `server/src/show.rs` |
 | Prompt packs | `server/src/prompts.rs` |
 | HTTP/WS/static/health | `server/src/main.rs` |
 | Protocol types | `server/src/protocol.rs`, `client/src/protocol.ts` |
