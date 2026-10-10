@@ -17,6 +17,8 @@
     "playtest:local": "bash scripts/playtest-local/run.sh",
     "playtest:live": "bash scripts/playtest-live/run.sh",
     "review:tvbro:device": "bash scripts/tvbro-device/run.sh",
+    "marketing:dev": "npm --prefix marketing run dev",
+    "marketing:build": "npm --prefix marketing run build",
     "server:dev": "cargo run --manifest-path server/Cargo.toml",
     "server:test": "cargo test --manifest-path server/Cargo.toml",
     "test": "npm --prefix client test -- --run && npm --prefix client run typecheck && cargo test --manifest-path server/Cargo.toml"

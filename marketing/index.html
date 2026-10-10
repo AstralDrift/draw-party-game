@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Draw Party — Draw badly. Guess boldly.</title>
+    <meta
+      name="description"
+      content="Your TV is the stage. Every phone is a controller. Open-source Drawful-style party drawing for the living room."
+    />
+    <link rel="stylesheet" href="/src/styles/fonts.css" />
+    <link rel="stylesheet" href="/src/styles/site.css" />
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="hero" id="hero">
+      <div class="hero__glow" aria-hidden="true"></div>
+      <div class="hero__content" data-hero-parallax>
+        <p class="eyebrow reveal" data-reveal>Open-source · TV + phones</p>
+        <h1 class="hero__title reveal" data-reveal>
+          Draw badly.<span class="hero__title-break" aria-hidden="true"> </span>Guess boldly.
+        </h1>
+        <p class="hero__support reveal" data-reveal>
+          Your TV is the stage. Every phone is a controller.
+        </p>
+        <div class="hero__cta reveal" data-reveal>
+          <a class="btn btn--primary" id="play-cta" href="/">Create a room</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="marquee" aria-hidden="true">
+      <div class="marquee__track marquee__track--forward">
+        <span class="marquee__item"
+          ><svg viewBox="0 0 120 24" width="120" height="24"><path d="M4 18 C 20 4, 40 22, 56 10 S 88 2, 116 14" fill="none" stroke="currentColor" stroke-width="2"/></svg></span
+        >
+        <span class="marquee__item"
+          ><svg viewBox="0 0 80 24" width="80" height="24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M28 6 L52 18 M52 6 L28 18" stroke="currentColor" stroke-width="2"/></svg></span
+        >
+        <span class="marquee__item"
+          ><svg viewBox="0 0 100 24" width="100" height="24"><path d="M8 12 h24 M8 12 l12-8 M8 12 l12 8" fill="none" stroke="currentColor" stroke-width="2"/></svg></span
+        >
+        <span class="marquee__item"
+          ><svg viewBox="0 0 120 24" width="120" height="24"><path d="M4 18 C 20 4, 40 22, 56 10 S 88 2, 116 14" fill="none" stroke="currentColor" stroke-width="2"/></svg></span
+        >
+        <span class="marquee__item"
+          ><svg viewBox="0 0 80 24" width="80" height="24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M28 6 L52 18 M52 6 L28 18" stroke="currentColor" stroke-width="2"/></svg></span
+        >
+        <span class="marquee__item"
+          ><svg viewBox="0 0 100 24" width="100" height="24"><path d="M8 12 h24 M8 12 l12-8 M8 12 l12 8" fill="none" stroke="currentColor" stroke-width="2"/></svg></span
+        >
+      </div>
+      <div class="marquee__track marquee__track--reverse">
+        <span class="marquee__item"
+          ><svg viewBox="0 0 90 24" width="90" height="24"><rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="2"/></svg></span
+        >
+        <span class="marquee__item"
+          ><svg viewBox="0 0 120 24" width="120" height="24"><path d="M6 20 Q 30 2, 54 16 T 114 8" fill="none" stroke="currentColor" stroke-width="2"/></svg></span
+        >
+        <span class="marquee__item"
+          ><svg viewBox="0 0 70 24" width="70" height="24"><path d="M10 4 v16 M10 4 h40 M10 12 h28" fill="none" stroke="currentColor" stroke-width="2"/></svg></span
+        >
+        <span class="marquee__item"
+          ><svg viewBox="0 0 90 24" width="90" height="24"><rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="2"/></svg></span
+        >
+        <span class="marquee__item"
+          ><svg viewBox="0 0 120 24" width="120" height="24"><path d="M6 20 Q 30 2, 54 16 T 114 8" fill="none" stroke="currentColor" stroke-width="2"/></svg></span
+        >
+        <span class="marquee__item"
+          ><svg viewBox="0 0 70 24" width="70" height="24"><path d="M10 4 v16 M10 4 h40 M10 12 h28" fill="none" stroke="currentColor" stroke-width="2"/></svg></span
+        >
+      </div>
+    </div>
+
+    <main id="main">
+      <section class="section section--plays" aria-labelledby="plays-heading">
+        <div class="section__intro reveal" data-reveal>
+          <h2 id="plays-heading" class="section__title">How it plays</h2>
+          <p class="section__lead">
+            One TV hosts the show. Phones draw, invent titles, and vote — same Party Glass UI you get in the app.
+          </p>
+        </div>
+        <ol class="plays-grid">
+          <li class="plays-card glass reveal" data-reveal>
+            <span class="plays-card__step">1</span>
+            <h3 class="plays-card__title">Draw the prompt</h3>
+            <p class="plays-card__copy">Ink a secret on your phone while the TV keeps time for the room.</p>
+            <figure class="plays-card__frame">
+              <img
+                src="/screenshots/phone-03-drawing.png"
+                alt="Phone drawing screen with canvas and tools"
+                width="390"
+                height="844"
+                loading="lazy"
+                decoding="async"
+              />
+            </figure>
+          </li>
+          <li class="plays-card glass reveal" data-reveal>
+            <span class="plays-card__step">2</span>
+            <h3 class="plays-card__title">Invent fake titles</h3>
+            <p class="plays-card__copy">Fool the couch with convincing guesses while someone else’s art is on the TV.</p>
+            <figure class="plays-card__frame">
+              <img
+                src="/screenshots/phone-04-guessing.png"
+                alt="Phone guessing screen with title field"
+                width="390"
+                height="844"
+                loading="lazy"
+                decoding="async"
+              />
+            </figure>
+          </li>
+          <li class="plays-card glass reveal" data-reveal>
+            <span class="plays-card__step">3</span>
+            <h3 class="plays-card__title">Vote for the truth</h3>
+            <p class="plays-card__copy">Lettered titles on the TV. Tap the line you think is real on your phone.</p>
+            <figure class="plays-card__frame">
+              <img
+                src="/screenshots/phone-05-voting.png"
+                alt="Phone voting screen with letter options"
+                width="390"
+                height="844"
+                loading="lazy"
+                decoding="async"
+              />
+            </figure>
+          </li>
+        </ol>
+      </section>
+
+      <section class="section section--stage" aria-labelledby="stage-heading">
+        <div class="section__intro reveal" data-reveal>
+          <h2 id="stage-heading" class="section__title">Living-room scale</h2>
+          <p class="section__lead">Calm frames, generous space — the TV carries the show; phones stay out of the way.</p>
+        </div>
+        <div class="stage-grid">
+          <figure class="stage-frame stage-frame--tv glass reveal" data-reveal>
+            <img
+              src="/screenshots/tv-01-lobby.png"
+              alt="TV lobby with QR code and join URL"
+              width="1920"
+              height="1080"
+              loading="lazy"
+              decoding="async"
+            />
+            <figcaption>TV lobby — QR, code, roster</figcaption>
+          </figure>
+          <figure class="stage-frame stage-frame--phone glass reveal" data-reveal>
+            <img
+              src="/screenshots/phone-02-lobby.png"
+              alt="Phone lobby ready to start the party"
+              width="390"
+              height="844"
+              loading="lazy"
+              decoding="async"
+            />
+            <figcaption>Phone lobby — host controls at hand</figcaption>
+          </figure>
+        </div>
+        <figure class="stage-wide reveal" data-reveal>
+          <img
+            class="stage-wide__img"
+            src="/screenshots/marketing-flow.png"
+            alt="Composite of Draw Party round flow on TV and phones"
+            width="2400"
+            height="1350"
+            loading="lazy"
+            decoding="async"
+          />
+        </figure>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p class="site-footer__brand">Draw Party</p>
+      <p class="site-footer__oss">
+        Open source on
+        <a href="https://github.com/AstralDrift/draw-party-game">GitHub</a>
+        · MIT License
+      </p>
+      <p class="site-footer__credit">Party Glass UI · vector drawings · no accounts required</p>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
