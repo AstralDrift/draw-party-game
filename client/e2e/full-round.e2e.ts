@@ -13,7 +13,8 @@ test('four phones complete two rounds, reach the podium, and rematch in the same
   baseURL,
   browser
 }) => {
-  test.setTimeout(120_000);
+  // Four-phone couch loop often finishes in ~1.9m on CI; keep headroom under load.
+  test.setTimeout(180_000);
   const contexts: BrowserContext[] = [];
   const appUrl = makeAppUrl(baseURL);
 
