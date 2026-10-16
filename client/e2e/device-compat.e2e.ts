@@ -253,9 +253,16 @@ test('phone, Fire tablet, and iPad drawing layouts keep canvas and submit reacha
       if (target.minCanvasHeightRatio) {
         expect(metrics.canvas.height).toBeGreaterThanOrEqual(target.viewport.height * target.minCanvasHeightRatio);
       }
-      // Phones stack canvas above submit; tablets place them side-by-side (same row top).
+      // Phones and portrait tablets stack canvas above submit so the pad gets the full
+      // width; landscape tablets place them side-by-side (same row top).
+      const portraitTablet = target.viewport.width >= 700 && target.viewport.height > target.viewport.width;
       if (target.viewport.width < 700) {
         expect(metrics.canvas.top).toBeLessThanOrEqual(metrics.submit.top);
+      } else if (portraitTablet) {
+        expect(metrics.canvas.bottom).toBeLessThanOrEqual(metrics.submit.top + 4);
+        expect(metrics.canvas.width, `${target.name}: portrait pad uses the width`).toBeGreaterThanOrEqual(
+          target.viewport.width * 0.85
+        );
       } else {
         expect(Math.abs(metrics.canvas.top - metrics.submit.top)).toBeLessThanOrEqual(4);
       }

@@ -50,7 +50,6 @@ export function ScoresPanel({
   return (
     <GlassPanel className="scores-panel" id="scores-panel">
       {showPodium ? <Confetti variant="final" /> : null}
-      {showPodium ? <ShowDoodle /> : null}
       {practice ? (
         <div className="winner-callout">
           <p className="eyebrow">Practice · scores off</p>
@@ -58,6 +57,7 @@ export function ScoresPanel({
         </div>
       ) : podium ? (
         <div className="winner-callout">
+          {showPodium ? <ShowDoodle /> : null}
           <h2>{finalWinnerText(scores)}</h2>
           {role === 'player' && winner ? <span className="pill">{winner.score} pts</span> : null}
         </div>

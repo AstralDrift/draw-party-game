@@ -29,7 +29,7 @@ export function Deadline(): React.JSX.Element {
       id="deadline-text"
     >
       <span>{deadlineLabel}</span>
-      {urgencyText ? <span className="deadline-urgency"> · {urgencyText}</span> : null}
+      {urgencyText ? <span className="deadline-urgency visually-hidden"> · {urgencyText}</span> : null}
       <span className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
         {announcement}
       </span>
