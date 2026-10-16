@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { LogIn } from 'lucide';
+import { LogIn, PencilLine } from 'lucide';
 import { useGame } from '../../app/GameProvider';
 import { Button } from '../../components/ui/Button';
 import { Field, TextInput } from '../../components/ui/Field';
 import { GlassPanel } from '../../components/ui/GlassPanel';
+import { LucideIcon } from '../../components/ui/LucideIcon';
 import { Shell } from '../../components/ui/Shell';
 
 export function JoinScreen(): React.JSX.Element {
@@ -93,7 +94,13 @@ export function JoinScreen(): React.JSX.Element {
   return (
     <Shell title="Join Game">
       <GlassPanel className="narrow join-card player-join-card">
-        <p className="eyebrow">{displayCode || 'Type the code'}</p>
+        <div className="join-brand" aria-hidden="true">
+          <span className="brand-mark">
+            <LucideIcon icon={PencilLine} className="brand-icon" />
+          </span>
+          <span className="join-wordmark">Draw Party</span>
+        </div>
+        <p className={`eyebrow${displayCode ? ' join-room-code' : ''}`}>{displayCode || 'Type the code'}</p>
         <form
           ref={joinFormRef}
           className="join-form"

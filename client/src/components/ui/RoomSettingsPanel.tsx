@@ -55,7 +55,11 @@ export function RoomSettingsPanel({
             title={preset.description}
             onClick={() => applyPreset(preset.id)}
           >
-            {preset.label}
+            <span className="settings-preset-label">{preset.label}</span>
+            <span className="settings-preset-meta" aria-hidden="true">
+              {preset.settings.rounds === 1 ? '1 round' : `${preset.settings.rounds} rounds`} ·{' '}
+              {preset.settings.drawSeconds}s
+            </span>
           </button>
         ))}
       </div>

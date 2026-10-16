@@ -873,3 +873,230 @@
 
   .reaction-burst[data-slot="4"] { --reaction-y: 72%; }
 }
+
+/* ── Player identity ─────────────────────────────────────────────
+   Any element tagged with a player slot exposes that player's accent. */
+[data-player-slot="0"] { --player-accent: var(--player-accent-0); }
+[data-player-slot="1"] { --player-accent: var(--player-accent-1); }
+[data-player-slot="2"] { --player-accent: var(--player-accent-2); }
+[data-player-slot="3"] { --player-accent: var(--player-accent-3); }
+[data-player-slot="4"] { --player-accent: var(--player-accent-4); }
+[data-player-slot="5"] { --player-accent: var(--player-accent-5); }
+[data-player-slot="6"] { --player-accent: var(--player-accent-6); }
+[data-player-slot="7"] { --player-accent: var(--player-accent-7); }
+
+.player-avatar {
+  --avatar-size: 40px;
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: var(--avatar-size);
+  height: var(--avatar-size);
+  border: 2px solid color-mix(in srgb, var(--player-accent) 76%, white);
+  border-radius: 54% 46% 51% 49% / 45% 55% 47% 53%;
+  background: color-mix(in srgb, var(--player-accent) 84%, white);
+  color: #08111f;
+  font-family: var(--font-display);
+  font-size: calc(var(--avatar-size) * 0.44);
+  font-weight: 800;
+  line-height: 1;
+  transform: rotate(-3deg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 10px 28px color-mix(in srgb, var(--player-accent) 22%, transparent);
+}
+
+.player-avatar[data-player-slot="1"],
+.player-avatar[data-player-slot="3"],
+.player-avatar[data-player-slot="5"],
+.player-avatar[data-player-slot="7"] {
+  transform: rotate(3deg);
+}
+
+.player-avatar--sm { --avatar-size: 28px; }
+.player-avatar--md { --avatar-size: 40px; }
+.player-avatar--lg { --avatar-size: 72px; }
+.player-avatar--xl { --avatar-size: clamp(96px, 30vw, 136px); border-width: 3px; }
+
+/* ── Look-up phones ──────────────────────────────────────────────
+   When the TV owns the moment, the phone is your avatar and one instruction,
+   centered in the full screen, with host controls pinned out of the way. */
+.app-shell.player:has(.is-look-up) {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell.player:has(.is-look-up) > .panel.is-look-up {
+  flex: 1 0 auto;
+}
+
+.player .panel.is-look-up {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  min-height: min(520px, 62svh);
+  text-align: center;
+}
+
+.look-up-hero {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+}
+
+.look-up-arrow {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--text-secondary);
+  animation: look-up-nudge 1.8s var(--ease-out) infinite;
+}
+
+.look-up-arrow svg {
+  width: 28px;
+  height: 28px;
+}
+
+@keyframes look-up-nudge {
+  0%, 100% { transform: translateY(4px); opacity: 0.55; }
+  50% { transform: translateY(-6px); opacity: 1; }
+}
+
+.player .panel.is-look-up .prompt.small,
+.player .panel.is-look-up > h2,
+.player .panel.is-look-up .submission-state.is-accepted {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 9vw, 2.75rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+
+.player .panel.is-look-up .submission-state.is-accepted {
+  border: 0;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* The header row must not be the positioning box, or the pinned +30 lands on the words. */
+.app-shell.player .panel.is-look-up .turn-header.compact {
+  position: static;
+  justify-content: center;
+}
+
+/* Host +30 stays reachable but pinned to the corner, never centered as the job. */
+.player .panel.is-look-up .turn-timing-controls {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+}
+
+.player .panel.is-look-up .reaction-bar {
+  margin-top: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .look-up-arrow {
+    animation: none;
+  }
+}
+
+/* ── Phone lobby ────────────────────────────────────────────────── */
+.lobby-identity {
+  display: flex;
+  justify-content: center;
+  padding-top: var(--space-2);
+}
+
+.player-lobby-card.is-look-up .lobby-name-row {
+  position: static;
+  justify-content: center;
+}
+
+/* Alerts toggle is a utility; pin it to the corner on the centered guest card. */
+.player-lobby-card.is-look-up .lobby-name-row .sound-toggle {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+}
+
+.player-lobby-card.is-look-up > .muted {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.75rem, 8vw, 2.5rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.player-lobby-card.is-look-up .lobby-how-to {
+  align-self: stretch;
+  margin-top: auto;
+  text-align: left;
+}
+
+.settings-preset {
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  align-content: center;
+}
+
+.settings-preset-meta {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* ── Phone join ─────────────────────────────────────────────────── */
+.join-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.player-join-card .join-room-code + .join-form {
+  margin-top: var(--space-3);
+}
+
+.join-wordmark {
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 7vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+}
+
+/* After a scan the room code is the reassurance: big, spaced, mono. */
+.player-join-card .eyebrow.join-room-code {
+  justify-self: start;
+  width: fit-content;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-glass-soft);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: clamp(1.5rem, 8vw, 2rem);
+  font-weight: 600;
+  letter-spacing: 0.32em;
+}
+
+/* Phone drawing panels are transparent so the pad owns the screen; once ink locks
+   the look-up state needs its glass back. */
+.player.phase-drawing .player-turn-panel.is-look-up {
+  display: flex;
+  height: auto;
+  min-height: min(520px, 62svh);
+  padding: var(--space-5);
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius-card);
+  background-color: var(--glass-fill);
+  box-shadow: var(--shadow);
+}

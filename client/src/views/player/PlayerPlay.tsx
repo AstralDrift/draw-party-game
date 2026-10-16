@@ -10,6 +10,7 @@ import { Deadline } from '../../components/ui/Deadline';
 import { Field, TextInput } from '../../components/ui/Field';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { HostTimeExtension } from '../../components/ui/HostTimeExtension';
+import { LookUpHero } from '../../components/ui/LookUpHero';
 import { ReactionBar, ReactionBursts } from '../../components/ui/ReactionBar';
 import { Shell } from '../../components/ui/Shell';
 
@@ -99,7 +100,8 @@ export function PlayerGuessing(): React.JSX.Element {
 
   return (
     <Shell title="Guess">
-      <GlassPanel className="play-panel player-turn-panel guessing-turn">
+      <GlassPanel className={`play-panel player-turn-panel guessing-turn${isArtist || submitted ? ' is-look-up' : ''}`}>
+        {isArtist || submitted ? <LookUpHero /> : null}
         <PlayerTurnChrome lookUp={isArtist} showClock={false} showHostExtend={isArtist || submitted} />
         {isArtist ? null : submitted ? (
           <p
@@ -191,10 +193,12 @@ export function PlayerVoting(): React.JSX.Element {
   const sending = submission?.state === 'sending';
   const retrying = submission?.state === 'retry';
   const nailedIt = Boolean(snapshot.nailedIt);
+  const lookingUp = isArtist || nailedIt || submitted;
 
   return (
     <Shell title="Vote">
-      <GlassPanel className="play-panel player-turn-panel voting-turn">
+      <GlassPanel className={`play-panel player-turn-panel voting-turn${lookingUp ? ' is-look-up' : ''}`}>
+        {lookingUp ? <LookUpHero /> : null}
         <PlayerTurnChrome
           lookUp={isArtist || nailedIt}
           showClock={false}

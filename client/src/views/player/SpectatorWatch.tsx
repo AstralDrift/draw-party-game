@@ -1,5 +1,6 @@
 import { useGame } from '../../app/GameProvider';
 import { GlassPanel } from '../../components/ui/GlassPanel';
+import { LookUpHero } from '../../components/ui/LookUpHero';
 import { ReactionBar, ReactionBursts } from '../../components/ui/ReactionBar';
 import { Shell } from '../../components/ui/Shell';
 import { PlayerFinal, PlayerResults } from './PlayerResults';
@@ -14,7 +15,8 @@ function SpectatorLookUp({
 }): React.JSX.Element {
   return (
     <Shell title="Watch">
-      <GlassPanel className={`play-panel player-turn-panel ${className}`}>
+      <GlassPanel className={`play-panel player-turn-panel ${className} is-look-up`}>
+        <LookUpHero />
         <div className="turn-header compact">
           <div className="turn-copy">
             <div className="prompt small" aria-label="Spectating. Look up. You play next round.">

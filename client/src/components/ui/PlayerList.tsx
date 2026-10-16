@@ -1,26 +1,13 @@
 import type { PlayerPublic } from '../../protocol';
 import { UsersRound } from 'lucide';
 import { LucideIcon } from './LucideIcon';
+import { playerAccentSlot, playerInitial } from '../../player-identity';
+
+export { playerAccentSlot } from '../../player-identity';
 
 interface PlayerListProps {
   players: PlayerPublic[];
   showScores?: boolean;
-}
-
-const PLAYER_ACCENT_COUNT = 8;
-
-/** Stable across roster reorder and reconnect; deliberately independent of array position. */
-export function playerAccentSlot(playerId: string): number {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < playerId.length; index += 1) {
-    hash ^= playerId.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0) % PLAYER_ACCENT_COUNT;
-}
-
-function playerInitial(name: string): string {
-  return Array.from(name.trim())[0]?.toLocaleUpperCase() ?? '?';
 }
 
 export function PlayerList({ players, showScores = false }: PlayerListProps): React.JSX.Element {
