@@ -29,6 +29,7 @@ export function DisplayDrawing(): React.JSX.Element {
           submittedIds={snapshot.drawingSubmittedIds}
           phase="drawing"
           compact
+          roster
         />
         {watcherNames ? (
           <p className="muted spectator-watchers" aria-label={`${watcherNames} spectating`}>

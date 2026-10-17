@@ -2319,6 +2319,14 @@
 /* ── Phone voting: big letter tiles that own the screen ─────────── */
 /* The vote screen is exactly one viewport tall; tile rows share it (56–168px each),
    so seven letters on a small phone never scroll. */
+.player .voting-turn.vote-screen {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 28px - var(--safe-top) - var(--safe-bottom) - var(--keyboard-inset, 0px));
+  height: calc(100dvh - 28px - var(--safe-top) - var(--safe-bottom) - var(--keyboard-inset, 0px));
+  min-height: 0;
+}
+
 .app-shell.player.phase-voting:has(.player-vote-list) {
   display: flex;
   flex-direction: column;

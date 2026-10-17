@@ -7,7 +7,8 @@ import { revealStandings } from '../../results';
 import { DrawingCanvas } from './DrawingPadHost';
 import { GlassPanel } from './GlassPanel';
 import { Confetti } from './Confetti';
-import { playerAccentSlot } from './PlayerList';
+import { playerAccentSlot } from '../../player-identity';
+import { PlayerAvatar } from './PlayerAvatar';
 import { ShowDoodle } from './ShowDoodle';
 
 interface ShowResultsProps {
@@ -82,6 +83,7 @@ export function ShowResults({ result, drawing, presentation, stage, practice, co
               {standings.map((score) => (
                 <li key={score.playerId} className="show-score-row" data-player-slot={playerAccentSlot(score.playerId)}>
                   <span className="show-rank">{score.rank}</span>
+                  <PlayerAvatar playerId={score.playerId} name={score.name} />
                   <strong>{score.name}</strong>
                   <span className="rank-movement" aria-label={score.movement > 0 ? `Up ${score.movement} places` : score.movement < 0 ? `Down ${-score.movement} places` : 'Rank unchanged'}>
                     {score.movement > 0 ? `↑${score.movement}` : score.movement < 0 ? `↓${-score.movement}` : '—'}

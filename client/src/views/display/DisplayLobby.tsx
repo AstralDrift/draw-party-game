@@ -1,4 +1,4 @@
-import { Play } from 'lucide';
+import { PencilLine, Play } from 'lucide';
 import { AudioControl } from '../../components/ui/AudioControl';
 import { useGame } from '../../app/GameProvider';
 import { PARTY_MIN_PLAYERS } from '../../controller';
@@ -6,6 +6,7 @@ import { displayLobbyStartNote } from '../../polish';
 import { activePlayers, connectedSpectators } from '../../spectator';
 import { Button } from '../../components/ui/Button';
 import { GlassPanel } from '../../components/ui/GlassPanel';
+import { LucideIcon } from '../../components/ui/LucideIcon';
 import { PlayerList } from '../../components/ui/PlayerList';
 import { QrCode } from '../../components/ui/QrCode';
 
@@ -28,6 +29,12 @@ export function DisplayLobby(): React.JSX.Element {
   return (
     <div className="display-grid display-grid-lobby">
       <GlassPanel className="room-panel">
+        <div className="tv-brand" aria-hidden="true">
+          <span className="brand-mark">
+            <LucideIcon icon={PencilLine} className="brand-icon" />
+          </span>
+          <span className="tv-wordmark">Draw Party</span>
+        </div>
         <div className="room-intro">
           <div className="room-hero-copy">
             <h2>Everybody draws. Everybody guesses.</h2>
@@ -64,7 +71,10 @@ export function DisplayLobby(): React.JSX.Element {
               <AudioControl />
             </div>
           </div>
-          <PlayerList players={snapshot.players} />
+          <PlayerList
+            players={snapshot.players}
+            openSeats={Math.max(0, partyMinimum - connectedPlayers.length)}
+          />
         </GlassPanel>
       </div>
     </div>

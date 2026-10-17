@@ -8,14 +8,35 @@ export { playerAccentSlot } from '../../player-identity';
 interface PlayerListProps {
   players: PlayerPublic[];
   showScores?: boolean;
+  /** Dashed placeholder seats for players still needed to start (TV lobby). */
+  openSeats?: number;
 }
 
-export function PlayerList({ players, showScores = false }: PlayerListProps): React.JSX.Element {
+function OpenSeats({ count }: { count: number }): React.JSX.Element | null {
+  if (count <= 0) {
+    return null;
+  }
+  return (
+    <>
+      {Array.from({ length: count }, (_, index) => (
+        <div key={`open-${index}`} className="open-seat" aria-hidden="true">
+          <span className="open-seat-doodle" />
+        </div>
+      ))}
+    </>
+  );
+}
+
+export function PlayerList({ players, showScores = false, openSeats = 0 }: PlayerListProps): React.JSX.Element {
   if (players.length === 0) {
     return (
-      <div className="player-list player-list--empty">
-        <div className="empty-state" aria-label="Waiting for phones to join.">
-          <span className="empty-icon-wrap" aria-hidden="true"><LucideIcon icon={UsersRound} className="empty-icon" /></span>
+      <div className={`player-list player-list--empty${openSeats > 0 ? ' player-list--seats' : ''}`}>
+        <div className={`empty-state${openSeats > 0 ? ' has-open-seats' : ''}`} aria-label="Waiting for phones to join.">
+          {openSeats > 0 ? (
+            <OpenSeats count={openSeats} />
+          ) : (
+            <span className="empty-icon-wrap" aria-hidden="true"><LucideIcon icon={UsersRound} className="empty-icon" /></span>
+          )}
         </div>
       </div>
     );
@@ -60,6 +81,7 @@ export function PlayerList({ players, showScores = false }: PlayerListProps): Re
           </div>
         );
       })}
+      <OpenSeats count={openSeats} />
     </div>
   );
 }

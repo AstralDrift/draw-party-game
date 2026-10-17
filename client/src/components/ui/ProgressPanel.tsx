@@ -1,5 +1,9 @@
+import { Check, Pencil } from 'lucide';
 import type { GamePhase, RoomSnapshot } from '../../protocol';
 import { playingPlayers } from '../../spectator';
+import { playerAccentSlot } from '../../player-identity';
+import { LucideIcon } from './LucideIcon';
+import { PlayerAvatar } from './PlayerAvatar';
 
 type SubmissionPhase = Extract<GamePhase, 'drawing' | 'guessing' | 'voting'>;
 
@@ -9,6 +13,8 @@ interface ProgressPanelProps {
   submittedIds: string[];
   phase: SubmissionPhase;
   compact?: boolean;
+  /** Large avatar seats for every eligible player (TV drawing stage). */
+  roster?: boolean;
 }
 
 function progressWaitingNames(waitingNames: string[]): string {
@@ -20,7 +26,8 @@ export function ProgressPanel({
   snapshot,
   submittedIds,
   phase,
-  compact = false
+  compact = false,
+  roster = false
 }: ProgressPanelProps): React.JSX.Element {
   const players = playingPlayers(snapshot.players);
   const connectedPlayers = players.filter((player) => player.connected);
@@ -48,6 +55,37 @@ export function ProgressPanel({
           {waitingLine}
         </p>
       ) : null}
+      {roster ? (
+        <ul className="progress-roster" aria-hidden="true">
+          {eligiblePlayers.map((player) => {
+            const done = submittedIds.includes(player.id);
+            return (
+              <li
+                key={player.id}
+                className={`progress-seat${done ? ' is-done' : ''}`}
+                data-player-slot={playerAccentSlot(player.id)}
+              >
+                <PlayerAvatar playerId={player.id} name={player.name} size="lg" />
+                <span className="progress-seat-name">{player.name}</span>
+                <span className="progress-seat-state">
+                  <LucideIcon icon={done ? Check : Pencil} className="progress-seat-icon" />
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <span className="progress-avatars" aria-hidden="true">
+          {eligiblePlayers.map((player) => (
+            <span
+              key={player.id}
+              className={`progress-avatar${submittedIds.includes(player.id) ? ' is-done' : ''}`}
+            >
+              <PlayerAvatar playerId={player.id} name={player.name} size="sm" />
+            </span>
+          ))}
+        </span>
+      )}
     </div>
   );
 }

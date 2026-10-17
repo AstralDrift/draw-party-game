@@ -197,7 +197,7 @@ export function PlayerVoting(): React.JSX.Element {
 
   return (
     <Shell title="Vote">
-      <GlassPanel className={`play-panel player-turn-panel voting-turn${lookingUp ? ' is-look-up' : ''}`}>
+      <GlassPanel className={`play-panel player-turn-panel voting-turn${lookingUp ? ' is-look-up' : ' vote-screen'}`}>
         {lookingUp ? <LookUpHero /> : null}
         <PlayerTurnChrome
           lookUp={isArtist || nailedIt}
