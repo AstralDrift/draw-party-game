@@ -1,0 +1,17 @@
+{
+  "name": "draw-party-marketing",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync:assets": "mkdir -p public/screenshots && cp -r ../docs/marketing/screenshots/. public/screenshots/",
+    "predev": "npm run sync:assets",
+    "prebuild": "npm run sync:assets",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "~5.7.3",
+    "vite": "^6.2.0"
+  }
+}
