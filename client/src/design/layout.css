@@ -137,6 +137,7 @@
 
 .display-grid-results {
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -571,11 +572,25 @@
   object-fit: contain;
 }
 
+/* The drawing fills whatever the panel leaves under the header, so a taller
+   header can never push the art past the frame. */
+.display-grid-guessing {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.display.phase-guessing .reveal-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-self: stretch;
+  min-height: 0;
+}
+
 .display.phase-guessing .reveal-canvas {
   width: auto;
   max-width: 100%;
-  height: min(82svh, calc(100dvh - 88px));
-  max-height: none;
+  height: 100%;
+  min-height: 0;
+  max-height: min(82svh, calc(100dvh - 88px));
   justify-self: center;
 }
 
@@ -966,7 +981,9 @@
 
 .display-grid-drawing .progress-panel-compact .big-count {
   font-size: clamp(5rem, 10vw, 12rem);
-  line-height: 0.9;
+  /* Syne's slash rises above the cap height; leave room so it never cuts into the header. */
+  line-height: 1.1;
+  padding-top: var(--space-4);
 }
 
 .display-grid-drawing .progress-panel-compact .muted {
@@ -1227,8 +1244,17 @@
   color: var(--text-primary);
 }
 
+/* One shape per vote button: the letter sits on the button, not in a second box. */
 .player.phase-voting .player-vote-list .option-label {
   align-self: center;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  transform: none;
+}
+
+.player.phase-voting .player-vote-list .vote-option {
+  align-content: center;
 }
 
 .player.phase-voting .player-vote-list .vote-answer {
@@ -1636,8 +1662,48 @@
     grid-area: status;
   }
 
+  /* Keep the whole 4:3 pad on screen on short laptops instead of growing with width. */
+  .drawing-turn .canvas-stage {
+    width: min(100%, calc((100svh - 132px - var(--safe-top) - var(--safe-bottom)) * 4 / 3));
+    justify-self: center;
+  }
+
+  .drawing-turn .tools-drawer {
+    max-height: calc(100svh - 200px - var(--safe-top) - var(--safe-bottom));
+    overflow-y: auto;
+  }
+
   .drawing-turn .tools-summary {
     display: none;
+  }
+}
+
+/* Portrait tablets: the pad takes the full width and tools sit underneath,
+   instead of a narrow canvas beside a tall rail with half the screen empty. */
+@media (min-width: 700px) and (orientation: portrait) {
+  .drawing-turn .drawing-pad {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "canvas"
+      "submit"
+      "tools"
+      "status";
+  }
+
+  .drawing-turn .canvas-stage {
+    width: min(100%, calc((100svh - 360px - var(--safe-top) - var(--safe-bottom)) * 4 / 3));
+  }
+
+  .drawing-turn .tools-drawer {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .drawing-turn .draw-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
   }
 }
 
@@ -2166,7 +2232,7 @@
   }
 
   .display.phase-guessing .reveal-canvas {
-    height: min(84svh, calc(100dvh - 120px));
+    max-height: min(84svh, calc(100dvh - 120px));
   }
 
   .display-results[data-reveal-stage="hold"] .result-canvas {
@@ -2227,4 +2293,25 @@
   .display-grid-voting {
     grid-template-columns: 1fr;
   }
+}
+
+/* Idle stroke count stays off the art on every screen size; alerts still show. */
+.drawing-turn .draw-status:not(.is-alert) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Phone look-up headers live inside a panel already; a second pill border reads as a stray input. */
+.player .panel .turn-header.compact {
+  border: 0;
+  background: none;
+  box-shadow: none;
+  padding-inline: 0;
 }

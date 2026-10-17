@@ -13,7 +13,8 @@ test('four phones complete two rounds, reach the podium, and rematch in the same
   baseURL,
   browser
 }) => {
-  test.setTimeout(120_000);
+  // Two full rounds, four reveals each, a podium, and a rematch: ~1.9m on CI runners.
+  test.setTimeout(180_000);
   const contexts: BrowserContext[] = [];
   const appUrl = makeAppUrl(baseURL);
 

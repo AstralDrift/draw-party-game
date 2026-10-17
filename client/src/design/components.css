@@ -567,7 +567,14 @@
   display: flex;
   justify-content: space-between;
   gap: var(--space-4);
-  align-items: start;
+  align-items: center;
+  /* The header is a bordered pill; text must never sit on its edge. */
+  padding: var(--space-3) var(--space-5);
+}
+
+.turn-header .deadline,
+.turn-header #deadline-text {
+  flex: none;
 }
 
 .turn-header.compact:not(:has(.turn-copy)) {

@@ -19,7 +19,9 @@ async function assertPixelBaseline(
   page: Parameters<typeof writeTvReviewShot>[0],
   shotName: string
 ): Promise<void> {
-  await expect(page).toHaveScreenshot(shotName, {
+  // Soft: a mismatch still fails the test, but every shot in the scenario is compared,
+  // so one CI run yields all changed `*-actual.png` files for a baseline refresh.
+  await expect.soft(page).toHaveScreenshot(shotName, {
     mask: tvBroScreenshotMasks(page),
     stylePath: screenshotStylePath
   });

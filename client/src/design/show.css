@@ -10,7 +10,10 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  height: calc(100svh - 64px);
+  /* Fill the results grid cell exactly so the glass frame's bottom edge stays on screen. */
+  align-self: stretch;
+  height: auto;
+  max-height: calc(100svh - 64px);
   min-height: 0;
   padding: clamp(20px, 3vw, 72px);
   gap: 12px;
@@ -85,6 +88,9 @@
 .show-spotlight { align-items: center; text-align: center; }
 .show-doodle { position: absolute; top: 4%; right: 3%; width: clamp(64px, 8vw, 180px); height: auto; color: var(--player-accent-4); opacity: 0.2; pointer-events: none; }
 .player .show-doodle { width: 64px; top: 8px; right: 8px; }
+/* The finale doodle decorates the winner banner only, never the podium cards below it. */
+.winner-callout { position: relative; overflow: hidden; }
+.winner-callout .show-doodle { top: 50%; right: 3%; width: auto; height: 80%; translate: 0 -50%; }
 .show-fake-title {
   margin: 0;
   max-width: 24ch;

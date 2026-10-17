@@ -31,4 +31,16 @@ describe('reveal standings', () => {
     expect(scores).toHaveLength(16);
   });
 
+  it('shows no movement when everyone was tied before the beat', () => {
+    const result = { scoreDeltas: [
+      { playerId: 'a', name: 'Ava', scoreAfter: 50, delta: 50 },
+      { playerId: 'b', name: 'Bo', scoreAfter: 0, delta: 0 },
+      { playerId: 'd', name: 'Dee', scoreAfter: 100, delta: 100 }
+    ] } as RoundResult;
+    expect(revealStandings(result).map(({ playerId, rank, movement }) => ({ playerId, rank, movement }))).toEqual([
+      { playerId: 'd', rank: 1, movement: 0 },
+      { playerId: 'a', rank: 2, movement: 0 },
+      { playerId: 'b', rank: 3, movement: 0 }
+    ]);
+  });
 });

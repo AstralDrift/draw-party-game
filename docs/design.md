@@ -92,13 +92,13 @@ Base unit: **4px**.
 | `--radius-lg` | 28px | Hero glass shells |
 | `--radius-pill` | 999px | CTAs |
 
-TV shell: centered, max ~2520px, one composition per phase. Phone shell: max 680px, safe-area aware, large tap targets.
+TV shell: centered, max ~2520px, one composition per phase. Phone shell: max 680px, safe-area aware, large tap targets. Portrait tablets stack the drawing pad above Submit and tools so the pad uses the full width; landscape tablets and laptops keep the side tool rail, and the 4:3 pad is capped to the viewport height so it never pushes tools off-screen. Bordered header pills (`.turn-header`) always carry inner padding — text and clocks never sit on the edge.
 
 Every interactive control has a hit box of at least 52×52 CSS pixels, including compact inputs and selects, drawing tools, vote options, share/replay actions, and TV fallback controls. Icons and visible glyphs may be smaller, but the interactive box may not opt out of `--touch` to save layout space.
 
 Every phone lobby includes a native, collapsed “How to play” disclosure below its primary controls. Opening it explains Draw, Invent, Vote, and scoring without adding a blocking introduction or duplicating the TV roster. The disclosure resets on each lobby visit. Guessing uses a visible “Fake title” field label and the short “Invent a title…” placeholder; automatic capitalization is off. Anonymous TV voting and tally titles render lowercase so keyboard casing cannot distinguish fakes; spotlight and truth beats retain original wording.
 
-Results use one full TV composition per beat: drawing hold, two-column lettered vote tally, an oversized best-fake spotlight, truth beside the art, then standings. Eight-player standings use two columns with point gains, totals, and rank movement. Continue appears only after the score beat. Phone results remain a single-column look-up companion until the server unlocks personal points.
+Results use one full TV composition per beat: drawing hold, two-column lettered vote tally, an oversized best-fake spotlight, truth beside the art, then standings. Eight-player standings use two columns with point gains, totals, and rank movement. Rank movement is hidden (`—`) when every prior score was tied, so the first scoring beat never shows down arrows for players who simply have not scored yet. Continue appears only after the score beat. Phone results remain a single-column look-up companion until the server unlocks personal points.
 
 ## 5. Elevation & Depth
 

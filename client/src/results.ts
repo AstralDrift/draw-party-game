@@ -9,6 +9,9 @@ export function revealStandings(result: RoundResult, scores?: ScoreEntry[], play
   const before = after.map((score) => ({
     ...score, score: score.score - (deltas.get(score.playerId)?.delta ?? 0)
   }));
+  // A dead heat before this beat (e.g. everyone at 0 after round one) has no
+  // ranking to move from, so nobody should show up or down arrows yet.
+  const priorTie = before.every((score) => score.score === before[0]?.score);
   const visibleIds = playerIds ? new Set(playerIds) : null;
   return after.filter((score) => !visibleIds || visibleIds.has(score.playerId)).map((score) => {
     const rank = competitionRank(after, score);
@@ -17,7 +20,7 @@ export function revealStandings(result: RoundResult, scores?: ScoreEntry[], play
       ...score,
       delta: deltas.get(score.playerId)?.delta ?? 0,
       rank,
-      movement: competitionRank(before, prior) - rank
+      movement: priorTie ? 0 : competitionRank(before, prior) - rank
     };
   }).sort((a, b) => b.score - a.score || a.playerId.localeCompare(b.playerId));
 }
