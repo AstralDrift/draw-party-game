@@ -89,6 +89,22 @@ describe('ScoresPanel', () => {
     expect(displayMarkup).not.toContain('encore-title');
     expect(displayMarkup).toContain('Ava won by 200');
   });
+
+  it('gives each TV podium place a large avatar and phones a compact one', () => {
+    const entries = scores([['Ava', 300], ['Bo', 200], ['Cy', 100]]);
+    const tv = renderToStaticMarkup(<ScoresPanel scores={entries} podium role="display" />);
+    const phone = renderToStaticMarkup(<ScoresPanel scores={entries} podium role="player" />);
+    expect(tv.match(/player-avatar--xl/g)).toHaveLength(3);
+    expect(phone.match(/player-avatar--sm/g)).toHaveLength(3);
+    expect(tv).not.toContain('is-crowded');
+  });
+
+  it('renders no podium or avatars for a practice run', () => {
+    const markup = renderToStaticMarkup(
+      <ScoresPanel scores={scores([['Ava', 0]])} podium role="display" practice />
+    );
+    expect(markup).not.toContain('player-avatar');
+  });
 });
 
 function scores(entries: Array<[string, number]>): ScoreEntry[] {

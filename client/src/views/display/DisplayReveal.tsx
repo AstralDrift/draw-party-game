@@ -43,7 +43,10 @@ export function DisplayVoting(): React.JSX.Element {
   return (
     <>
       <div className="display-grid display-grid-voting">
-        <GlassPanel className="reveal-panel vote-list" aria-label="Which title is real?">
+        <GlassPanel
+          className={`reveal-panel vote-list${snapshot.votingOptions.length >= 6 ? ' vote-list--many' : ''}`}
+          aria-label="Which title is real?"
+        >
           <div className="turn-header">
             <ProgressPanel
               title="Votes"

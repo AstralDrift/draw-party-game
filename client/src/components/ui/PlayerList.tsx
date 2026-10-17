@@ -30,7 +30,7 @@ function OpenSeats({ count }: { count: number }): React.JSX.Element | null {
 export function PlayerList({ players, showScores = false, openSeats = 0 }: PlayerListProps): React.JSX.Element {
   if (players.length === 0) {
     return (
-      <div className="player-list player-list--empty">
+      <div className={`player-list player-list--empty${openSeats > 0 ? ' player-list--seats' : ''}`}>
         <div className={`empty-state${openSeats > 0 ? ' has-open-seats' : ''}`} aria-label="Waiting for phones to join.">
           {openSeats > 0 ? (
             <OpenSeats count={openSeats} />

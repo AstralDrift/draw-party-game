@@ -337,7 +337,7 @@
 }
 .display.phase-voting .reveal-panel.vote-list > .turn-header { grid-column: 1 / -1; }
 /* Six or more titles: two columns so each line stays couch-sized. */
-.display.phase-voting .reveal-panel.vote-list:has(> .vote-option ~ .vote-option ~ .vote-option ~ .vote-option ~ .vote-option ~ .vote-option) {
+.display.phase-voting .reveal-panel.vote-list.vote-list--many {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .display.phase-voting .vote-list .vote-option {
@@ -468,7 +468,7 @@
   box-shadow: none;
 }
 .display .players-panel .empty-state.has-open-seats { background-image: none; }
-.display .players-panel .player-list--empty:has(.has-open-seats) { display: block; }
+.display .players-panel .player-list--seats { display: block; }
 .open-seat {
   display: flex;
   align-items: center;

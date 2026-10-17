@@ -71,3 +71,27 @@ describe('PlayerList', () => {
     expect(markup).toContain('is-offline');
   });
 });
+
+describe('PlayerList open seats', () => {
+  const player = (id: string, name: string) => ({ id, name, score: 0, connected: true, spectator: false, isHost: false });
+
+  it('fills the empty room with dashed seats and drops the icon', () => {
+    const markup = renderToStaticMarkup(<PlayerList players={[]} openSeats={3} />);
+    expect(markup.match(/class="open-seat"/g)).toHaveLength(3);
+    expect(markup).toContain('player-list--seats');
+    expect(markup).not.toContain('empty-icon');
+  });
+
+  it('keeps the icon when no seats are requested', () => {
+    const markup = renderToStaticMarkup(<PlayerList players={[]} />);
+    expect(markup).toContain('empty-icon');
+    expect(markup).not.toContain('open-seat');
+  });
+
+  it('shows only the remaining seats after players join, and none once full', () => {
+    const two = renderToStaticMarkup(<PlayerList players={[player('a', 'Ava'), player('b', 'Bo')]} openSeats={1} />);
+    expect(two.match(/class="open-seat"/g)).toHaveLength(1);
+    const full = renderToStaticMarkup(<PlayerList players={[player('a', 'Ava')]} openSeats={0} />);
+    expect(full).not.toContain('open-seat');
+  });
+});
