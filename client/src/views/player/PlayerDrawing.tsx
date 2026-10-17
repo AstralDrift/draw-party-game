@@ -10,6 +10,7 @@ import { Deadline } from '../../components/ui/Deadline';
 import { DrawingPadHost } from '../../components/ui/DrawingPadHost';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { HostTimeExtension } from '../../components/ui/HostTimeExtension';
+import { LookUpHero } from '../../components/ui/LookUpHero';
 import { Shell } from '../../components/ui/Shell';
 
 export function PlayerDrawing(): React.JSX.Element {
@@ -66,7 +67,8 @@ export function PlayerDrawing(): React.JSX.Element {
     const isHost = isSelfHost(snapshot.players, clientId ?? '');
     return (
       <Shell title="Draw">
-        <GlassPanel className="play-panel player-turn-panel drawing-turn">
+        <GlassPanel className="play-panel player-turn-panel drawing-turn is-look-up">
+          <LookUpHero />
           {isHost ? (
             <div className="turn-header compact">
               <div className="turn-timing-controls">

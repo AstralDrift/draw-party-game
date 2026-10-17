@@ -17,6 +17,7 @@ import {
 } from '../../components/ui/ResultsPanel';
 import { ScoresPanel } from '../../components/ui/ScoresPanel';
 import { GlassPanel } from '../../components/ui/GlassPanel';
+import { LookUpHero } from '../../components/ui/LookUpHero';
 import { Shell } from '../../components/ui/Shell';
 
 export function PlayerResults(): React.JSX.Element {
@@ -59,7 +60,8 @@ export function PlayerResults(): React.JSX.Element {
 
   return (
     <Shell title="Results">
-      <GlassPanel className="player-result-companion">
+      <GlassPanel className="player-result-companion is-look-up">
+        <LookUpHero />
         <h2>Look up</h2>
 
         {showPersonalScore ? (

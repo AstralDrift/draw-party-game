@@ -8,6 +8,7 @@ import { isSelfHost } from '../../host';
 import { Button } from '../../components/ui/Button';
 import { Field, TextInput } from '../../components/ui/Field';
 import { GlassPanel } from '../../components/ui/GlassPanel';
+import { PlayerAvatar } from '../../components/ui/PlayerAvatar';
 import { RoomSettingsPanel } from '../../components/ui/RoomSettingsPanel';
 import { Shell } from '../../components/ui/Shell';
 import { SpectatorBanner } from '../../components/ui/SpectatorBanner';
@@ -61,8 +62,15 @@ export function PlayerLobby(): React.JSX.Element {
   return (
     <Shell title="Lobby">
       <div className="player-stack lobby-player-stack">
-        <GlassPanel className={`player-lobby-card ${ready && !spectating ? 'is-ready' : ''}`}>
+        <GlassPanel
+          className={`player-lobby-card ${ready && !spectating ? 'is-ready' : ''}${!isHost ? ' is-look-up' : ''}`}
+        >
           {spectating ? <SpectatorBanner /> : null}
+          {self && !editingName ? (
+            <div className="lobby-identity">
+              <PlayerAvatar playerId={self.id} name={displayName} size={isHost ? 'lg' : 'xl'} />
+            </div>
+          ) : null}
           {!editingName ? (
             <div className="lobby-name-row">
               <Button variant="ghost" icon={Pencil} className="tool-button lobby-rename-button" aria-label="Edit name" onClick={startRename}>
