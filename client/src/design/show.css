@@ -235,3 +235,268 @@
 .player .game-award { padding: 8px; gap: 8px; align-items: center; }
 .player .game-award h3 { margin-bottom: 2px; }
 .player .game-award .award-winners { display: none; }
+
+/* ── TV progress: who is still drawing ──────────────────────────
+   The count stays the headline; every player gets a seat that flips to a check. */
+.display-grid-drawing .progress-panel-compact {
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "count roster"
+    "names roster";
+  align-content: start;
+  align-items: start;
+  column-gap: clamp(32px, 4vw, 120px);
+}
+.display-grid-drawing .progress-panel-compact .progress-hero { grid-area: count; }
+.display-grid-drawing .progress-panel-compact > .muted { grid-area: names; max-width: 12ch; }
+.progress-roster {
+  grid-area: roster;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(clamp(170px, 14vw, 420px), 1fr));
+  gap: clamp(10px, 1vw, 28px);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.progress-seat {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: clamp(8px, 0.8vw, 20px);
+  padding: clamp(14px, 1.4vw, 36px) clamp(10px, 1vw, 24px);
+  border: 1px solid var(--glass-edge);
+  border-radius: 18px;
+  background: var(--glass-fill-soft);
+  opacity: 0.6;
+  transition: opacity var(--motion-med) var(--ease-out), border-color var(--motion-med) var(--ease-out);
+}
+.progress-seat .player-avatar { --avatar-size: clamp(64px, 6vw, 200px); }
+.progress-seat-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--display-body);
+  font-weight: 600;
+}
+.progress-seat-state {
+  position: absolute;
+  top: clamp(8px, 0.6vw, 16px);
+  right: clamp(8px, 0.6vw, 16px);
+  display: grid;
+  place-items: center;
+  width: clamp(26px, 1.8vw, 52px);
+  height: clamp(26px, 1.8vw, 52px);
+  border-radius: 50%;
+  background: var(--surface-glass-strong);
+  color: var(--text-secondary);
+}
+.progress-seat-icon { width: 60%; height: 60%; }
+.progress-seat:not(.is-done) .progress-seat-icon { animation: seat-scribble 1.4s ease-in-out infinite; }
+.progress-seat.is-done {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--player-accent, var(--status-success)) 70%, transparent);
+}
+.progress-seat.is-done .progress-seat-state { background: var(--status-success); color: #04130a; }
+
+/* Guess / vote header: a quiet strip of faces, dimmed until they're in. */
+.progress-avatars { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.progress-avatar { display: inline-flex; opacity: 0.35; transition: opacity var(--motion-med) var(--ease-out); }
+.progress-avatar.is-done { opacity: 1; }
+.display .progress-avatar .player-avatar { --avatar-size: clamp(24px, 1.7vw, 56px); border-width: 1.5px; }
+.display-grid-guessing .progress-panel-compact,
+.display-grid-voting .progress-panel-compact {
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+}
+.display-grid-guessing .progress-panel-compact .progress-avatars,
+.display-grid-voting .progress-panel-compact .progress-avatars { order: 1; }
+.display-grid-guessing .progress-panel-compact > .muted,
+.display-grid-voting .progress-panel-compact > .muted { order: 2; }
+
+@keyframes seat-scribble {
+  0%, 100% { transform: rotate(-8deg) translateX(-1px); }
+  50% { transform: rotate(8deg) translateX(1px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-seat-icon { animation: none !important; }
+}
+
+/* ── TV voting: letters lead, rows share the frame ─────────────── */
+.display-grid-voting { grid-template-rows: minmax(0, 1fr); }
+.display.phase-voting .reveal-panel.vote-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto;
+  grid-auto-rows: minmax(0, clamp(88px, 19svh, 360px));
+  align-content: start;
+  align-self: stretch;
+  gap: clamp(8px, 1.2vh, 24px);
+  min-height: 0;
+}
+.display.phase-voting .reveal-panel.vote-list > .turn-header { grid-column: 1 / -1; }
+/* Six or more titles: two columns so each line stays couch-sized. */
+.display.phase-voting .reveal-panel.vote-list:has(> .vote-option ~ .vote-option ~ .vote-option ~ .vote-option ~ .vote-option ~ .vote-option) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.display.phase-voting .vote-list .vote-option {
+  display: grid;
+  align-items: center;
+  padding: clamp(8px, 1.2vh, 28px) clamp(14px, 1.4vw, 40px);
+  border-radius: clamp(16px, 1.2vw, 32px);
+}
+.display.phase-voting .vote-list .vote-option-content { gap: clamp(16px, 1.6vw, 48px); }
+.display.phase-voting .vote-list .option-label,
+.show-ballot-row .option-label {
+  grid-area: auto;
+  align-self: center;
+  width: clamp(48px, 3.6vw, 128px);
+  height: clamp(48px, 3.6vw, 128px);
+  border-radius: 16px 20px 14px 22px;
+  font-size: clamp(1.5rem, 2.2vw, 4.25rem);
+}
+.display.phase-voting .vote-list .vote-answer { font-size: clamp(1.5rem, 2.4vw, 4.5rem); line-height: 1.12; }
+
+/* Tally: letter, title, and a big count per line. */
+.show-ballot-row { padding: clamp(14px, 2vh, 40px) clamp(16px, 1.4vw, 40px); }
+.show-vote-count { font-size: clamp(2rem, 3.2vw, 6rem); line-height: 1; min-width: 1.4ch; text-align: right; }
+.show-vote-count[aria-label="0 votes"] { color: var(--color-text-secondary); opacity: 0.55; }
+
+/* Standings: face, name, movement, gain, and a total that reads as one number. */
+.show-score-row { grid-template-columns: 1.5em auto minmax(0, 1fr) 2em 3.2em auto; }
+.show-score-row .player-avatar { --avatar-size: clamp(32px, 2.6vw, 88px); }
+.show-score-total small { display: inline; margin-left: 0.3em; }
+
+/* ── TV finale: a real podium ────────────────────────────────────
+   Faces stand on stepped plinths (2nd · 1st · 3rd); the frame is the stage. */
+.display-grid-finalScores { grid-template-rows: minmax(0, 1fr); }
+.display .scores-panel {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  gap: clamp(12px, 1.6vh, 32px);
+  min-height: 0;
+}
+.display .scores-panel .podium {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-end;
+  justify-content: center;
+  gap: clamp(12px, 1.4vw, 40px);
+  min-height: clamp(200px, 34svh, 980px);
+  margin: 0;
+}
+.display .scores-panel .podium-place {
+  flex: 0 1 clamp(180px, 20vw, 620px);
+  align-content: start;
+  gap: clamp(6px, 0.8vh, 18px);
+  height: 100%;
+  padding: clamp(14px, 1.6vh, 40px) clamp(10px, 1vw, 28px);
+  border-top: 4px solid var(--player-accent);
+  border-radius: 22px 22px 8px 8px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--player-accent) 16%, transparent), var(--glass-fill-soft) 60%);
+}
+.display .scores-panel .podium-place.place-1 { order: 2; height: 100%; }
+.display .scores-panel .podium-place.place-2 { order: 1; height: 82%; }
+.display .scores-panel .podium-place.place-3 { order: 3; height: 68%; }
+/* A short plinth still grows to hold its face, name, title, and score. */
+.display .scores-panel .podium-place { min-height: min-content; }
+.display .podium-place .player-avatar { --avatar-size: clamp(64px, 6vw, 200px); }
+.display .podium-place.place-1 .player-avatar { --avatar-size: clamp(80px, 7.6vw, 250px); }
+.display .podium-place strong { font-family: var(--font-display); font-size: clamp(1.25rem, 2vw, 4rem); }
+.display .podium-place > span:last-child { font-size: clamp(1rem, 1.3vw, 2.5rem); font-variant-numeric: tabular-nums; }
+.display .podium-rank { width: clamp(36px, 2.4vw, 80px); height: clamp(36px, 2.4vw, 80px); font-size: clamp(0.9rem, 1vw, 2rem); }
+.display .podium-title { font-size: clamp(0.875rem, 1vw, 2rem); }
+/* Big ties (4–8 finalists) keep one row of equal plinths so everyone fits. */
+.display .scores-panel .podium.is-crowded { display: flex; }
+.display .scores-panel .podium.is-crowded .podium-place { flex: 1 1 0; }
+.display .podium.is-crowded .podium-place .player-avatar { --avatar-size: clamp(48px, 4vw, 140px); }
+.display .scores-panel .winner-callout h2 { font-size: clamp(2.25rem, 4.4vw, 8rem); }
+
+/* Phones keep the compact podium; the avatar is a small leading mark. */
+.player .podium-avatar { display: none; }
+
+/* ── TV lobby ───────────────────────────────────────────────────── */
+.display .tv-brand {
+  position: absolute;
+  top: clamp(16px, 1.6vw, 40px);
+  left: clamp(20px, 2vw, 48px);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: clamp(8px, 0.6vw, 16px);
+  opacity: 0.9;
+}
+.display .tv-brand .brand-mark { width: clamp(32px, 2vw, 64px); height: clamp(32px, 2vw, 64px); }
+.tv-wordmark {
+  font-family: var(--font-display);
+  font-size: clamp(1.1rem, 1.3vw, 2.5rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+/* "Need 3+ phones." is the lobby's only instruction; make it couch-readable. */
+.display-grid-lobby .players-panel .players-count.start-note {
+  font-size: var(--display-panel-title);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.display-grid-lobby .players-panel .players-count.start-note.ready { color: var(--status-success); }
+
+.display-grid-lobby .players-panel-head .sound-toggle svg,
+.display-grid-lobby .players-panel-head .tv-start-fallback svg { width: clamp(22px, 1.4vw, 40px); height: clamp(22px, 1.4vw, 40px); }
+.display-grid-lobby .players-panel-head .tv-start-fallback {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+/* Open seats: the minimum party, drawn as dashed places waiting for a phone. */
+.display .players-panel .empty-state.has-open-seats {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  justify-content: stretch;
+  justify-items: stretch;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.display .players-panel .empty-state.has-open-seats { background-image: none; }
+.display .players-panel .player-list--empty:has(.has-open-seats) { display: block; }
+.open-seat {
+  display: flex;
+  align-items: center;
+  min-height: clamp(48px, 2vw, 72px);
+  padding: 0 var(--space-4);
+  border: 2px dashed color-mix(in srgb, var(--text-tertiary) 70%, transparent);
+  border-radius: var(--radius-md);
+  opacity: 0.6;
+}
+.open-seat-doodle {
+  width: clamp(36px, 1.45vw, 52px);
+  height: clamp(36px, 1.45vw, 52px);
+  border: 2px dashed var(--text-tertiary);
+  border-radius: 54% 46% 51% 49% / 45% 55% 47% 53%;
+}
+
+.display .manual-join-url { font-size: var(--display-body); }
+
+/* Below the podium: everyone else in one quiet, readable line. */
+.display .scores-panel .score-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: clamp(8px, 0.8vw, 20px);
+}
+.display .scores-panel .score-row {
+  gap: clamp(10px, 0.8vw, 20px);
+  padding: clamp(8px, 1vh, 20px) clamp(14px, 1.2vw, 32px);
+  font-size: var(--display-body);
+}
+.display .scores-panel .score-row .pill { font-size: var(--display-meta); }

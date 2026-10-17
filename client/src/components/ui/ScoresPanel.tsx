@@ -8,6 +8,8 @@ import { exportShareCard, podiumShareLabel } from '../../share-card';
 import { Button } from './Button';
 import { Confetti } from './Confetti';
 import { GlassPanel } from './GlassPanel';
+import { PlayerAvatar } from './PlayerAvatar';
+import { playerAccentSlot } from '../../player-identity';
 
 interface ScoresPanelProps {
   scores: ScoreEntry[];
@@ -67,7 +69,17 @@ export function ScoresPanel({
           {topScores.map((score) => {
             const rank = competitionRank(scores, score);
             return (
-              <div key={score.playerId} className={`podium-place place-${rank}`}>
+              <div
+                key={score.playerId}
+                className={`podium-place place-${rank}`}
+                data-player-slot={playerAccentSlot(score.playerId)}
+              >
+                <PlayerAvatar
+                  playerId={score.playerId}
+                  name={score.name}
+                  size={role === 'display' ? 'xl' : 'sm'}
+                  className="podium-avatar"
+                />
                 <span className="podium-rank">{ordinalRank(rank)}</span>
                 <strong>{score.name}</strong>
                 <span className="podium-title">{titles.get(score.playerId) ?? ''}</span>
